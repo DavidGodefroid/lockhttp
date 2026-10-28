@@ -69,6 +69,17 @@
 
 <div class="notice" role="note"><p><strong>Pre-release, under construction.</strong> lockhttp <code>v0.1.0</code> is being built now. This site describes its design as recorded in <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a> and <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>; command names are fixed, flags may still move. Phase 2 features (TLS decryption) are marked as such.</p></div>
 
+<section class="demo-section" aria-labelledby="demo">
+  <h2 id="demo" class="visually-hidden">See it run</h2>
+  <figure class="demo">
+    <div class="demo-frame" role="region" aria-label="Animated demo" tabindex="0">
+      <img src="assets/demo.svg" alt="Claude Code, in a lea container, fetches a page of pkg.go.dev, a trusted host: the lockhttp gate lets the GET through at once. It then POSTs a build report to hooks.example.net, an unknown host: the gate holds the request, and the lockhttp console, in its own account, shows the approval screen with the body preview masked (the email as j***(20), the token as &lt;secret&gt;). The human answers n token in body; the agent gets a 403 E_DENIED, and the gate's audit records both decisions." width="1200" height="600" aria-describedby="demo-caption">
+    </div>
+    <p class="demo-hint">Swipe sideways to see both terminals.</p>
+    <figcaption id="demo-caption">Claude Code (left, in a lea container) reads <code>pkg.go.dev</code> at once: a trusted host, a read. Its <code>POST</code> to an unknown host stops at the gate until you answer in the lockhttp console (right, account <code>lockhttp</code>), which shows the request decrypted, its body masked. You type <code>n token in body</code>: the agent gets a <code>403</code> <code>E_DENIED</code> with your reason, and the gate's audit keeps both decisions.</figcaption>
+  </figure>
+</section>
+
 <section aria-labelledby="why">
   <h2 id="why">Why lockhttp?</h2>
   <div class="prose">
