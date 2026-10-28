@@ -409,29 +409,32 @@ blockquote p { margin: 0; }
   font-size: 0.95rem;
 }
 
-/* Demo video */
+/* Demo */
 .demo-section { margin-top: 2.5rem; }
-/* The video breaks out of the text column: as wide as the window allows
-   (94vw, at most its 1700px recording), and never taller than the window
+/* The demo breaks out of the text column: as wide as the window allows
+   (94vw, at most its 1200px drawing), and never taller than the window
    minus the header, so it is always seen whole. */
 figure.demo {
   position: relative;
   left: 50%;
-  width: min(94vw, 1700px, calc((100vh - 6rem) * 1700 / 940));
-  width: min(94vw, 1700px, calc((100svh - 6rem) * 1700 / 940));
+  width: min(94vw, 1200px, calc((100vh - 6rem) * 1200 / 600));
+  width: min(94vw, 1200px, calc((100svh - 6rem) * 1200 / 600));
   margin: 0 0 1.5rem;
   transform: translateX(-50%);
 }
-figure.demo video,
+.demo-frame {
+  border-radius: var(--radius);
+  background: var(--term-bg);
+  box-shadow: var(--shadow-lg);
+}
 figure.demo img {
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 1700 / 940;
+  aspect-ratio: 1200 / 600;
   border-radius: var(--radius);
-  background: #15803d;
-  box-shadow: var(--shadow-lg);
 }
+.demo-hint { display: none; }
 figure.demo figcaption { max-width: 52rem; margin: 1rem auto 0; text-align: center; }
 
 /* Cards */
@@ -576,6 +579,12 @@ td.no::before { content: "✕"; background: var(--no-bg); }
   .hero { padding-top: 2.5rem; }
   .hero h1 br { display: none; }
   h2 { margin-top: 3.25rem; }
+  /* Scaled to a phone, the demo's terminal text would be 3px high: keep
+     it readable and let it scroll sideways. */
+  figure.demo { left: 0; width: 100%; transform: none; }
+  .demo-frame { overflow-x: auto; overscroll-behavior-x: contain; }
+  figure.demo img { width: 56.25rem; max-width: none; }
+  .demo-hint { display: block; margin: 0.5rem 0 0; color: var(--muted); font-size: 0.9rem; text-align: center; }
 }
 
 @media (prefers-reduced-motion: no-preference) {

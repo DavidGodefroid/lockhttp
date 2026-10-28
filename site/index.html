@@ -50,7 +50,7 @@
   <main id="main" tabindex="-1">
     <div class="wrap">
 <section class="hero" aria-labelledby="hero-title">
-  <p class="eyebrow"><a href="install/"><span class="badge">v0.1</span> Pre-release in progress · open source, Apache 2.0</a></p>
+  <p class="eyebrow"><a href="install/"><span class="badge">v0.1</span> Pre-release out · open source, Apache 2.0</a></p>
   <h1 id="hero-title">Your AI browses. <br><span class="key">You hold the key.</span></h1>
   <p class="lead">Let your AI agents read the web without letting them post to it behind your back.</p>
   <p class="intro">lockhttp is the proxy <strong>every outbound HTTP(S) request</strong> of an AI agent goes through. Reads of trusted hosts pass. Anything that sends data, triggers an action or reaches an unknown host <strong>waits for a human</strong>, in a console the agent cannot reach. Every decision is traced to the container, the agent and the session that asked.</p>
@@ -61,13 +61,24 @@
   </div>
   <ul class="facts" aria-label="At a glance">
     <li>Linux host, agents in lea containers</li>
-    <li>HTTP and HTTPS (CONNECT + SNI; TLS decryption in phase 2)</li>
+    <li>HTTP and HTTPS (CONNECT + SNI, or per request with TLS decryption)</li>
     <li>Built on lockkit</li>
     <li>Apache 2.0</li>
   </ul>
 </section>
 
-<div class="notice" role="note"><p><strong>Pre-release, under construction.</strong> lockhttp <code>v0.1.0</code> is being built now. This site describes its design as recorded in <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a> and <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>; command names are fixed, flags may still move. Phase 2 features (TLS decryption) are marked as such.</p></div>
+<div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.1.0</code> is out as a pre-release: command names are fixed, flags may still move. TLS decryption ships in it and is optional: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
+
+<section class="demo-section" aria-labelledby="demo">
+  <h2 id="demo" class="visually-hidden">See it run</h2>
+  <figure class="demo">
+    <div class="demo-frame" role="region" aria-label="Animated demo" tabindex="0">
+      <img src="assets/demo.svg" alt="Claude Code, in a lea container, fetches a page of pkg.go.dev, a trusted host: the lockhttp gate lets the GET through at once. It then POSTs a build report to hooks.example.net, an unknown host: the gate holds the request, and the lockhttp console, in its own account, shows the approval screen with the body preview masked (the email as j***(20), the token as &lt;secret&gt;). The human answers n token in body; the agent gets a 403 E_DENIED, and the gate's audit records both decisions." width="1200" height="600" aria-describedby="demo-caption">
+    </div>
+    <p class="demo-hint">Swipe sideways to see both terminals.</p>
+    <figcaption id="demo-caption">Claude Code (left, in a lea container) reads <code>pkg.go.dev</code> at once: a trusted host, a read. Its <code>POST</code> to an unknown host stops at the gate until you answer in the lockhttp console (right, account <code>lockhttp</code>), which shows the request decrypted, its body masked. You type <code>n token in body</code>: the agent gets a <code>403</code> <code>E_DENIED</code> with your reason, and the gate's audit keeps both decisions.</figcaption>
+  </figure>
+</section>
 
 <section aria-labelledby="why">
   <h2 id="why">Why lockhttp?</h2>
@@ -80,9 +91,9 @@
 <thead><tr><th scope="col"><span class="visually-hidden">Property</span></th><th scope="col">Domain allowlist</th><th scope="col">lockhttp</th></tr></thead>
 <tbody>
 <tr><th scope="row">Unknown host: ask a human instead of failing</th><td class="no">No</td><td class="yes">Yes</td></tr>
-<tr><th scope="row">Writes to a trusted host still need a human</th><td class="no">No</td><td class="yes">Yes (phase 2)</td></tr>
+<tr><th scope="row">Writes to a trusted host still need a human</th><td class="no">No</td><td class="yes">Yes (with decryption)</td></tr>
 <tr><th scope="row">Approval runs outside the agent, in another account</th><td class="no">No</td><td class="yes">Yes</td></tr>
-<tr><th scope="row">Claude API checked as a relay (<code>mcp_servers</code>, server tools, files)</th><td class="no">No</td><td class="yes">Yes (phase 2)</td></tr>
+<tr><th scope="row">Claude API checked as a relay (<code>mcp_servers</code>, server tools, files)</th><td class="no">No</td><td class="yes">Yes (with decryption)</td></tr>
 <tr><th scope="row">Credential sent outside its own host is denied</th><td class="no">No</td><td class="yes">Yes</td></tr>
 <tr><th scope="row">Policy loosening needs a human confirmation</th><td class="no">No</td><td class="yes">Yes</td></tr>
 <tr><th scope="row">Every request traced to container, agent and session</th><td class="no">No</td><td class="yes">Yes</td></tr>
@@ -108,7 +119,7 @@
     <li><span class="icon" aria-hidden="true">🔁</span><h3>Progressive auto mode</h3><p>Every screen is <code>NeverAuto</code> by default. Only a rule with <code>verdict = "auto"</code>, approved by you and scoped to a container, can be answered by auto mode.</p></li>
     <li><span class="icon" aria-hidden="true">🧩</span><h3>Identical, not similar</h3><p>A decision is shared only by requests of identical fingerprint: container, method, URL, significant headers, normalised body.</p></li>
     <li><span class="icon" aria-hidden="true">🕶️</span><h3>Masked previews</h3><p>The approval screen shows a masked preview of the body (PII detectors and terminal sanitising, first 1 KiB), never the clear body.</p></li>
-    <li><span class="icon" aria-hidden="true">🔐</span><h3>CA key out of the data plane</h3><p>For TLS decryption (phase 2) a separate <code>lockhttp signer</code> holds the CA key and issues leaf certificates; the gate never sees the key.</p></li>
+    <li><span class="icon" aria-hidden="true">🔐</span><h3>CA key out of the data plane</h3><p>For TLS decryption a separate <code>lockhttp signer</code> holds the CA key and issues leaf certificates; the gate never sees the key.</p></li>
     <li><span class="icon" aria-hidden="true">🌗</span><h3>Shadow mode</h3><p><code>mode = "shadow"</code> logs what would have asked or been denied and lets it pass, so you can tune the policy first. The floor and secret checks stay enforced.</p></li>
     <li><span class="icon" aria-hidden="true">🏷️</span><h3>Refusals the agent can act on</h3><p>Every refusal carries a stable code (<code>X-LockHTTP-Code</code>), a request id and a retry rule: retry, ask the user, or stop.</p></li>
     <li><span class="icon" aria-hidden="true">📜</span><h3>Full audit</h3><p>FREE and DENY in the gate’s daily JSONL log (30 days), ASK in the console’s audit log, joined by <code>request_id</code>. Never a body or a secret.</p></li>
@@ -150,7 +161,7 @@ export LEA_LOCKHTTP=1</code></pre>
 <section aria-labelledby="limits">
   <h2 id="limits">Know the limits</h2>
   <div class="prose">
-    <p>In phase 1, lockhttp decides on the host name (CONNECT and SNI): opening a host opens its reads <em>and</em> its writes, and the approval screen says so. Per-request decisions on HTTPS need TLS decryption, which comes in phase 2 with a local CA trusted only inside lea’s containers.</p>
+    <p>Without TLS decryption, lockhttp decides HTTPS on the host name (CONNECT and SNI): opening a host opens its reads <em>and</em> its writes, and the approval screen says so. Per-request decisions on HTTPS need decryption: a local CA trusted only inside lea’s containers, and <code>lockhttp signer</code> holding its key. Hosts that pin their certificates stay decided at the domain.</p>
     <p>A slow, low-bandwidth channel to a trusted host (which packages are fetched, timing) is not something a proxy can close; mirrors and quotas are the answer, later.</p>
     <p><a href="security/">Read the security model</a></p>
   </div>
@@ -166,7 +177,7 @@ export LEA_LOCKHTTP=1</code></pre>
         <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">Design decisions</a></li>
         <li><a href="https://lockfamily.dev/">The Lock family</a></li>
       </ul>
-      <p>Under construction: the first pre-release, <code>v0.1.0</code>, is in progress. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p>Pre-release: <a href="https://github.com/DavidGodefroid/lockhttp/releases">v0.1.0</a> is out. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
     </div>
   </footer>
 </body>

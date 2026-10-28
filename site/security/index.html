@@ -54,7 +54,7 @@
   <p class="lead">The gate enforces; the human decides; the agent can neither reach the console nor change the policy.</p>
 </div>
 
-<div class="notice" role="note"><p><strong>Pre-release, under construction.</strong> lockhttp <code>v0.1.0</code> is being built now. This site describes its design as recorded in <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a> and <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>; command names are fixed, flags may still move. Phase 2 features (TLS decryption) are marked as such.</p></div>
+<div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.1.0</code> is out as a pre-release: command names are fixed, flags may still move. TLS decryption ships in it and is optional: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
 
 <section aria-labelledby="requirements">
   <h2 id="requirements">Non-negotiable requirements</h2>
@@ -76,9 +76,9 @@
   <tbody>
   <tr><th scope="row">Going around the proxy</th><td>Agents sit on internal networks; squid listens on loopback; the gate refuses its egress interface.</td><td>Rootless Podman without an isolated gateway: covered by a blocking isolation test in lea.</td></tr>
   <tr><th scope="row">DNS, DoH, IP literals</th><td>Non-forwarding DNS in lea; the network floor; no UDP.</td><td>IP literals of declared internal hosts.</td></tr>
-  <tr><th scope="row">Writing to a trusted host</th><td>A write asks, even on a trusted host.</td><td>Phase 1 sees only the host; the screen says “reads and writes”.</td></tr>
-  <tr><th scope="row">Exfiltration in a GET</th><td>Decryption and heuristics (phase 2, after calibration).</td><td>Slow, low-bandwidth channels; spliced hosts.</td></tr>
-  <tr><th scope="row">The Claude API as a relay</th><td>Path and parameter allowlist (phase 2).</td><td>Phase 1 decides on the exact host only.</td></tr>
+  <tr><th scope="row">Writing to a trusted host</th><td>A write asks, even on a trusted host.</td><td>Without decryption the gate sees only the host; the screen says “reads and writes”.</td></tr>
+  <tr><th scope="row">Exfiltration in a GET</th><td>Decryption, and the exfiltration score (logged in shadow by default; <code>heuristics = "enforce"</code> asks).</td><td>Slow, low-bandwidth channels; spliced hosts.</td></tr>
+  <tr><th scope="row">The Claude API as a relay</th><td>Path and parameter allowlist (with decryption).</td><td>Without decryption, the exact host only.</td></tr>
   <tr><th scope="row">Approval fatigue</th><td>Auto rules you approved; identical requests grouped; shadow mode to tune first.</td><td>The human factor.</td></tr>
   <tr><th scope="row">The agent edits the policy</th><td>The policy lives with the console; loosening needs your review; project files are ignored.</td><td>—</td></tr>
   <tr><th scope="row">A compromised gate</th><td>Own uid, never root; no decision authority over ASK; the CA key in a separate signer.</td><td>FREE traffic.</td></tr>
@@ -113,7 +113,7 @@
         <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">Design decisions</a></li>
         <li><a href="https://lockfamily.dev/">The Lock family</a></li>
       </ul>
-      <p>Under construction: the first pre-release, <code>v0.1.0</code>, is in progress. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p>Pre-release: <a href="https://github.com/DavidGodefroid/lockhttp/releases">v0.1.0</a> is out. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
     </div>
   </footer>
 </body>

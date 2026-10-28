@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>How it works — lockhttp</title>
-  <meta name="description" content="How lockhttp decides: the gate in lea's proxy container, the console on the host, FREE, ASK and DENY, HTTPS in two phases.">
+  <meta name="description" content="How lockhttp decides: the gate in lea's proxy container, the console on the host, FREE, ASK and DENY, HTTPS with or without decryption.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
@@ -12,7 +12,7 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="lockhttp">
   <meta property="og:title" content="How it works — lockhttp">
-  <meta property="og:description" content="How lockhttp decides: the gate in lea's proxy container, the console on the host, FREE, ASK and DENY, HTTPS in two phases.">
+  <meta property="og:description" content="How lockhttp decides: the gate in lea's proxy container, the console on the host, FREE, ASK and DENY, HTTPS with or without decryption.">
   <meta property="og:url" content="https://lockhttp.com/how-it-works/">
   <meta property="og:image" content="https://lockhttp.com/assets/og.png">
   <meta property="og:image:type" content="image/png">
@@ -22,7 +22,7 @@
   <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="How it works — lockhttp">
-  <meta name="twitter:description" content="How lockhttp decides: the gate in lea's proxy container, the console on the host, FREE, ASK and DENY, HTTPS in two phases.">
+  <meta name="twitter:description" content="How lockhttp decides: the gate in lea's proxy container, the console on the host, FREE, ASK and DENY, HTTPS with or without decryption.">
   <meta name="twitter:image" content="https://lockhttp.com/assets/og.png">
   <meta name="twitter:image:alt" content="lockhttp — Your AI browses. You hold the key.">
   <link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
@@ -55,7 +55,7 @@
   <p>The data plane, <code>lockhttp gate</code>, is a proxy in lea’s proxy container. The control plane, <code>lockhttp console</code>, is the standard lockkit console on the host, in its own account. The gate asks the console only about requests that need a human.</p>
 </div>
 
-<div class="notice" role="note"><p><strong>Pre-release, under construction.</strong> lockhttp <code>v0.1.0</code> is being built now. This site describes its design as recorded in <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a> and <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>; command names are fixed, flags may still move. Phase 2 features (TLS decryption) are marked as such.</p></div>
+<div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.1.0</code> is out as a pre-release: command names are fixed, flags may still move. TLS decryption ships in it and is optional: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
 
 <section aria-labelledby="layout">
   <h2 id="layout">Where each piece runs</h2>
@@ -69,7 +69,7 @@
  ┌──────────────────────────────────────────────────────┐
  │ lockhttp gate :3130   (own uid, never 0)             │
  │   source → container · policy → FREE / ASK / DENY    │
- │   lockhttp signer     (phase 2: holds the CA key)    │
+ │   lockhttp signer     (optional: holds the CA key)   │
  │   squid 127.0.0.1:3128 (network floor) ──▶ Internet  │
  └──────────────────────────┬───────────────────────────┘
                             │ Unix socket, volume lockhttp-run:
@@ -90,7 +90,7 @@
     <li><strong>Network floor (DENY, cannot be loosened):</strong> IP literals, DNS over HTTPS, private ranges and metadata addresses, ports other than 80/443, an SNI that differs from the host, <code>Upgrade: h2c</code>, nested CONNECT.</li>
     <li><strong>Internal hosts</strong> you declared (CI, registry): decided at the domain, FREE only when you marked them <code>read</code>, only on their declared ports.</li>
     <li><strong>A single-use authorisation</strong> left by an approval whose client had already given up.</li>
-    <li><strong>Exfiltration heuristics</strong> (data in the URL, high-entropy values and labels, unusual headers, known secrets, PII): logged only (<code>heuristics = "shadow"</code>) until they are calibrated.</li>
+    <li><strong>Exfiltration heuristics</strong> (data in the URL, high-entropy values and labels, unusual headers, known secrets, PII): logged only by default (<code>heuristics = "shadow"</code>); with <code>heuristics = "enforce"</code> a score of 3 or more asks, never in auto mode.</li>
     <li><strong>Policy rules</strong>, from the most specific to the least.</li>
     <li><strong>Defaults:</strong> body-less reads of trusted hosts are FREE; reads of unknown hosts, writes, uploads, messaging and WebSockets ASK; a body over the buffer limit (10 MiB) is denied.</li>
   </ol>
@@ -110,13 +110,13 @@
 </section>
 
 <section aria-labelledby="tls">
-  <h2 id="tls">HTTPS in two phases</h2>
-  <div class="table-wrap" role="region" aria-label="Phase 1 and phase 2" tabindex="0">
+  <h2 id="tls">HTTPS, with or without decryption</h2>
+  <div class="table-wrap" role="region" aria-label="HTTPS without and with decryption" tabindex="0">
   <table>
-  <thead><tr><th scope="col">Phase</th><th scope="col">What the gate sees</th><th scope="col">What you approve</th></tr></thead>
+  <thead><tr><th scope="col">Mode</th><th scope="col">What the gate sees</th><th scope="col">What you approve</th></tr></thead>
   <tbody>
-  <tr><th scope="row">1 · CONNECT + SNI</th><td>host, port, SNI</td><td>A host for a container: <code>y</code> opens container × host × port for 10 minutes, <strong>reads and writes</strong>, content invisible. The screen says so.</td></tr>
-  <tr><th scope="row">2 · TLS decryption</th><td>method, path, headers, body</td><td>One request. A local CA, trusted only inside lea’s containers, is issued per installation; <code>lockhttp signer</code> holds its key.</td></tr>
+  <tr><th scope="row">CONNECT + SNI (no CA)</th><td>host, port, SNI</td><td>A host for a container: <code>y</code> opens container × host × port for 10 minutes, <strong>reads and writes</strong>, content invisible. The screen says so.</td></tr>
+  <tr><th scope="row">TLS decryption</th><td>method, path, headers, body</td><td>One request. A local CA, trusted only inside lea’s containers, is issued per installation; <code>lockhttp signer</code> holds its key.</td></tr>
   </tbody>
   </table>
   </div>
@@ -126,7 +126,7 @@
 <section aria-labelledby="claude">
   <h2 id="claude">The Claude API is a relay</h2>
   <div class="prose">
-    <p><code>api.anthropic.com</code> is not only the model’s channel: <code>mcp_servers</code> makes Anthropic call any remote MCP server, and some server tools fetch or run things outside your machine. Once TLS is decrypted (phase 2):</p>
+    <p><code>api.anthropic.com</code> is not only the model’s channel: <code>mcp_servers</code> makes Anthropic call any remote MCP server, and some server tools fetch or run things outside your machine. Once TLS is decrypted:</p>
     <ul>
       <li><code>POST /v1/messages</code> and <code>/v1/messages/count_tokens</code> are free only without <code>mcp_servers</code> and with no server tool other than <code>web_search</code>;</li>
       <li><code>/v1/files*</code> asks;</li>
@@ -192,7 +192,7 @@ max_body  = "256KiB"</code></pre>
         <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">Design decisions</a></li>
         <li><a href="https://lockfamily.dev/">The Lock family</a></li>
       </ul>
-      <p>Under construction: the first pre-release, <code>v0.1.0</code>, is in progress. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p>Pre-release: <a href="https://github.com/DavidGodefroid/lockhttp/releases">v0.1.0</a> is out. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
     </div>
   </footer>
 </body>
