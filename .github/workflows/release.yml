@@ -83,7 +83,7 @@ jobs:
       - name: build and push
         run: |
           v=${GITHUB_REF_NAME#v}
-          docker build --build-arg VERSION="$GITHUB_REF_NAME" -t "$IMAGE:$v-${{ matrix.arch }}" .
+          docker build --build-arg VERSION="$v" -t "$IMAGE:$v-${{ matrix.arch }}" .
           docker push "$IMAGE:$v-${{ matrix.arch }}"
 
   image-manifest:

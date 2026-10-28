@@ -237,7 +237,7 @@ LOCKHTTP_IMAGE=lockhttp lockhttp console
 ```
 
 The launcher of a clone (`sh scripts/lockhttp ...`) runs the image tagged
-`lockhttp` by default. `--build-arg VERSION=vX.Y.Z` sets the version that
+`lockhttp` by default. `--build-arg VERSION=X.Y.Z` sets the version that
 `lockhttp version` prints.
 
 `ALLOWED_UIDS` is a comma-separated list of uids that may reach the console
