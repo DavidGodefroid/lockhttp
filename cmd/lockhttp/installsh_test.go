@@ -34,6 +34,12 @@ const (
 	releaseOIDCIssuer         = "https://token.actions.githubusercontent.com"
 )
 
+// releaseIdentity is the exact identity install.sh and update check: the
+// release workflow run for that very tag.
+func releaseIdentity(tag string) string {
+	return "https://github.com/DavidGodefroid/lockhttp/.github/workflows/release.yml@refs/tags/" + tag
+}
+
 func newShFixture(t *testing.T) *shFixture {
 	t.Helper()
 	root := t.TempDir()
@@ -158,7 +164,7 @@ func TestInstallShInstallsTheLauncher(t *testing.T) {
 		}
 	}
 	args, _ := os.ReadFile(f.cosignArgs)
-	for _, want := range []string{"verify\n", "ghcr.io/davidgodefroid/lockhttp:" + shVersion + "\n", "--certificate-identity-regexp\n" + ReleaseCertIdentityRegexp + "\n"} {
+	for _, want := range []string{"verify\n", "ghcr.io/davidgodefroid/lockhttp:" + shVersion + "\n", "--certificate-identity\n" + releaseIdentity("v"+shVersion) + "\n"} {
 		if !strings.Contains(string(args), want) {
 			t.Errorf("cosign args lack %q:\n%s", want, args)
 		}
@@ -236,7 +242,7 @@ func TestInstallShChecksTheReleaseWorkflowIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"verify-blob\n", "--certificate-identity-regexp\n" + ReleaseCertIdentityRegexp + "\n",
+	for _, want := range []string{"verify-blob\n", "--certificate-identity\n" + releaseIdentity("v"+shVersion) + "\n",
 		"--certificate-oidc-issuer\n" + releaseOIDCIssuer + "\n"} {
 		if !strings.Contains(string(args), want) {
 			t.Errorf("cosign args lack %q:\n%s", want, args)
@@ -247,6 +253,16 @@ func TestInstallShChecksTheReleaseWorkflowIdentity(t *testing.T) {
 // Without cosign the script refuses: the checksum comes from the same
 // release, so only the signature says who made it. LOCKHTTP_SKIP_COSIGN=1 is
 // the explicit way past it.
+// A version that is not a release tag stops before any download.
+func TestInstallShRefusesAnInvalidTag(t *testing.T) {
+	f := newShFixture(t)
+	f.cosign(t, true)
+	out, err := f.run(t, "LOCKHTTP_VERSION=v1.2.3/../x")
+	if err == nil || f.installed() || !strings.Contains(out, "invalid version") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+}
+
 func TestInstallShRequiresCosign(t *testing.T) {
 	f := newShFixture(t)
 	out, err := f.run(t)

@@ -263,6 +263,35 @@ func hostname(t *testing.T) string {
 	return strings.TrimSpace(string(b))
 }
 
+// Every container is confined; a path docker -v cannot mount is refused;
+// LOCKHTTP_DOCKER_ARGS is not globbed; update refuses a bad tag.
+func TestLauncherHardening(t *testing.T) {
+	f := newLauncherFixture(t)
+	for _, args := range [][]string{{"console"}, {"init"}, {"policy", "show"}, {"doctor"}, {"gate"}, {"signer"}} {
+		_, calls, err := f.run(t, f.project, nil, args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		run := lastRun(t, calls)
+		for _, seq := range [][]string{{"--cap-drop", "ALL"}, {"--security-opt", "no-new-privileges"}, {"--read-only"}, {"--pids-limit", "256"}} {
+			if !hasSeq(run, seq...) {
+				t.Errorf("%v: not confined, lacks %q: %q", args, seq, run)
+			}
+		}
+	}
+	if out, _, err := f.run(t, f.project, nil, "ca", "init", "--dir", filepath.Join(f.root, "a:b")); err == nil || !strings.Contains(out, "cannot mount") {
+		t.Errorf("a path with a colon: %v %s", err, out)
+	}
+	_, calls, err := f.run(t, f.project, []string{"LOCKHTTP_DOCKER_ARGS=--label *"}, "doctor")
+	if err != nil || !hasSeq(lastRun(t, calls), "--label", "*") {
+		t.Errorf("LOCKHTTP_DOCKER_ARGS globbed: %v %q", err, calls)
+	}
+	f.setVersion(t, "0.9.0")
+	if out, _, err := f.run(t, f.project, nil, "update", "v1;rm"); err == nil || !strings.Contains(out, "invalid version") {
+		t.Errorf("bad tag: %v %s", err, out)
+	}
+}
+
 // LOCKHTTP_PUBLISH moves the gate's published port.
 func TestLauncherGatePublish(t *testing.T) {
 	f := newLauncherFixture(t)
@@ -384,7 +413,7 @@ func TestLauncherUpdate(t *testing.T) {
 		t.Errorf("calls %q", calls)
 	}
 	args, _ := os.ReadFile(rel.cosignArgs)
-	if !strings.Contains(string(args), ReleaseCertIdentityRegexp) {
+	if !strings.Contains(string(args), "--certificate-identity\n"+releaseIdentity("v"+shVersion)+"\n") {
 		t.Errorf("cosign args %s", args)
 	}
 }
@@ -437,7 +466,8 @@ func TestLauncherPinsTheReleaseIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), "identity='"+ReleaseCertIdentityRegexp+"'") {
-		t.Error("scripts/lockhttp does not pin", ReleaseCertIdentityRegexp)
+	if !strings.Contains(string(b), `identity="https://github.com/$repo/.github/workflows/release.yml@refs/tags/$tag"`) ||
+		strings.Contains(string(b), "identity-regexp") {
+		t.Error("scripts/lockhttp does not bind cosign to the exact tag")
 	}
 }

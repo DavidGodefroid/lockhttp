@@ -62,6 +62,8 @@ if [ -t 0 ] && [ -t 1 ]; then tty=-it; fi
 # account, the volumes, the image and its command).
 docker_run() {
 	command -v docker >/dev/null 2>&1 || die "docker is required: lockhttp runs in Docker (docs/docker.md)"
+	# LOCKHTTP_DOCKER_ARGS is split on spaces, never globbed.
+	set -f
 	# shellcheck disable=SC2086 # LOCKHTTP_DOCKER_ARGS is split on purpose
 	exec docker run --rm ${LOCKHTTP_DOCKER_ARGS:-} "$@"
 }
@@ -95,14 +97,26 @@ flag_value() {
 	done
 }
 
-# The release workflow run for a version tag, as scripts/install.sh checks it.
-identity='^https://github\.com/DavidGodefroid/lockhttp/\.github/workflows/release\.yml@refs/tags/v[0-9]'
+# check_tag TAG: TAG is a release tag (it goes into URLs and into the
+# launcher's text).
+check_tag() {
+	printf '%s\n' "$1" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?' ||
+		die "invalid version $1: a release tag, vX.Y.Z"
+}
+
+# mountable PATH: PATH can be a docker -v source and target, which ":"
+# separates.
+mountable() {
+	case "$1" in
+	*:*) die "$1 holds a \":\", which docker -v cannot mount: move or rename it" ;;
+	esac
+}
 
 # verified_digest TAG: the digest of the release image registry:TAG, once
 # cosign verifies its signature by the release workflow; empty when it does
 # not verify.
 verified_digest() {
-	cosign verify --certificate-identity-regexp "$identity" \
+	cosign verify --certificate-identity "$identity" \
 		--certificate-oidc-issuer https://token.actions.githubusercontent.com \
 		"$registry:$1" 2>/dev/null |
 		sed -n 's/.*"docker-manifest-digest":"\(sha256:[0-9a-f]\{64\}\)".*/\1/p' | sed -n 1p
@@ -112,6 +126,9 @@ verified_digest() {
 # signature of checksums.txt and the archive's checksum checked, as
 # scripts/install.sh does), then pull that release's image.
 update() {
+	if [ -n "${1:-}" ]; then
+		case "$1" in v*) check_tag "$1" ;; *) check_tag "v$1" ;; esac
+	fi
 	if command -v curl >/dev/null 2>&1; then
 		fetch() { curl -fsSL -o "$2" "$1"; }
 	elif command -v wget >/dev/null 2>&1; then
@@ -144,7 +161,12 @@ update() {
 		esac
 	fi
 	case "$tag" in v*) ;; *) tag="v$tag" ;; esac
+	check_tag "$tag"
 	version="${tag#v}"
+	# The release workflow run for this very tag, as scripts/install.sh
+	# checks it: a tag moved to an older release's signed files does not
+	# verify.
+	identity="https://github.com/$repo/.github/workflows/release.yml@refs/tags/$tag"
 	if [ "$version" = "$launcher_version" ]; then
 		say "the launcher is already $tag"
 	else
@@ -160,7 +182,7 @@ update() {
 			fetch "$base/checksums.txt.sigstore.json" "$tmp/checksums.txt.sigstore.json" ||
 				die "download failed: checksums.txt.sigstore.json"
 			cosign verify-blob --bundle "$tmp/checksums.txt.sigstore.json" \
-				--certificate-identity-regexp "$identity" \
+				--certificate-identity "$identity" \
 				--certificate-oidc-issuer https://token.actions.githubusercontent.com \
 				"$tmp/checksums.txt" >/dev/null 2>&1 || die "cosign: signature of checksums.txt does not verify"
 			say "cosign: checksums.txt signature verified"
@@ -209,6 +231,10 @@ update() {
 	exec docker pull "$image"
 }
 
+# Every container is confined: no capability, no privilege gain, a
+# read-only root with a small /tmp, bounded processes and memory. The
+# volumes stay writable.
+confine="--cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m --pids-limit 256 --memory 1g"
 home="-v lockhttp-home:/home/lockhttp"
 run="-v lockhttp-run:/run/lockhttp"
 
@@ -231,28 +257,30 @@ console)
 	# No log driver: docker's json-file log would keep every approval
 	# screen (masked previews included) for anyone who runs docker logs.
 	# shellcheck disable=SC2086 # $run and $home are two words each
-	docker_run "$tty" --name lockhttp-console --log-driver none --user lockhttp $run $home "$image" "$@"
+	docker_run "$tty" --name lockhttp-console --log-driver none --user lockhttp $confine $run $home "$image" "$@"
 	;;
 init | policy)
 	# shellcheck disable=SC2086
-	docker_run "$tty" --user lockhttp $home "$image" "$@"
+	docker_run "$tty" --user lockhttp $confine $home "$image" "$@"
 	;;
 doctor)
 	# shellcheck disable=SC2086
-	docker_run "$tty" --user lockhttp $home "$image" "$@"
+	docker_run "$tty" --user lockhttp $confine $home "$image" "$@"
 	;;
 gate)
 	shift
 	has_flag --listen "$@" || set -- --listen 0.0.0.0:3130 "$@"
 	# shellcheck disable=SC2086
-	docker_run "$tty" --name lockhttp-gate --user gate $run -p "${LOCKHTTP_PUBLISH:-127.0.0.1:3130}:3130" "$image" gate "$@"
+	docker_run "$tty" --name lockhttp-gate --user gate $confine $run -p "${LOCKHTTP_PUBLISH:-127.0.0.1:3130}:3130" "$image" gate "$@"
 	;;
 signer)
-	docker_run "$tty" --user signer -v lockhttp-signer:/run/lockhttp-signer "$image" "$@"
+	# shellcheck disable=SC2086
+	docker_run "$tty" --user signer $confine -v lockhttp-signer:/run/lockhttp-signer "$image" "$@"
 	;;
 ca)
 	dir="$(flag_value --dir "$@")"
 	[ -n "$dir" ] || die "lockhttp ca init --dir DIR: name the directory"
+	mountable "$dir"
 	mkdir -p -m 0700 "$dir"
 	dir="$(cd "$dir" && pwd -P)"
 	# The CA is named after this machine, not the throwaway container.
@@ -274,7 +302,9 @@ ca)
 		*) set -- "$@" "$a" ;;
 		esac
 	done
-	docker_run "$tty" --user "$(id -u):$(id -g)" -v "$dir:$dir" "$image" "$@"
+	mountable "$dir"
+	# shellcheck disable=SC2086
+	docker_run "$tty" --user "$(id -u):$(id -g)" $confine -v "$dir:$dir" "$image" "$@"
 	;;
 *)
 	docker_run "$tty" "$image" "$@"

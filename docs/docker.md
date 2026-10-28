@@ -59,7 +59,13 @@ use, so `lockhttp-run` is `2710 lockhttp:lockhttp-clients` and
 ## Subcommand → `docker run`
 
 Every run is `docker run --rm $LOCKHTTP_DOCKER_ARGS ... IMAGE ...`, with
-`-it` when stdin and stdout are terminals, else `-i`:
+`-it` when stdin and stdout are terminals, else `-i`.
+`LOCKHTTP_DOCKER_ARGS` is split on spaces and never globbed. Every container
+the launcher starts (but `version` and `help`) is confined: `--cap-drop ALL
+--security-opt no-new-privileges --read-only --tmpfs
+/tmp:rw,nosuid,nodev,noexec,size=64m --pids-limit 256 --memory 1g`; the
+volumes stay writable. A path holding `:` (which `docker -v` cannot mount) is
+refused.
 
 | Subcommand | Account | `docker run` arguments | Why |
 |---|---|---|---|
@@ -90,7 +96,10 @@ image_digest=sha256:...   # ghcr.io/davidgodefroid/lockhttp:X.Y.Z
 ```
 
 The digest comes from `cosign verify` of the image against the release
-workflow identity (the same one as for `checksums.txt`,
+workflow run **for that very tag**
+(`https://github.com/DavidGodefroid/lockhttp/.github/workflows/release.yml@refs/tags/vX.Y.Z`,
+`--certificate-identity`, never a regular expression: a tag moved onto an
+older release's signed files does not verify), the same check as for `checksums.txt` (
 [SECURITY.md](../SECURITY.md#verifying-the-image)), so the launcher runs
 `ghcr.io/davidgodefroid/lockhttp@sha256:...`, never a tag that could move.
 With `LOCKHTTP_SKIP_COSIGN=1` nothing is verified: `image_digest` stays
@@ -125,6 +134,8 @@ LOCKHTTP_VERSION=$V sh install.sh
 
 `scripts/install.sh` and `lockhttp update [vX.Y.Z]` do the same steps:
 
+0. check that the version is a release tag (`vX.Y.Z[-pre]`): it goes into
+   URLs and into the launcher's text;
 1. download the release archive for this OS and architecture,
    `checksums.txt` and its sigstore bundle;
 2. `cosign verify-blob` the bundle against the release workflow identity,
