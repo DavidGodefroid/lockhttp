@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Security model — lockhttp</title>
+  <meta name="description" content="lockhttp's security model: requirements, threats and answers, audit.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://lockhttp.com/security/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="lockhttp">
+  <meta property="og:title" content="Security model — lockhttp">
+  <meta property="og:description" content="lockhttp's security model: requirements, threats and answers, audit.">
+  <meta property="og:url" content="https://lockhttp.com/security/">
+  <meta property="og:image" content="https://lockhttp.com/assets/og.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="lockhttp — Your AI browses. You hold the key.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Security model — lockhttp">
+  <meta name="twitter:description" content="lockhttp's security model: requirements, threats and answers, audit.">
+  <meta name="twitter:image" content="https://lockhttp.com/assets/og.png">
+  <meta name="twitter:image:alt" content="lockhttp — Your AI browses. You hold the key.">
+  <link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/anchors.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="32" height="32"><span class="wordmark">lock<span>http</span></span></a>
+      <nav class="site-nav" aria-label="Main">
+        <ul>
+          <li><a href="../">Home</a></li>
+          <li><a href="../install/">Install</a></li>
+          <li><a href="../how-it-works/">How it works</a></li>
+          <li><a href="../security/" aria-current="page">Security</a></li>
+          <li><a href="../faq/">FAQ</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp">GitHub</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main id="main" tabindex="-1">
+    <div class="wrap">
+<h1>Security model</h1>
+<div class="prose">
+  <p class="lead">The gate enforces; the human decides; the agent can neither reach the console nor change the policy.</p>
+</div>
+
+<div class="notice" role="note"><p><strong>Pre-release, under construction.</strong> lockhttp <code>v0.1.0</code> is being built now. This site describes its design as recorded in <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a> and <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>; command names are fixed, flags may still move. Phase 2 features (TLS decryption) are marked as such.</p></div>
+
+<section aria-labelledby="requirements">
+  <h2 id="requirements">Non-negotiable requirements</h2>
+  <ul class="cards">
+    <li><h3>Console on the host</h3><p>In its own account (<code>lockhttp</code>) and login session. lockkit refuses a console in the agent’s account or in a container.</p></li>
+    <li><h3>NeverAuto by default</h3><p>Only an approved <code>auto</code> rule, scoped to a container, can be answered by auto mode, and the console re-checks the rule against its own approved policy first.</p></li>
+    <li><h3>Identical fingerprint</h3><p>One human decision covers only requests with the same container, method, URL, significant headers and normalised body.</p></li>
+    <li><h3>Claude API allowlist</h3><p>Once TLS is decrypted, <code>mcp_servers</code>, server tools other than <code>web_search</code>, files and foreign credentials never pass without a human.</p></li>
+    <li><h3>Fail closed</h3><p>No console, an unknown source, an unreadable source map, a policy that does not decode: ASK is refused, errors deny.</p></li>
+  </ul>
+</section>
+
+<section aria-labelledby="threats">
+  <h2 id="threats">Threats and answers</h2>
+  <p class="prose">Assets: the project’s and the host’s data, credentials, and actions taken online in your name. Attackers: the agent itself (prompt injection, drift) and hostile web content. Out of scope: a compromised host, Anthropic, a network attacker upstream.</p>
+  <div class="table-wrap" role="region" aria-label="Threat model" tabindex="0">
+  <table>
+  <thead><tr><th scope="col">Threat</th><th scope="col">Answer</th><th scope="col">What remains</th></tr></thead>
+  <tbody>
+  <tr><th scope="row">Going around the proxy</th><td>Agents sit on internal networks; squid listens on loopback; the gate refuses its egress interface.</td><td>Rootless Podman without an isolated gateway: covered by a blocking isolation test in lea.</td></tr>
+  <tr><th scope="row">DNS, DoH, IP literals</th><td>Non-forwarding DNS in lea; the network floor; no UDP.</td><td>IP literals of declared internal hosts.</td></tr>
+  <tr><th scope="row">Writing to a trusted host</th><td>A write asks, even on a trusted host.</td><td>Phase 1 sees only the host; the screen says “reads and writes”.</td></tr>
+  <tr><th scope="row">Exfiltration in a GET</th><td>Decryption and heuristics (phase 2, after calibration).</td><td>Slow, low-bandwidth channels; spliced hosts.</td></tr>
+  <tr><th scope="row">The Claude API as a relay</th><td>Path and parameter allowlist (phase 2).</td><td>Phase 1 decides on the exact host only.</td></tr>
+  <tr><th scope="row">Approval fatigue</th><td>Auto rules you approved; identical requests grouped; shadow mode to tune first.</td><td>The human factor.</td></tr>
+  <tr><th scope="row">The agent edits the policy</th><td>The policy lives with the console; loosening needs your review; project files are ignored.</td><td>—</td></tr>
+  <tr><th scope="row">A compromised gate</th><td>Own uid, never root; no decision authority over ASK; the CA key in a separate signer.</td><td>FREE traffic.</td></tr>
+  <tr><th scope="row">Agent impersonation</th><td>Rules apply to containers, never to agents; the agent name is audit only.</td><td>Attribution between agents of one container.</td></tr>
+  <tr><th scope="row">Prompt injection through the screen</th><td>Terminal sanitising; the agent’s stated intent is marked untrusted.</td><td>—</td></tr>
+  <tr><th scope="row">No console</th><td>ASK refused at once; FREE on the last approved policy.</td><td>Reduced availability, on purpose.</td></tr>
+  </tbody>
+  </table>
+  </div>
+</section>
+
+<section aria-labelledby="audit">
+  <h2 id="audit">Audit</h2>
+  <div class="prose">
+    <p>The gate writes FREE and DENY to a daily JSONL file, kept 30 days; the console writes every ASK to its audit log. Both carry the same <code>request_id</code>, the container, the declared agent and how it was attributed. The audit never holds a body or a secret.</p>
+    <p>The container is known for sure (one internal network per container). The agent is an attribution, not an authentication: agents of one container share a uid.</p>
+  </div>
+</section>
+
+<section aria-labelledby="report">
+  <h2 id="report">Report a vulnerability</h2>
+  <p class="prose">Please do not open a public issue. Until the repository publishes its <code>SECURITY.md</code> with <code>v0.1.0</code>, contact the maintainer privately through <a href="https://github.com/DavidGodefroid">GitHub</a>.</p>
+</section>
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap">
+      <ul>
+        <li><a href="https://github.com/DavidGodefroid/lockhttp">Source on GitHub</a></li>
+        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/README.md">README</a></li>
+        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">lea integration contract</a></li>
+        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">Design decisions</a></li>
+        <li><a href="https://lockfamily.dev/">The Lock family</a></li>
+      </ul>
+      <p>Under construction: the first pre-release, <code>v0.1.0</code>, is in progress. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+    </div>
+  </footer>
+</body>
+</html>

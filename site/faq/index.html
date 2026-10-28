@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FAQ — lockhttp</title>
+  <meta name="description" content="Frequently asked questions about lockhttp.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://lockhttp.com/faq/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="lockhttp">
+  <meta property="og:title" content="FAQ — lockhttp">
+  <meta property="og:description" content="Frequently asked questions about lockhttp.">
+  <meta property="og:url" content="https://lockhttp.com/faq/">
+  <meta property="og:image" content="https://lockhttp.com/assets/og.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="lockhttp — Your AI browses. You hold the key.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="FAQ — lockhttp">
+  <meta name="twitter:description" content="Frequently asked questions about lockhttp.">
+  <meta name="twitter:image" content="https://lockhttp.com/assets/og.png">
+  <meta name="twitter:image:alt" content="lockhttp — Your AI browses. You hold the key.">
+  <link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/anchors.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="32" height="32"><span class="wordmark">lock<span>http</span></span></a>
+      <nav class="site-nav" aria-label="Main">
+        <ul>
+          <li><a href="../">Home</a></li>
+          <li><a href="../install/">Install</a></li>
+          <li><a href="../how-it-works/">How it works</a></li>
+          <li><a href="../security/">Security</a></li>
+          <li><a href="../faq/" aria-current="page">FAQ</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp">GitHub</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main id="main" tabindex="-1">
+    <div class="wrap">
+<h1>FAQ</h1>
+<div class="notice" role="note"><p><strong>Pre-release, under construction.</strong> lockhttp <code>v0.1.0</code> is being built now. This site describes its design as recorded in <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a> and <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>; command names are fixed, flags may still move. Phase 2 features (TLS decryption) are marked as such.</p></div>
+<div class="prose">
+<h3>Is lockhttp ready to use?</h3>
+<p>Not yet. <code>v0.1.0</code>, the first pre-release, is being built. This site follows the recorded design; anything marked phase 2 comes after it.</p>
+
+<h3>Do I need lea?</h3>
+<p>Yes, for now. lockhttp relies on lea’s topology: each agent container on its own internal network, a proxy container as the only way out, and a source map naming the container behind each address. The gate is a plain HTTP(S) proxy, but the guarantee comes from that topology.</p>
+
+<h3>Why not a simple domain allowlist?</h3>
+<p>Because an allowed domain is allowed for reads and writes. lockhttp keeps reads of trusted hosts free and stops writes, uploads and unknown hosts for a human, with a trace of who asked.</p>
+
+<h3>What happens when nobody watches the console?</h3>
+<p>Requests that need a human are held 60 s, then refused with <code>E_PENDING</code>; the item stays on the console and the same request goes through once you approve it. With no console at all, they are refused at once with <code>E_NO_CONSOLE</code>, while trusted reads continue.</p>
+
+<h3>Does lockhttp decrypt my traffic?</h3>
+<p>Not in phase 1: it decides on the host name and port (CONNECT and SNI). Phase 2 adds TLS decryption with a CA generated per installation, trusted only inside lea’s containers; its key stays in a separate signer process. Hosts that pin their certificates go in a splice list and stay decided at the domain.</p>
+
+<h3>Can the agent approve its own request?</h3>
+<p>No. Approvals happen only in the console, on the host, in another account and session. lea’s deck shows a counter of pending requests, never an approve button.</p>
+
+<h3>Can I let some requests through without asking?</h3>
+<p>Yes: a <code>free</code> rule, or an <code>auto</code> rule that auto mode may answer. Both are written and confirmed by you, scoped to a container or to all, and some classes (uploads, messaging, publishing, pushes) can never be <code>auto</code>.</p>
+
+<h3>Is there an MCP server?</h3>
+<p>No, not in <code>v0.1.0</code>. Agents meet lockhttp as a proxy; its refusal pages tell them what to ask of you.</p>
+
+<h3>Which licence?</h3>
+<p>Apache 2.0, like the rest of the Lock family.</p>
+
+</div>
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap">
+      <ul>
+        <li><a href="https://github.com/DavidGodefroid/lockhttp">Source on GitHub</a></li>
+        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/README.md">README</a></li>
+        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">lea integration contract</a></li>
+        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">Design decisions</a></li>
+        <li><a href="https://lockfamily.dev/">The Lock family</a></li>
+      </ul>
+      <p>Under construction: the first pre-release, <code>v0.1.0</code>, is in progress. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+    </div>
+  </footer>
+</body>
+</html>

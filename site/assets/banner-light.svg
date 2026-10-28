@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 180" width="720" height="180" role="img" aria-label="lockhttp — Your AI browses. You hold the key.">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22C55E"/><stop offset="1" stop-color="#15803D"/></linearGradient>
+    <linearGradient id="shackle" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5EEAD4"/><stop offset="1" stop-color="#14B8A6"/></linearGradient>
+    <clipPath id="globe"><circle cx="64" cy="84" r="38"/></clipPath>
+  </defs>
+  <g transform="translate(16 20)">
+    <path d="M42 60 V38 a22 22 0 0 1 44 0 V60" fill="none" stroke="url(#shackle)" stroke-width="11" stroke-linecap="round"/>
+    <circle cx="64" cy="84" r="38" fill="url(#body)"/>
+    <g clip-path="url(#globe)" fill="none" stroke="#DCFCE7" stroke-opacity=".55" stroke-width="2.5"><ellipse cx="64" cy="84" rx="17" ry="38"/><path d="M24 64 Q64 74 104 64"/><path d="M24 104 Q64 114 104 104"/></g>
+    <circle cx="64" cy="80" r="7" fill="#0F172A"/>
+    <path d="M60.5 83 L58.5 96 H69.5 L67.5 83 Z" fill="#0F172A"/>
+  </g>
+  <text x="168" y="104" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="68" font-weight="700" fill="#0F172A" letter-spacing="-1">lock<tspan fill="#16A34A">http</tspan></text>
+  <text x="172" y="140" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" fill="#475569">Your AI browses. <tspan fill="#14B8A6" font-weight="600">You hold the key.</tspan></text>
+</svg>
