@@ -36,8 +36,8 @@
 LockHTTP is the proxy every outbound HTTP(S) request of an AI agent goes
 through. Reads of hosts you trust pass. Anything that sends data, triggers an
 action or reaches an unknown host waits for **your** approval, in a console
-that runs on the host under its own account, where the agent cannot reach
-it. Every decision is traced to the container, the agent and the session
+that runs in its own container under its own account, where the agent
+cannot reach it. Every decision is traced to the container, the agent and the session
 that asked.
 
 > [!NOTE]
@@ -67,23 +67,23 @@ LockHTTP moves the decision out of the agent and onto the network path:
 
 ## How it works
 
-Three pieces, in three places. Only the console decides what needs a human,
-and only the human answers.
+Three pieces, each in a container of its own. Only the console decides what
+needs a human, and only the human answers.
 
 ```
  agent container  (internal network only, no route out)
    HTTP(S)_PROXY=http://<agent>:<token>@lea-proxy:3130
           │
           ▼
- proxy container
-   lockhttp gate :3130   (uid 10003, never root)  ──▶  squid 127.0.0.1:3128  ──▶  Internet
-   lockhttp signer       (uid 10004, holds the CA key; only with decryption)
-          │  Unix socket /run/lockhttp/user-<profile>.sock
-          │  (bind-mounted in the proxy container only; peer uid checked by the kernel)
+ gate container   (shares the proxy container's network)
+   lockhttp gate :3130   (uid 10003 "gate", never root)  ──▶  squid 127.0.0.1:3128  ──▶  Internet
+   lockhttp signer       (its own container, uid 10004, holds the CA key; only with decryption)
+          │  volume lockhttp-run: /run/lockhttp/user-<profile>.sock
+          │  (gate and console only; peer uid checked by the kernel)
           ▼
- host
-   lockhttp console      (account "lockhttp", its own login session, your terminal)
-     reads the policy file · shows approval screens · audits
+ console container  "lockhttp-console"   (lockhttp console, your terminal)
+   uid 10021 "lockhttp" · volume lockhttp-home: the policy, the approved policy, the audit
+   shows approval screens · serves the approved policy to the gate
 ```
 
 1. The agent's HTTP client sends every request to the **gate**, a Go
@@ -126,46 +126,42 @@ the same URL with another body is a separate screen.
 
 ## Quick start with lea
 
-[lea](https://github.com/DavidGodefroid/lea) runs the gate in its proxy
+LockHTTP runs in Docker: nothing on your machine but Docker and the
+`lockhttp` launcher, which runs every command in the image
+`ghcr.io/davidgodefroid/lockhttp`, each as the account it needs.
+[lea](https://github.com/DavidGodefroid/lea) runs the gate beside its proxy
 container when `LEA_LOCKHTTP=1`. The contract between the two (files,
 mounts, uids, network rules) is in [docs/lea.md](docs/lea.md).
 
 ```sh
-# 1. Install the binary (see Install), then separate the console from lea's account
-sudo lockhttp install --client "$USER" --gate-uid 10003            # Docker rootful
-sudo lockhttp install --client "$USER" --gate-uid 10003 --rootless # rootless Podman
-sudo passwd lockhttp
+# 1. Install the launcher (see Install)
+V=vX.Y.Z
+curl -fsSLO "https://raw.githubusercontent.com/DavidGodefroid/lockhttp/$V/scripts/install.sh"
+less install.sh && LOCKHTTP_VERSION=$V sh install.sh
 
-# 2. Log in as "lockhttp" in its own session (switch user), then:
-lockhttp init --trusted "<LEA_EGRESS_ALLOW>"  # the policy; lea's allowlist as trusted reads
-lockhttp console                               # keep it open: it asks you
+# 2. The policy (lea's allowlist as trusted reads), then the console
+lockhttp init --trusted "<LEA_EGRESS_ALLOW>"
+lockhttp console                               # in a terminal you keep in view
 
-# 3. Back in your session: start lea with LockHTTP on
+# 3. In another terminal: start lea with LockHTTP on
 export LEA_LOCKHTTP=1
-lockhttp doctor                                # as lockhttp: setup, policy, CA
 ```
 
-`--gate-uid` is the gate's uid inside the proxy container. The console
-authenticates the gate by the uid the host kernel reports, so under rootless
-Podman `--rootless` maps it through `/etc/subuid`.
+The console runs as the `lockhttp` account (uid 10021) in the container
+`lockhttp-console`, the only one with the policy volume `lockhttp-home`.
+lea's gate runs as `gate` (uid 10003) in a container of its own and shares
+only the socket volume `lockhttp-run` with the console.
 
 ## Quick start standalone (one host)
 
-Without lea, the gate runs on the host, as **another account than the
-console's** (it refuses to run as root). Every connection is attributed to
-the container `local`.
+Without lea, the gate runs in its own container and publishes
+`127.0.0.1:3130`. Every connection is attributed to the container `local`.
 
 ```sh
-# Once
-sudo lockhttp install --client "$USER"
-sudo passwd lockhttp
-
-# As "lockhttp", in its own login session
 lockhttp init
-lockhttp console
+lockhttp console           # in a terminal you keep in view
 
-# As you
-lockhttp gate --listen 127.0.0.1:3130 --audit-dir ~/.local/state/lockhttp-gate
+lockhttp gate              # in another terminal
 HTTPS_PROXY=http://127.0.0.1:3130 HTTP_PROXY=http://127.0.0.1:3130 your-agent
 ```
 
@@ -176,34 +172,48 @@ the agent's sole route to the network is the gate.
 
 ## Install
 
+LockHTTP runs in Docker. On the host, `scripts/install.sh` installs only the
+`lockhttp` launcher, a shell script that runs every command in the release's
+image (`ghcr.io/davidgodefroid/lockhttp:X.Y.Z`, amd64 and arm64). Download
+the script from the release you install, read it, then run it:
+
 ```sh
-V=v0.1.0
+V=vX.Y.Z
 curl -fsSLO "https://raw.githubusercontent.com/DavidGodefroid/lockhttp/$V/scripts/install.sh"
 less install.sh
 LOCKHTTP_VERSION=$V sh install.sh
 ```
 
-`scripts/install.sh` downloads the release archive for Linux or macOS
-(amd64, arm64), verifies the keyless cosign signature of `checksums.txt`
-against this repository's release workflow, checks the archive, and places
-`lockhttp` in `/usr/local/bin` (`LOCKHTTP_INSTALL_DIR` to change it). It
-refuses to install without cosign unless `LOCKHTTP_SKIP_COSIGN=1`.
+It verifies the keyless cosign signature of `checksums.txt` against this
+repository's release workflow, checks the archive, verifies the image's
+cosign signature and writes its digest into the launcher, which runs the
+image by that digest. The launcher lands in `/usr/local/bin`, root-owned
+(`LOCKHTTP_INSTALL_DIR` to change it). cosign is required unless
+`LOCKHTTP_SKIP_COSIGN=1`, which verifies nothing and runs the image by its
+tag. Linux (Docker Engine) and macOS (Docker Desktop); on Windows, WSL 2
+with Docker Desktop.
 
-Then, once per host:
-
-| Step | Command | What it does |
+| Command | Runs as | What it does |
 |---|---|---|
-| Separate the console | `sudo lockhttp install --client USER [--gate-uid 10003 [--rootless]]` | Creates the `lockhttp` account and the `lockhttp-clients` group (USER joins it), the socket directory `/run/lockhttp` (2710), `/etc/lockhttp/system.toml` (with the gate's uid in `allowed_uids`), and copies the binary to `/usr/local/bin`, root-owned. Prints the commands and asks before running them (`--print`, `--yes`). |
-| Write the policy | as `lockhttp`: `lockhttp init` | `~/.config/lockhttp/config.toml` of the console account, profile `default`. |
-| Run the console | as `lockhttp`, in its own session: `lockhttp console` | The approval console. It must run in a terminal. |
-| Check | `lockhttp doctor [--gate ADDR] [--ca-cert FILE]` | Separated setup, policy, CA, gate. |
+| `lockhttp init` | `lockhttp`, volume `lockhttp-home` | Writes the policy `~/.config/lockhttp/config.toml`, profile `default`. |
+| `lockhttp policy show\|edit\|path` | `lockhttp`, volume `lockhttp-home` | Prints, edits or locates the policy. |
+| `lockhttp console` | `lockhttp`, container `lockhttp-console` | The approval console. It must run in a terminal. |
+| `lockhttp gate` | `gate`, container `lockhttp-gate` | The proxy, for standalone use, published on `127.0.0.1:3130`. |
+| `lockhttp doctor [--gate ADDR] [--ca-cert FILE]` | `lockhttp` | Separated setup, policy, CA, gate. |
+| `lockhttp version`, `lockhttp update [vX.Y.Z]` | | The launcher's and the image's versions; a newer release's launcher, checked the same way, and its image. |
 
-Build from source: `CGO_ENABLED=0 go build ./cmd/lockhttp` (Go 1.26 or later).
+`LOCKHTTP_IMAGE` runs an image of your own (`docker build -t lockhttp .`
+from a clone), `LOCKHTTP_DOCKER_ARGS` adds `docker run` arguments. There is
+no host install: the image refuses `lockhttp install`. Coming from v0.1.0's
+`sudo lockhttp install`: [migrating from a host
+install](docs/docker.md#migrating-from-a-host-install).
 
 The demo above is generated by [`scripts/brand/demo.py`](scripts/brand/demo.py):
 `python3 scripts/brand/demo.py > site/assets/demo.svg`.
 
-Every command and flag: [docs/usage.md](docs/usage.md).
+Accounts, volumes, the exact `docker run` of each command, and what Docker
+does and does not separate: [docs/docker.md](docs/docker.md). Every command
+and flag: [docs/usage.md](docs/usage.md).
 
 ## Configuration
 
@@ -349,12 +359,15 @@ Duplicate keys, and keys that differ from `mcp_servers`, `tools` or
 The gate is the enforcement point on the network path; the console is the
 only place a human decision is made. In short:
 
-- **The console is on the host, in a separate account.** `lockhttp console`
-  runs as `lockhttp`, in its own login session; lockkit refuses a console in
-  the agent's account or in a container. Its socket is reachable only by
-  the `lockhttp-clients` group and the uids in `allowed_uids` (the gate's),
-  checked with the kernel's peer credentials, and it is bind-mounted in the
-  proxy container only, never in an agent's.
+- **The console is in its own container, under its own account.**
+  `lockhttp console` runs as `lockhttp` (uid 10021) in the container
+  `lockhttp-console`, without a log driver, the only container with the
+  policy volume `lockhttp-home`. Its socket is reachable only by the
+  `lockhttp-clients` group (the image's `gate` account), checked with the
+  kernel's peer credentials, and the socket volume `lockhttp-run` is mounted
+  in the gate's container only, never in an agent's. Anyone who can run
+  `docker` on the host can reach the console's container and volumes: keep
+  the agent away from the Docker socket.
 - **NeverAuto by default.** Every approval screen is `NeverAuto` unless the
   request matched an active rule with `verdict = "auto"`. Such a rule names
   a container or none, never an agent, and is refused on messaging hosts,
@@ -430,12 +443,13 @@ Website: [lockhttp.com](https://lockhttp.com).
 
 | | |
 |---|---|
+| [docs/docker.md](docs/docker.md) | the launcher, the image, its accounts and volumes, install, update, migrating from a host install |
 | [docs/usage.md](docs/usage.md) | every command and flag, exit codes, files |
 | [docs/policy.md](docs/policy.md) | the policy reference, evaluation order, shadow mode, loosenings |
 | [docs/security-model.md](docs/security-model.md) | threats, parades, residual risks |
 | [docs/lea.md](docs/lea.md) | the integration contract with lea |
 | [docs/decisions.md](docs/decisions.md) | design decisions of v0.1.0 |
-| [SECURITY.md](SECURITY.md) | reporting a vulnerability, verifying a release |
+| [SECURITY.md](SECURITY.md) | reporting a vulnerability, verifying a release and the image |
 | [CHANGELOG.md](CHANGELOG.md) | release notes |
 
 ## Licence

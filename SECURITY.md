@@ -1,8 +1,9 @@
 # Security policy
 
 LockHTTP is the proxy every outbound HTTP(S) request of an AI agent goes
-through. Its approval console runs on the host, in a separate account the
-agent cannot reach. A flaw in either is a security issue.
+through. It runs in Docker: its approval console runs in a container of its
+own, under a separate account, which the agent cannot reach. A flaw in
+either is a security issue.
 
 ## Reporting a vulnerability
 
@@ -15,7 +16,8 @@ vulnerability.
 
 Please include:
 
-- the lockhttp version (`lockhttp version`) and your OS;
+- the lockhttp version (`lockhttp version`: the launcher's and the image's)
+  and your OS and Docker version;
 - how the agent reaches the gate (container, HTTP client), if relevant;
 - the steps or input needed to reproduce the issue, and its impact.
 
@@ -56,9 +58,9 @@ been reported privately as above.
 
 ## Verifying a release
 
-Each release's `checksums.txt` covers its archives and Linux packages, and is
-signed keylessly by `.github/workflows/release.yml` run for the release's tag.
-Check the signature against that workflow and a version tag, not any
+Each release's `checksums.txt` covers its archives, and is signed keylessly
+by `.github/workflows/release.yml` run for the release's tag. Check the
+signature against that workflow and a version tag, not any
 workflow of the repository, then the file you downloaded against
 `checksums.txt`:
 
@@ -70,8 +72,28 @@ cosign verify-blob --bundle checksums.txt.sigstore.json \
 sha256sum -c --ignore-missing checksums.txt
 ```
 
-`scripts/install.sh` runs the same check and refuses to install without
-cosign (`LOCKHTTP_SKIP_COSIGN=1` is its explicit way past it).
+`scripts/install.sh` and the launcher's `lockhttp update` run the same check
+and refuse to install without cosign (`LOCKHTTP_SKIP_COSIGN=1` is their
+explicit way past it).
+
+## Verifying the image
+
+The release image, `ghcr.io/davidgodefroid/lockhttp:X.Y.Z` (amd64 and
+arm64, one manifest), is signed with cosign, keylessly and by digest, by the
+same workflow run for the release's tag. `install.sh` and `lockhttp update`
+verify it and write its digest into the launcher (`image_digest=`), which
+runs the image by that digest, never by its tag. By hand:
+
+```sh
+cosign verify ghcr.io/davidgodefroid/lockhttp:X.Y.Z \
+  --certificate-identity-regexp '^https://github\.com/DavidGodefroid/lockhttp/\.github/workflows/release\.yml@refs/tags/v[0-9]' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+The `docker-manifest-digest` it prints is the digest to run
+(`ghcr.io/davidgodefroid/lockhttp@sha256:...`), and the one lea pins for the
+gate and the signer. With `LOCKHTTP_SKIP_COSIGN=1` the image is not verified
+and the launcher runs it by its tag.
 
 The actions the workflows run are pinned to full commit SHAs, and the
 release job pins the versions of GoReleaser, cosign and syft.

@@ -59,7 +59,7 @@
 <section aria-labelledby="requirements">
   <h2 id="requirements">Non-negotiable requirements</h2>
   <ul class="cards">
-    <li><h3>Console on the host</h3><p>In its own account (<code>lockhttp</code>) and login session. lockkit refuses a console in the agent’s account or in a container.</p></li>
+    <li><h3>Console in its own container</h3><p>Under its own account (<code>lockhttp</code>), the only container with the policy volume. The agent gets neither its socket nor the Docker socket.</p></li>
     <li><h3>NeverAuto by default</h3><p>Only an approved <code>auto</code> rule, scoped to a container, can be answered by auto mode, and the console re-checks the rule against its own approved policy first.</p></li>
     <li><h3>Identical fingerprint</h3><p>One human decision covers only requests with the same container, method, URL, significant headers and normalised body.</p></li>
     <li><h3>Claude API allowlist</h3><p>Once TLS is decrypted, <code>mcp_servers</code>, server tools other than <code>web_search</code>, files and foreign credentials never pass without a human.</p></li>

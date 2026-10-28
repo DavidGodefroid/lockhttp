@@ -1,20 +1,33 @@
 # Using LockHTTP
 
-This page lists every `lockhttp` command and flag of v0.1.0, as the code
-defines them. For the policy file, see [policy.md](policy.md); for the lea
-integration, [lea.md](lea.md).
+This page lists every `lockhttp` command and flag, as the code defines
+them. For the policy file, see [policy.md](policy.md); for the lea
+integration, [lea.md](lea.md); for the image, its accounts and volumes,
+[docker.md](docker.md).
 
 ```
 lockhttp <command> [arguments]
 ```
 
-| Where it runs | Commands |
-|---|---|
-| Host, as root (once) | `install` |
-| Host, as the console account (`lockhttp`) | `init`, `console`, `doctor` |
-| Host (lea) or anywhere the CA is kept | `ca init` |
-| Proxy container (lea), or the host as another account than the console's | `gate`, `signer` |
-| Anywhere | `version`, `help` |
+lockhttp runs in Docker. On the host, `lockhttp` is the launcher
+([`scripts/lockhttp`](../scripts/lockhttp)): it runs each command in the
+image, as the account it needs ([docker.md](docker.md#subcommand--docker-run)).
+
+| Command | Runs as | Volumes |
+|---|---|---|
+| `console` | the console account `lockhttp` (uid 10021), in the container `lockhttp-console`, no log driver | `lockhttp-run`, `lockhttp-home` |
+| `init`, `policy` | `lockhttp` | `lockhttp-home` |
+| `doctor` | `lockhttp` | `lockhttp-home` |
+| `gate` | `gate` (uid 10003, in `lockhttp-clients`), in the container `lockhttp-gate`, port published on `127.0.0.1:3130` | `lockhttp-run` |
+| `signer` | `signer` (uid 10004) | `lockhttp-signer` |
+| `ca init` | you (your uid and gid) | the `--dir` directory, at its own path |
+| `version`, `help` | `gate` (the image's default) | none |
+| `update` | the launcher itself, on the host | |
+
+lea does not use the launcher for the gate and the signer: it runs them
+from the same image beside its proxy container ([lea.md](lea.md)). A path
+given to a command is a path inside its container: only `ca init` mounts a
+host directory; `LOCKHTTP_DOCKER_ARGS` adds mounts for the others.
 
 Flags use Go's syntax: `-flag value`, `--flag value` or `--flag=value`.
 Positional arguments are refused.
@@ -28,40 +41,12 @@ Positional arguments are refused.
 | 2 | reserved ("no console" in the other Lock family tools; not used) |
 | 3 | usage or configuration error |
 
-## `lockhttp install`
+## `lockhttp install`, `lockhttp setup`
 
-```
-lockhttp install [--client USER] [--gate-uid N [--rootless]] [--user lockhttp]
-                 [--group lockhttp-clients] [--print] [--trust-binary] [--yes]
-```
-
-The one-time setup that separates the console from the agent. It prints the
-shell script it will run as root, then asks `Run them now with sudo? [y/N]`.
-
-| Flag | Default | Meaning |
-|---|---|---|
-| `--client USER` | `$SUDO_USER`, else the current user | The account the agents (lea) run as. It joins the clients group. Must differ from `--user`. |
-| `--user NAME` | `lockhttp` | The console account to create. |
-| `--group NAME` | `lockhttp-clients` | The group allowed to reach the console's socket directory. |
-| `--gate-uid N` | none | The gate's uid inside lea's proxy container (lea uses `10003`). Written to `allowed_uids` in `/etc/lockhttp/system.toml`. `0` is refused. |
-| `--rootless` | off | The proxy container runs under rootless Podman: `--gate-uid` is mapped through `/etc/subuid` for `--client` (uid `n` ≥ 1 becomes `subuid_start + n - 1`). Requires `--gate-uid`. |
-| `--print` | off | Print the commands, do not run them. |
-| `--trust-binary` | off | Copy this binary even when an account other than root could change it (its sha256 is checked again by the root script). Without it, such a binary is refused. |
-| `--yes` | off | Run the commands without asking. Without a terminal, `--print` or `--yes` is required. |
-
-On Linux the script creates the console account (home, `/bin/bash`), the
-clients group with `--client` in it, `/etc/lockhttp/system.toml`, the
-socket directory `/run/lockhttp` (`2710 lockhttp:lockhttp-clients`, through
-`/etc/tmpfiles.d/lockhttp.conf`), and copies the binary to
-`/usr/local/bin/lockhttp`, owned by root. On another OS the commands are
-printed, to be run as an administrator.
-
-Then:
-
-1. `sudo passwd lockhttp`
-2. log in as `lockhttp` in its own session (switch user), then
-   `lockhttp init` and `lockhttp console`;
-3. start the gate (lea does it with `LEA_LOCKHTTP=1`), then `lockhttp doctor`.
+Refused (exit 3): lockhttp runs in Docker and there is nothing to install
+on the host. Install the launcher with `scripts/install.sh`
+([docker.md](docker.md#install-and-update)); a former host install is
+removed as in [Migrating from a host install](docker.md#migrating-from-a-host-install).
 
 ## `lockhttp init`
 
@@ -69,7 +54,8 @@ Then:
 lockhttp init [--profile P] [--config FILE] [--trusted "a.com .corp.example"] [--force]
 ```
 
-Writes the policy file, as the console account.
+Writes the policy file, as the console account, in its home volume
+(`lockhttp-home`).
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -84,6 +70,29 @@ initial trusted set (Go, Python, npm, Node, MDN, Docker, Kubernetes, man7,
 `docs.anthropic.com`, GitHub, crates.io, Debian, Ubuntu, Alpine) plus the
 `--trusted` hosts, empty `splice` and `deny` lists, and a commented rule
 example. It is written `0600` in a `0700` directory, after being parsed.
+It then prints `next: lockhttp console --profile P`.
+
+## `lockhttp policy`
+
+```
+lockhttp policy show | edit | path [--config FILE]
+```
+
+The console account's policy file, in its home volume. The subcommand comes
+first, then the flag.
+
+| Subcommand | Effect |
+|---|---|
+| `show` | Prints the file. |
+| `edit` | Opens the file in `$EDITOR` (`vi` when unset) in the container, then parses every profile in it. A file that does not parse exits 3, and the console keeps the approved policy until it does; otherwise it prints `saved: the console shows any loosening for approval (:review)`. |
+| `path` | Prints the file's path (`/home/lockhttp/.config/lockhttp/config.toml` in the image). |
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--config FILE` | `~/.config/lockhttp/config.toml` | The policy file. |
+
+`show` and `edit` exit 1 when the file does not exist (`create it with:
+lockhttp init`).
 
 ## `lockhttp console`
 
@@ -92,8 +101,9 @@ lockhttp console [--profile P] [--config FILE] [--auto]
 ```
 
 The approval console: lockkit's console, serving `http.approve` and
-`policy.get` to the gate. It must run in a terminal, as the console account,
-in its own login session (lockkit's isolation checks refuse other shapes).
+`policy.get` to the gate. It must run in a terminal (exit 3 otherwise), as
+the console account: the launcher runs it in the container
+`lockhttp-console`, the only one that mounts `lockhttp-home`.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -152,11 +162,15 @@ Checks the setup and prints one line per check. Exit 1 when a check fails.
 | `--ca-cert FILE` | none | CA certificate to check (fails under 7 days of validity). Without it, the doctor warns that decryption is off. |
 | `--gate ADDR` | none | Gate address to dial (for example `127.0.0.1:3130`). |
 
-It checks the separated setup (`/etc/lockhttp/system.toml`, `allowed_uids`),
-whether the running binary is root-owned, the policy (parse, mode,
-heuristics, counts; a warning in shadow mode), the CA and the gate. Run it
-as the console account to check the policy, which other accounts cannot
-read.
+It checks the separated setup (the image's `/etc/lockhttp/system.toml`, and
+`allowed_uids` when set), the policy (parse, mode, heuristics, counts; a
+warning in shadow mode), the CA and the gate. The launcher runs it as the
+console account, which alone can read the policy.
+
+It runs in a container of its own: `--ca-cert` names a file inside it, and
+`127.0.0.1` is that container. Mount the CA and join the gate's network
+namespace with `LOCKHTTP_DOCKER_ARGS`, for example
+`LOCKHTTP_DOCKER_ARGS="--network container:lockhttp-gate -v $PWD/ca.pem:/tmp/ca.pem:ro" lockhttp doctor --gate 127.0.0.1:3130 --ca-cert /tmp/ca.pem`.
 
 ## `lockhttp ca init`
 
@@ -164,12 +178,14 @@ read.
 lockhttp ca init --dir DIR [--name NAME] [--force]
 ```
 
-Creates the local CA for decryption.
+Creates the local CA for decryption. The launcher creates `DIR` on the host
+(`mkdir -p`), mounts it at its own path and runs the command as you, so the
+files are yours.
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--dir DIR` | required | Directory (created `0700`) for `ca.pem` (`0644`) and `ca-key.pem` (`0600`). |
-| `--name NAME` | the host name | Installation name in the CA's subject. |
+| `--name NAME` | the host name | Installation name in the CA's subject. Through the launcher the host name is the container's: pass `--name`. |
 | `--force` | off | Replace an existing CA (rotation). Without it, an existing `ca-key.pem` is refused. |
 
 The CA is ECDSA P-256, `pathlen:0`, valid 90 days. Trust `ca.pem` in the
@@ -183,9 +199,14 @@ lockhttp gate --listen ADDR [--upstream URL] [--profile P] [--sources FILE]
               [--ca-cert FILE --signer SOCKET] [--check]
 ```
 
-The HTTP(S) proxy. It refuses to run as root (uid 0 in a rootless container
-is the host user, which the console refuses as a client). Each flag but
-`--check` has an environment variable, read when the flag is not given.
+The HTTP(S) proxy. It refuses to run as root; in the image it runs as
+`gate` (uid 10003). Each flag but `--check` has an environment variable,
+read when the flag is not given.
+
+Through the launcher, `lockhttp gate` runs in the container `lockhttp-gate`
+with the socket volume, publishes its port on `LOCKHTTP_PUBLISH`
+(`127.0.0.1:3130` by default), and listens on `0.0.0.0:3130` unless you pass
+`--listen`. lea runs its own gate ([lea.md](lea.md#2-the-gate-container)).
 
 | Flag | Environment | Default | Meaning |
 |---|---|---|---|
@@ -200,10 +221,9 @@ is the host user, which the console refuses as a client). Each flag but
 | `--signer SOCKET` | `LOCKHTTP_SIGNER` | none | The signer's Unix socket. `--ca-cert` and `--signer` go together. |
 | `--check` | | off | Exit 0 if something answers on `--listen` (3 s), else 1. Starts nothing. |
 
-The gate finds the console's socket as a lockkit client: in the socket
-directory of `/etc/lockhttp/system.toml` on a host with the separated setup,
-else in `$LOCKHTTP_RUNTIME_DIR/lockhttp/` (lea sets
-`LOCKHTTP_RUNTIME_DIR=/run` and bind-mounts the host's `/run/lockhttp`).
+The gate finds the console's socket as a lockkit client, in the socket
+directory of the image's `/etc/lockhttp/system.toml`: `/run/lockhttp`, the
+volume `lockhttp-run` it shares with the console.
 It polls the policy every 2 s and reloads `--sources` and `--credentials`
 when they change.
 
@@ -223,7 +243,10 @@ lockhttp signer --ca-cert FILE --ca-key FILE --listen SOCKET [--allow-uid N ...]
 ```
 
 The only process that reads the CA key. It issues 24-hour leaf certificates
-(capped at the CA's expiry) to the gate over a Unix socket.
+(capped at the CA's expiry) to the gate over a Unix socket. In the image it
+runs as `signer` (uid 10004). The launcher mounts nothing for it: lea runs
+it with the key and a socket directory shared with the gate
+([lea.md](lea.md#3-mitm-phase-2-optional)).
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -237,21 +260,34 @@ valid host name (no wildcard, no IP literal).
 
 ## `lockhttp version`, `lockhttp help`
 
-`lockhttp version` (or `--version`) prints the version; `lockhttp help`
-(`-h`, `--help`) prints the usage. `lockhttp` without a command prints the
-usage on stderr and exits 3.
+`lockhttp version` (or `--version`) prints the launcher's version and the
+image it runs (`lockhttp launcher X (image I)`), then the image's
+`lockhttp vX`; `lockhttp help` (`-h`, `--help`) prints the usage. `lockhttp`
+without a command prints the usage on stderr and exits 3.
+
+## `lockhttp update`
+
+```
+lockhttp update [vX.Y.Z]
+```
+
+A launcher command, run on the host: replaces the launcher with a release's
+(latest by default) after checking the cosign signature of `checksums.txt`,
+the archive's checksum and the image's signature, then `docker pull`s the
+pinned image ([docker.md](docker.md#install-and-update)).
 
 ## Files
 
-| File | Owner | Content |
-|---|---|---|
-| `/usr/local/bin/lockhttp` | root | the binary the console account runs |
-| `/etc/lockhttp/system.toml` | root, `0644` | separated setup: console account, clients group, socket directory, `allowed_uids` |
-| `/run/lockhttp/` | `lockhttp:lockhttp-clients`, `2710` | the console's sockets, `user-<profile>.sock` |
-| `~lockhttp/.config/lockhttp/config.toml` | `lockhttp`, `0600` | the policy |
-| `~lockhttp/.local/state/lockhttp/audit.log` | `lockhttp` | the console's audit (approvals, policy reviews) |
-| `--audit-dir/gate-YYYY-MM-DD.jsonl` | the gate's uid | the gate's audit |
-| `ca.pem`, `ca-key.pem` | the signer's uid for the key | the local CA |
+| File | Where | Owner | Content |
+|---|---|---|---|
+| `/usr/local/bin/lockhttp` | host | root | the launcher |
+| `/usr/local/bin/lockhttp` | image | root | the binary, the image's entrypoint |
+| `/etc/lockhttp/system.toml` | image | root, `0644` | separated setup: console account, clients group, socket directory, `allowed_uids` (build arg `ALLOWED_UIDS`) |
+| `/run/lockhttp/` | volume `lockhttp-run` | `lockhttp:lockhttp-clients`, `2710` | the console's sockets, `user-<profile>.sock` |
+| `~/.config/lockhttp/config.toml` | volume `lockhttp-home` | `lockhttp`, `0600` | the policy |
+| `~/.local/state/lockhttp/audit.log` | volume `lockhttp-home` | `lockhttp` | the console's audit (approvals, policy reviews) |
+| `--audit-dir/gate-YYYY-MM-DD.jsonl` | the gate's container (lea: a host directory) | the gate's uid | the gate's audit |
+| `ca.pem`, `ca-key.pem` | the `ca init --dir` directory | you; lea gives the key to the signer's uid | the local CA |
 
 ## Audit records
 
