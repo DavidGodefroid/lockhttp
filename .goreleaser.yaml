@@ -35,37 +35,18 @@ archives:
     formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     # Explicit list: docs/ also holds local-only material that must never ship.
+    # scripts/lockhttp is the launcher install.sh installs on the host: it
+    # runs every command in the release image (docs/docker.md). The binary
+    # is the image's; it serves no host install.
     files:
+      - src: scripts/lockhttp
+        info:
+          mode: 0755
       - LICENSE
       - NOTICE
       - README.md
       - CHANGELOG.md
       - SECURITY.md
-
-# Linux packages, attached to the release and covered by checksums.txt. The
-# binary lands in /usr/bin, owned by root, which is what `lockhttp doctor`
-# expects.
-nfpms:
-  - id: packages
-    ids: [lockhttp]
-    package_name: lockhttp
-    file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    formats: [deb, rpm, apk]
-    bindir: /usr/bin
-    vendor: David Godefroid
-    maintainer: David Godefroid <noreply@github.com>
-    homepage: https://github.com/DavidGodefroid/lockhttp
-    description: Human-gated outbound HTTP for AI agents
-    license: Apache-2.0
-    contents:
-      - src: LICENSE
-        dst: /usr/share/doc/lockhttp/LICENSE
-        file_info:
-          mode: 0644
-      - src: NOTICE
-        dst: /usr/share/doc/lockhttp/NOTICE
-        file_info:
-          mode: 0644
 
 checksum:
   name_template: checksums.txt

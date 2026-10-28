@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -51,28 +50,43 @@ func runEnv(t *testing.T, e env, args ...string) (int, string, string) {
 	return code, out.String(), errb.String()
 }
 
-func TestInstallPrint(t *testing.T) {
-	bin := filepath.Join(t.TempDir(), "lockhttp")
-	if err := os.WriteFile(bin, []byte("x"), 0o755); err != nil {
-		t.Fatal(err)
+func TestInstallRefused(t *testing.T) {
+	for _, c := range []string{"install", "setup"} {
+		code, _, errs := runEnv(t, env{}, c, "--yes")
+		if code != exitUsage || !strings.Contains(errs, "runs in Docker") {
+			t.Fatalf("%s: %d %s", c, code, errs)
+		}
 	}
-	u, _ := user.Current()
-	e := env{executable: bin, goos: "linux", subuid: func() (string, error) { return u.Username + ":100000:65536\n", nil }}
-	code, out, errs := runEnv(t, e, "install", "--client", "agent", "--gate-uid", "10003", "--print", "--trust-binary")
-	if code != exitOK || !strings.Contains(out, "allowed_uids = [10003]") || !strings.Contains(out, "usermod -aG lockhttp-clients agent") {
-		t.Fatalf("install: %d\n%s\n%s", code, out, errs)
+}
+
+func TestPolicyCommand(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if code, _, _ := runEnv(t, env{}, "policy", "show", "--config", path); code != exitFail {
+		t.Fatal("show without a file")
 	}
-	code, out, errs = runEnv(t, e, "install", "--client", u.Username, "--gate-uid", "10003", "--rootless", "--print", "--trust-binary")
-	if runtime.GOOS == "windows" {
-		// Rootless Podman and Unix account names: Unix only.
-	} else if code != exitOK || !strings.Contains(out, "allowed_uids = [110002]") {
-		t.Fatalf("rootless: %d\n%s\n%s", code, out, errs)
+	if code, _, _ := runEnv(t, env{}, "init", "--config", path); code != exitOK {
+		t.Fatal("init")
 	}
-	if code, _, _ := runEnv(t, e, "install", "--gate-uid", "0", "--print"); code != exitUsage {
-		t.Fatal("gate uid 0 accepted")
+	code, out, _ := runEnv(t, env{}, "policy", "show", "--config", path)
+	if code != exitOK || !strings.Contains(out, "[profiles.default]") {
+		t.Fatalf("show: %d %s", code, out)
 	}
-	if code, _, _ := runEnv(t, e, "install", "--rootless", "--print"); code != exitUsage {
-		t.Fatal("--rootless without --gate-uid accepted")
+	if _, out, _ := runEnv(t, env{}, "policy", "path", "--config", path); strings.TrimSpace(out) != path {
+		t.Fatalf("path: %q", out)
+	}
+	good := env{editor: func(p string) error {
+		b, _ := os.ReadFile(p)
+		return os.WriteFile(p, append(b, []byte("\n[profiles.lab]\n")...), 0o600)
+	}}
+	if code, out, errs := runEnv(t, good, "policy", "edit", "--config", path); code != exitOK || !strings.Contains(out, "saved") {
+		t.Fatalf("edit: %d %s %s", code, out, errs)
+	}
+	bad := env{editor: func(p string) error { return os.WriteFile(p, []byte("[profiles.default]\nmode = \"loose\"\n"), 0o600) }}
+	if code, _, errs := runEnv(t, bad, "policy", "edit", "--config", path); code != exitUsage || !strings.Contains(errs, "does not parse") {
+		t.Fatalf("broken edit: %d %s", code, errs)
+	}
+	if code, _, _ := runEnv(t, env{}, "policy", "nope"); code != exitUsage {
+		t.Fatal("unknown subcommand")
 	}
 }
 

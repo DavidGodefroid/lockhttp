@@ -4,3 +4,4 @@
 *.out
 go.work
 go.work.sum
+__pycache__/

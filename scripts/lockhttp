@@ -1,0 +1,279 @@
+#!/bin/sh
+# lockhttp: the launcher. lockhttp runs in Docker; this script, installed as
+# `lockhttp` on the host by scripts/install.sh, runs every command in the
+# image, each with the account and the volumes it needs (docs/docker.md):
+#
+#   console               as the console account (lockhttp), in a container
+#                         named lockhttp-console, with the socket and home
+#                         volumes
+#   init, policy, doctor  as the console account, with its home volume (the
+#                         policy lives there)
+#   gate                  as gate (uid 10003), with the socket volume, its
+#                         port published on 127.0.0.1:3130 (standalone use;
+#                         lea starts its own gate, docs/lea.md)
+#   signer                as signer (uid 10004)
+#   ca                    as you, with the --dir directory mounted
+#   anything else         as the image's default account (gate)
+#
+# `lockhttp update` updates this launcher and its image; `lockhttp version`
+# prints both versions.
+#
+# Environment:
+#   LOCKHTTP_IMAGE        image to run (default: the release image of this
+#                         launcher's version, by digest; `lockhttp` for a
+#                         launcher run from a clone, the tag of
+#                         `docker build -t lockhttp .`)
+#   LOCKHTTP_DOCKER_ARGS  extra `docker run` arguments, split on spaces
+#   LOCKHTTP_PUBLISH      where `lockhttp gate` publishes its port
+#                         (default 127.0.0.1:3130)
+set -eu
+
+# scripts/install.sh and lockhttp update write the release version here,
+# and the digest of its image once its cosign signature verifies: the
+# launcher then runs the image by digest, never by a tag that could move.
+launcher_version=dev
+image_digest=
+
+repo="DavidGodefroid/lockhttp"
+registry="ghcr.io/davidgodefroid/lockhttp"
+
+say() { printf 'lockhttp: %s\n' "$*" >&2; }
+die() {
+	say "$*"
+	exit 1
+}
+
+image="${LOCKHTTP_IMAGE:-}"
+if [ -z "$image" ]; then
+	if [ "$launcher_version" = dev ]; then
+		image=lockhttp
+	elif [ -n "$image_digest" ]; then
+		image="$registry@$image_digest"
+	else
+		image="$registry:$launcher_version"
+	fi
+fi
+
+tty=-i
+if [ -t 0 ] && [ -t 1 ]; then tty=-it; fi
+
+# docker_run ARGS...: docker run, LOCKHTTP_DOCKER_ARGS, then ARGS (the
+# account, the volumes, the image and its command).
+docker_run() {
+	command -v docker >/dev/null 2>&1 || die "docker is required: lockhttp runs in Docker (docs/docker.md)"
+	# shellcheck disable=SC2086 # LOCKHTTP_DOCKER_ARGS is split on purpose
+	exec docker run --rm ${LOCKHTTP_DOCKER_ARGS:-} "$@"
+}
+
+# has_flag FLAG ARGS...: whether ARGS hold FLAG or FLAG=...
+has_flag() {
+	f=$1
+	shift
+	for a in "$@"; do
+		case "$a" in "$f" | "$f"=*) return 0 ;; esac
+	done
+	return 1
+}
+
+# flag_value FLAG ARGS...: the value of FLAG (FLAG V or FLAG=V), or "".
+flag_value() {
+	f=$1
+	shift
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		"$f"=*)
+			printf '%s' "${1#*=}"
+			return 0
+			;;
+		"$f")
+			[ $# -ge 2 ] && printf '%s' "$2"
+			return 0
+			;;
+		esac
+		shift
+	done
+}
+
+# The release workflow run for a version tag, as scripts/install.sh checks it.
+identity='^https://github\.com/DavidGodefroid/lockhttp/\.github/workflows/release\.yml@refs/tags/v[0-9]'
+
+# verified_digest TAG: the digest of the release image registry:TAG, once
+# cosign verifies its signature by the release workflow; empty when it does
+# not verify.
+verified_digest() {
+	cosign verify --certificate-identity-regexp "$identity" \
+		--certificate-oidc-issuer https://token.actions.githubusercontent.com \
+		"$registry:$1" 2>/dev/null |
+		sed -n 's/.*"docker-manifest-digest":"\(sha256:[0-9a-f]\{64\}\)".*/\1/p' | sed -n 1p
+}
+
+# update [vX.Y.Z]: replace this launcher with a release's (the cosign
+# signature of checksums.txt and the archive's checksum checked, as
+# scripts/install.sh does), then pull that release's image.
+update() {
+	if command -v curl >/dev/null 2>&1; then
+		fetch() { curl -fsSL -o "$2" "$1"; }
+	elif command -v wget >/dev/null 2>&1; then
+		fetch() { wget -q -O "$2" "$1"; }
+	else
+		die "curl or wget is required"
+	fi
+	case "$(uname -s)" in
+	Linux) os=linux ;;
+	Darwin) os=darwin ;;
+	*) die "unsupported OS $(uname -s): Linux and macOS only (WSL 2 on Windows)" ;;
+	esac
+	case "$(uname -m)" in
+	x86_64 | amd64) arch=amd64 ;;
+	aarch64 | arm64) arch=arm64 ;;
+	*) die "unsupported architecture $(uname -m): amd64 and arm64 only" ;;
+	esac
+
+	tag="${1:-${LOCKHTTP_VERSION:-}}"
+	if [ -z "$tag" ]; then
+		# The newest release of the feed (pre-releases included).
+		feed="$(mktemp)"
+		fetch "https://github.com/$repo/releases.atom" "$feed" || true
+		tag="$(grep -o 'releases/tag/v[0-9][^"<]*' "$feed" | sed -n 1p)"
+		rm -f "$feed"
+		tag="${tag##*/}"
+		case "$tag" in
+		v[0-9]*) ;;
+		*) die "no published release found; name one: lockhttp update vX.Y.Z" ;;
+		esac
+	fi
+	case "$tag" in v*) ;; *) tag="v$tag" ;; esac
+	version="${tag#v}"
+	if [ "$version" = "$launcher_version" ]; then
+		say "the launcher is already $tag"
+	else
+		self="$(command -v "$0" 2>/dev/null || printf '%s' "$0")"
+		archive="lockhttp_${version}_${os}_${arch}.tar.gz"
+		base="https://github.com/$repo/releases/download/$tag"
+		tmp="$(mktemp -d)"
+		trap 'rm -rf "$tmp"' EXIT INT TERM
+		say "downloading $archive ($tag)"
+		fetch "$base/$archive" "$tmp/$archive" || die "download failed: $base/$archive"
+		fetch "$base/checksums.txt" "$tmp/checksums.txt" || die "download failed: checksums.txt"
+		if command -v cosign >/dev/null 2>&1; then
+			fetch "$base/checksums.txt.sigstore.json" "$tmp/checksums.txt.sigstore.json" ||
+				die "download failed: checksums.txt.sigstore.json"
+			cosign verify-blob --bundle "$tmp/checksums.txt.sigstore.json" \
+				--certificate-identity-regexp "$identity" \
+				--certificate-oidc-issuer https://token.actions.githubusercontent.com \
+				"$tmp/checksums.txt" >/dev/null 2>&1 || die "cosign: signature of checksums.txt does not verify"
+			say "cosign: checksums.txt signature verified"
+		elif [ "${LOCKHTTP_SKIP_COSIGN:-0}" = 1 ]; then
+			say "WARNING: LOCKHTTP_SKIP_COSIGN=1: the signature of checksums.txt is NOT checked; the checksum only detects corruption"
+		else
+			die "cosign is required to check the release's signature (https://docs.sigstore.dev/cosign/system_config/installation/); LOCKHTTP_SKIP_COSIGN=1 updates without it"
+		fi
+		want="$(awk -v f="$archive" '$2 == f { print $1 }' "$tmp/checksums.txt")"
+		[ -n "$want" ] || die "$archive is not listed in checksums.txt"
+		if command -v sha256sum >/dev/null 2>&1; then
+			got="$(sha256sum "$tmp/$archive" | awk '{ print $1 }')"
+		else
+			got="$(shasum -a 256 "$tmp/$archive" | awk '{ print $1 }')"
+		fi
+		[ "$want" = "$got" ] || die "checksum mismatch for $archive"
+		tar -xzf "$tmp/$archive" -C "$tmp" scripts/lockhttp 2>/dev/null ||
+			die "$archive holds no launcher (scripts/lockhttp): $tag predates the Docker launcher"
+		digest=
+		if command -v cosign >/dev/null 2>&1; then
+			digest="$(verified_digest "$version")"
+			[ -n "$digest" ] ||
+				die "cosign: the signature of $registry:$version does not verify, or the image is not published yet"
+			say "cosign: image $registry:$version verified ($digest)"
+		else
+			say "WARNING: LOCKHTTP_SKIP_COSIGN=1: the image is NOT verified and runs by its tag"
+		fi
+		sed -e "s/^launcher_version=dev\$/launcher_version=$version/" \
+			-e "s/^image_digest=\$/image_digest=$digest/" \
+			"$tmp/scripts/lockhttp" >"$tmp/launcher"
+		grep -qx "launcher_version=$version" "$tmp/launcher" || die "the launcher of $tag does not take its version"
+		if [ -w "$self" ]; then
+			install -m 0755 "$tmp/launcher" "$self"
+		else
+			command -v sudo >/dev/null 2>&1 || die "$self is not writable and sudo is missing"
+			say "replacing $self with sudo"
+			sudo install -m 0755 "$tmp/launcher" "$self"
+		fi
+		say "launcher updated to $tag ($self)"
+		image="$registry:$version"
+		[ -n "$digest" ] && image="$registry@$digest"
+		[ -n "${LOCKHTTP_IMAGE:-}" ] && say "LOCKHTTP_IMAGE is set ($LOCKHTTP_IMAGE): it still overrides $image"
+	fi
+	command -v docker >/dev/null 2>&1 || die "docker is required: lockhttp runs in Docker (docs/docker.md)"
+	say "pulling $image"
+	exec docker pull "$image"
+}
+
+home="-v lockhttp-home:/home/lockhttp"
+run="-v lockhttp-run:/run/lockhttp"
+
+cmd="${1:-}"
+case "$cmd" in
+update)
+	shift
+	update "$@"
+	;;
+version | --version)
+	printf 'lockhttp launcher %s (image %s)\n' "$launcher_version" "$image"
+	docker_run "$image" version
+	;;
+console)
+	command -v docker >/dev/null 2>&1 || die "docker is required: lockhttp runs in Docker (docs/docker.md)"
+	# A console that ended without --rm keeps the name: a stopped one is only in the way.
+	if [ "$(docker inspect -f '{{.State.Running}}' lockhttp-console 2>/dev/null)" = false ]; then
+		docker rm lockhttp-console >/dev/null
+	fi
+	# No log driver: docker's json-file log would keep every approval
+	# screen (masked previews included) for anyone who runs docker logs.
+	# shellcheck disable=SC2086 # $run and $home are two words each
+	docker_run "$tty" --name lockhttp-console --log-driver none --user lockhttp $run $home "$image" "$@"
+	;;
+init | policy)
+	# shellcheck disable=SC2086
+	docker_run "$tty" --user lockhttp $home "$image" "$@"
+	;;
+doctor)
+	# shellcheck disable=SC2086
+	docker_run "$tty" --user lockhttp $run $home "$image" "$@"
+	;;
+gate)
+	shift
+	has_flag --listen "$@" || set -- --listen 0.0.0.0:3130 "$@"
+	# shellcheck disable=SC2086
+	docker_run "$tty" --name lockhttp-gate --user gate $run -p "${LOCKHTTP_PUBLISH:-127.0.0.1:3130}:3130" "$image" gate "$@"
+	;;
+signer)
+	docker_run "$tty" --user signer "$image" "$@"
+	;;
+ca)
+	dir="$(flag_value --dir "$@")"
+	[ -n "$dir" ] || die "lockhttp ca init --dir DIR: name the directory"
+	mkdir -p "$dir"
+	dir="$(cd "$dir" && pwd -P)"
+	# Rewrite --dir to the absolute path, mounted at its own path. The CA
+	# files are yours: lea reads ca.pem and gives ca-key.pem to the signer
+	# alone.
+	skip=0
+	for a do
+		shift
+		if [ "$skip" = 1 ]; then
+			skip=0
+			set -- "$@" "$dir"
+			continue
+		fi
+		case "$a" in
+		--dir) skip=1 && set -- "$@" --dir ;;
+		--dir=*) set -- "$@" "--dir=$dir" ;;
+		*) set -- "$@" "$a" ;;
+		esac
+	done
+	docker_run "$tty" --user "$(id -u):$(id -g)" -v "$dir:$dir" "$image" "$@"
+	;;
+*)
+	docker_run "$tty" "$image" "$@"
+	;;
+esac

@@ -111,3 +111,23 @@ jobs:
           check-latest: true
       - name: go test -tags integration
         run: go test -tags integration -count=1 -timeout 15m ./test/integration/...
+
+  # The image of docs/docker.md, driven through the launcher as a user
+  # would: the console in a pseudo-terminal, the gate in its own container,
+  # requests through the gate's published port (test/docker/e2e.py).
+  docker:
+    name: docker image (launcher e2e)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: docker build
+        run: docker build -t lockhttp .
+      - name: ALLOWED_UIDS refuses root
+        run: |
+          code=0; docker build --build-arg ALLOWED_UIDS=0 -t lockhttp:bad . >/dev/null 2>&1 || code=$?
+          test "$code" != 0
+      - name: e2e through the launcher
+        env:
+          LOCKHTTP_IMAGE: lockhttp
+        run: python3 test/docker/e2e.py

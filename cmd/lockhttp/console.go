@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -67,6 +68,78 @@ func runConsole(e env, args []string) int {
 			return exitUsage
 		}
 		return exitFail
+	}
+	return exitOK
+}
+
+// runPolicy is `lockhttp policy show|edit|path`: the console account's
+// policy file, which lives in its home volume.
+func runPolicy(e env, args []string) int {
+	const usage = "lockhttp policy show | edit | path [--config FILE]"
+	if len(args) == 0 {
+		return usageFail(e, "policy", usage, "show, edit or path")
+	}
+	sub := args[0]
+	fs := flag.NewFlagSet("policy", flag.ContinueOnError)
+	cfgFlag := fs.String("config", "", "policy file (default: ~/.config/lockhttp/config.toml)")
+	if !parse(e, fs, "policy", usage, args[1:]) {
+		return exitUsage
+	}
+	path, err := e.configPath(*cfgFlag)
+	if err != nil {
+		return usageFail(e, "policy", usage, err.Error())
+	}
+	switch sub {
+	case "path":
+		fmt.Fprintln(e.stdout, path)
+	case "show":
+		b, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Fprintln(e.stderr, "lockhttp policy:", err, "(create it with: lockhttp init)")
+			return exitFail
+		}
+		_, _ = e.stdout.Write(b)
+	case "edit":
+		if _, err := os.Stat(path); err != nil {
+			fmt.Fprintln(e.stderr, "lockhttp policy:", err, "(create it with: lockhttp init)")
+			return exitFail
+		}
+		edit := e.editor
+		if edit == nil {
+			edit = func(p string) error {
+				ed := os.Getenv("EDITOR")
+				if ed == "" {
+					ed = "vi"
+				}
+				cmd := exec.Command(ed, p)
+				cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+				return cmd.Run()
+			}
+		}
+		if err := edit(path); err != nil {
+			fmt.Fprintln(e.stderr, "lockhttp policy:", err)
+			return exitFail
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Fprintln(e.stderr, "lockhttp policy:", err)
+			return exitFail
+		}
+		names, err := policy.Profiles(b, path)
+		if err == nil {
+			for _, n := range names {
+				if _, err = policy.Parse(b, path, n); err != nil {
+					break
+				}
+			}
+		}
+		if err != nil {
+			fmt.Fprintln(e.stderr, "lockhttp policy: the file does not parse:", err, "(the console keeps the approved policy until it does)")
+			return exitUsage
+		}
+		fmt.Fprintln(e.stdout, "saved: the console shows any loosening for approval (:review)")
+	default:
+		return usageFail(e, "policy", usage, "unknown subcommand "+sub)
 	}
 	return exitOK
 }

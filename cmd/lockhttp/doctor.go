@@ -13,7 +13,6 @@ import (
 	"github.com/DavidGodefroid/lockhttp/internal/ca"
 	"github.com/DavidGodefroid/lockhttp/internal/policy"
 	"github.com/DavidGodefroid/lockhttp/internal/product"
-	"github.com/DavidGodefroid/lockhttp/internal/separate"
 )
 
 // runDoctor is `lockhttp doctor`: the setup, the policy, the CA, the gate.
@@ -38,18 +37,11 @@ func runDoctor(e env, args []string) int {
 	case err != nil:
 		fail("%s: %v", sysconf.File(product.P), err)
 	case sys == nil:
-		fail("no separated setup (%s): run `sudo lockhttp install`", sysconf.File(product.P))
+		fail("no separated setup (%s): run lockhttp through the launcher, in its image (docs/docker.md)", sysconf.File(product.P))
 	default:
 		okf("separated setup: console account %s, clients group %s, sockets in %s", sys.ServiceUser, sys.ClientGroup, sys.SocketDir)
-		if len(sys.AllowedUIDs) == 0 {
-			warn("no allowed_uids: only the clients group reaches the console (a gate in a container needs --gate-uid)")
-		} else {
-			okf("the gate's uid may reach the console: allowed_uids %v", sys.AllowedUIDs)
-		}
-	}
-	if bin, err := os.Executable(); err == nil {
-		if msg, err := separate.SourceRefusal(product.P, bin); err == nil && msg != "" {
-			warn("%s is not root-owned: the console account should run /usr/local/bin/lockhttp", bin)
+		if len(sys.AllowedUIDs) > 0 {
+			okf("allowed_uids %v may reach the console besides the group", sys.AllowedUIDs)
 		}
 	}
 	path, err := e.configPath(*cfgFlag)

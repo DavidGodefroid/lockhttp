@@ -35,35 +35,32 @@ type env struct {
 	cwd            string
 	// tty reports whether stdin is a terminal.
 	tty bool
-	// root runs install's script as root; nil is sudo sh -c.
-	root func(script string) error
-	// executable and goos replace the running binary and system (tests).
-	executable, goos string
 	// euid is the effective uid; nil is os.Geteuid.
 	euid func() int
-	// subuid is /etc/subuid's content; nil reads the file.
-	subuid func() (string, error)
+	// editor runs an editor on a file; nil runs $EDITOR (vi).
+	editor func(path string) error
 	// userConfig is the console's config file; "" is the real one.
 	userConfig string
 }
 
 const usageText = `usage: lockhttp <command> [arguments]
 
-Human commands (host)
-  install  [--client USER] [--gate-uid N [--rootless]] [--user lockhttp] [--group lockhttp-clients]
-           [--print] [--trust-binary] [--yes]
-                                   separate the console from the agent: console account,
-                                   clients group, /etc/lockhttp, the gate's uid (sudo)
+lockhttp runs in Docker: on the host, the lockhttp launcher runs each
+command in the image, as the account it needs (docs/docker.md).
+
+Human commands (console account)
   init     [--profile P] [--config FILE] [--trusted "a.com .corp.example"] [--force]
-                                   write the policy file (as the console account)
+                                   write the policy file
+  policy   show | edit | path [--config FILE]
+                                   print, edit or locate the policy file
   console  [--profile P] [--config FILE] [--auto]
-                                   run the approval console (as the console account)
+                                   run the approval console
   doctor   [--profile P] [--config FILE] [--ca-cert FILE] [--gate ADDR]
                                    check the setup
   ca init  --dir DIR [--name NAME] [--force]
                                    create (or rotate) the local CA for decryption
 
-Proxy container
+Gate and signer (lea runs them beside its proxy container)
   gate     --listen ADDR [--upstream URL] [--profile P] [--sources FILE]
            [--credentials FILE] [--audit-dir DIR] [--status-file FILE]
            [--ca-cert FILE --signer SOCKET] [--check]
@@ -99,8 +96,11 @@ func run(e env, args []string) int {
 	case "help", "-h", "--help":
 		fmt.Fprint(e.stdout, usageText)
 		return exitOK
-	case "install":
-		return runInstall(e, args[1:])
+	case "install", "setup":
+		fmt.Fprintln(e.stderr, "lockhttp: runs in Docker: there is nothing to install on the host; install the launcher (scripts/install.sh) and see docs/docker.md")
+		return exitUsage
+	case "policy":
+		return runPolicy(e, args[1:])
 	case "init":
 		return runInit(e, args[1:])
 	case "console":
