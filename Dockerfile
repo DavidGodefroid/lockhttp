@@ -20,6 +20,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+# VERSION: the release version without its "v" (0.2.0), as goreleaser sets it.
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/lockhttp ./cmd/lockhttp
 

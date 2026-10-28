@@ -6,6 +6,11 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The image's `lockhttp version` prints `0.2.1`, not `v0.2.1`, like the
+  release archives and the launcher.
+
 ## [0.2.0] - 2026-10-28
 
 ### Changed (breaking)
