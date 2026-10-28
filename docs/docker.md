@@ -74,7 +74,7 @@ refused.
 | `doctor` | `lockhttp` | `--user lockhttp -v lockhttp-home:/home/lockhttp` | it checks the policy, which only the console account can read |
 | `gate` | `gate` (10003) | `--name lockhttp-gate --user gate -v lockhttp-run:/run/lockhttp -p ${LOCKHTTP_PUBLISH:-127.0.0.1:3130}:3130`, and `--listen 0.0.0.0:3130` unless you pass `--listen` | standalone use on one machine; lea starts its own gate ([lea.md](lea.md)) |
 | `signer` | `signer` (10004) | `--user signer -v lockhttp-signer:/run/lockhttp-signer` | the socket directory (`signer:lockhttp-clients`, 2750, from the image) the gate shares; lea runs its own signer ([lea.md](lea.md#3-mitm-phase-2-optional)) |
-| `ca` | you (`id -u`:`id -g`) | `--user UID:GID -v DIR:DIR`, with `--dir DIR` made absolute (created 0700) and `--name $(uname -n)` unless you pass `--name` | the CA files are yours; lea reads `ca.pem` and gives `ca-key.pem` to the signer alone |
+| `ca` | you (`id -u`:`id -g`) | `--user UID:GID -v DIR:DIR`, with `--dir DIR` made absolute (created 0700) and `--name $(uname -n)` unless you pass `--name`; under rootless Podman also `--userns keep-id`, so that the files are yours on the host | the CA files are yours; lea reads `ca.pem` and gives `ca-key.pem` to the signer alone |
 | `version` | `gate` | | prints `lockhttp launcher X (image I)`, then runs `I version` |
 | `update [vX.Y.Z]` | (host) | | [below](#install-and-update) |
 | anything else (`help`, ...) | `gate` (image default) | | |

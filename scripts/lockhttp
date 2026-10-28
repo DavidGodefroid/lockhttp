@@ -303,8 +303,14 @@ ca)
 		esac
 	done
 	mountable "$dir"
+	# Rootless Podman maps the container's uids to subuids: only
+	# --userns keep-id makes the files the invoking user's on the host.
+	userns=
+	if [ "$(docker info --format '{{.Host.Security.Rootless}}' 2>/dev/null)" = true ]; then
+		userns="--userns keep-id"
+	fi
 	# shellcheck disable=SC2086
-	docker_run "$tty" --user "$(id -u):$(id -g)" $confine -v "$dir:$dir" "$image" "$@"
+	docker_run "$tty" $userns --user "$(id -u):$(id -g)" $confine -v "$dir:$dir" "$image" "$@"
 	;;
 *)
 	docker_run "$tty" "$image" "$@"

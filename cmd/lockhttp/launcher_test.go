@@ -62,6 +62,7 @@ for a in "$@"; do printf '%s\n' "$a"; done >> '`+f.calls+`'
 echo -- >> '`+f.calls+`'
 case "$1" in
 inspect) printf '%s\n' "${DOCKER_INSPECT:-}" ;;
+info) [ -n "${DOCKER_ROOTLESS:-}" ] && printf '%s\n' "$DOCKER_ROOTLESS" ;;
 run) for a in "$@"; do [ "$a" = version ] && echo "lockhttp 9.9.9"; done ;;
 esac
 exit 0
@@ -289,6 +290,25 @@ func TestLauncherHardening(t *testing.T) {
 	f.setVersion(t, "0.9.0")
 	if out, _, err := f.run(t, f.project, nil, "update", "v1;rm"); err == nil || !strings.Contains(out, "invalid version") {
 		t.Errorf("bad tag: %v %s", err, out)
+	}
+}
+
+// Under rootless Podman, ca runs with --userns keep-id so that the CA
+// files are the invoking user's; Docker (no such info field) runs without.
+func TestLauncherCARootlessPodman(t *testing.T) {
+	f := newLauncherFixture(t)
+	dir := filepath.Join(f.root, "ca")
+	for _, tc := range []struct {
+		env  []string
+		want bool
+	}{{[]string{"DOCKER_ROOTLESS=true"}, true}, {[]string{"DOCKER_ROOTLESS=false"}, false}, {nil, false}} {
+		_, calls, err := f.run(t, f.project, tc.env, "ca", "init", "--dir", dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := hasSeq(lastRun(t, calls), "--userns", "keep-id"); got != tc.want {
+			t.Errorf("%v: --userns keep-id %v, want %v: %q", tc.env, got, tc.want, lastRun(t, calls))
+		}
 	}
 }
 
