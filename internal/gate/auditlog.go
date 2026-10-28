@@ -24,10 +24,9 @@ type AuditLog struct {
 	w   io.Writer
 	now func() time.Time
 
-	mu      sync.Mutex
-	day     string
-	f       *os.File
-	written bool
+	mu  sync.Mutex
+	day string
+	f   *os.File
 }
 
 // NewAuditLog opens dir (created 0700) or, when dir is "", writes to w.

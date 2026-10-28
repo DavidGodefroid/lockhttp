@@ -45,7 +45,7 @@ func TestIssueAndVerify(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if leaf.Leaf.DNSNames[0] != "api.example.com" || leaf.Leaf.NotAfter.Sub(time.Now()) > 25*time.Hour {
+	if leaf.Leaf.DNSNames[0] != "api.example.com" || time.Until(leaf.Leaf.NotAfter) > 25*time.Hour {
 		t.Fatalf("leaf: %+v", leaf.Leaf)
 	}
 	if _, err := c.Certificate(context.Background(), "*.example.com"); err == nil {

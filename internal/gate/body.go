@@ -66,7 +66,7 @@ func BodyFingerprint(contentType string, body []byte) string {
 		var v any
 		dec := json.NewDecoder(bytes.NewReader(body))
 		dec.UseNumber()
-		if dec.Decode(&v) == nil && atEOF(dec) {
+		if utf8.Valid(body) && noDuplicateKeys(body) && dec.Decode(&v) == nil && atEOF(dec) {
 			if m, ok := v.(map[string]any); ok {
 				for _, f := range volatileFields {
 					// Only a short scalar is volatile: anything that could
@@ -87,6 +87,61 @@ func BodyFingerprint(contentType string, body []byte) string {
 		}
 	}
 	return "raw:" + sum(body)
+}
+
+// noDuplicateKeys reports a JSON text whose objects have no duplicate key
+// at any depth: a server may keep either value, so a canonical form would
+// hide what it acts on.
+func noDuplicateKeys(body []byte) bool {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	type frame struct {
+		obj  bool
+		keys map[string]bool
+		key  bool // next string token is a key
+	}
+	var stack []*frame
+	for {
+		t, err := dec.Token()
+		if err == io.EOF {
+			return true
+		}
+		if err != nil {
+			return false
+		}
+		var top *frame
+		if len(stack) > 0 {
+			top = stack[len(stack)-1]
+		}
+		if top != nil && top.obj && top.key {
+			if d, ok := t.(json.Delim); ok && d == '}' {
+				stack = stack[:len(stack)-1]
+				continue
+			}
+			k, ok := t.(string)
+			if !ok || top.keys[k] {
+				return false
+			}
+			top.keys[k], top.key = true, false
+			continue
+		}
+		switch d := t.(type) {
+		case json.Delim:
+			switch d {
+			case '{':
+				stack = append(stack, &frame{obj: true, keys: map[string]bool{}, key: true})
+				continue
+			case '[':
+				stack = append(stack, &frame{})
+				continue
+			default:
+				stack = stack[:len(stack)-1]
+			}
+		}
+		// A value completed: the enclosing object expects a key next.
+		if len(stack) > 0 && stack[len(stack)-1].obj {
+			stack[len(stack)-1].key = true
+		}
+	}
 }
 
 // atEOF reports that nothing follows the decoded value.

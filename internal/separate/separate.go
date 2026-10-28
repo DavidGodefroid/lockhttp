@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -97,32 +98,67 @@ func FileSum(path string) (string, error) {
 // than root (a binary the agent replaced would become the one the console
 // trusts); "" for a root-owned binary neither group nor others may write.
 func SourceRefusal(p kit.Product, bin string) (string, error) {
-	fi, err := os.Stat(bin)
+	resolved, err := filepath.EvalSymlinks(bin)
+	if err != nil {
+		return "", err
+	}
+	why, err := untrusted(resolved)
+	if err != nil {
+		return "", err
+	}
+	if why == "" {
+		return "", nil
+	}
+	sum, err := FileSum(resolved)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`%s install: %s %s and could have been replaced by the agent;
+install a release into a root-owned directory (scripts/install.sh with the default /usr/local/bin),
+or pass --trust-binary to copy this one (sha256 %s, checked again by the root script).
+`, p.Name, resolved, why, sum), nil
+}
+
+// untrusted returns why an account other than root could change the file
+// at path (itself, a hard link elsewhere, or any parent directory), or "".
+func untrusted(path string) (string, error) {
+	fi, err := os.Lstat(path)
 	if err != nil {
 		return "", err
 	}
 	uid, ok := fileOwner(fi)
-	if ok && uid == 0 && fi.Mode().Perm()&0o022 == 0 {
-		return "", nil
+	if !ok {
+		return "has an unknown owner", nil
 	}
-	owner := "an unknown account"
-	if ok {
-		owner = fmt.Sprintf("uid %d", uid)
+	if uid != 0 {
+		owner := fmt.Sprintf("uid %d", uid)
 		if u, err := user.LookupId(fmt.Sprint(uid)); err == nil {
 			owner = u.Username
 		}
+		return "is owned by " + owner, nil
 	}
-	if ok && uid == 0 {
-		owner = "root but writable by group or others"
+	if fi.Mode().Perm()&0o022 != 0 {
+		return "is owned by root but writable by group or others", nil
 	}
-	sum, err := FileSum(bin)
-	if err != nil {
-		return "", err
+	if n, ok := fileLinks(fi); ok && n > 1 {
+		return "has other hard links", nil
 	}
-	return fmt.Sprintf(`%s install: %s is owned by %s and could have been replaced by the agent;
-install a release into a root-owned directory (scripts/install.sh with the default /usr/local/bin),
-or pass --trust-binary to copy this one (sha256 %s).
-`, p.Name, bin, owner, sum), nil
+	for dir := filepath.Dir(path); ; dir = filepath.Dir(dir) {
+		di, err := os.Lstat(dir)
+		if err != nil {
+			return "", err
+		}
+		duid, ok := fileOwner(di)
+		if !ok || duid != 0 {
+			return "sits in " + dir + ", not owned by root,", nil
+		}
+		if di.Mode().Perm()&0o022 != 0 && di.Mode()&os.ModeSticky == 0 {
+			return "sits in " + dir + ", writable by group or others,", nil
+		}
+		if dir == filepath.Dir(dir) {
+			return "", nil
+		}
+	}
 }
 
 // ShellQuote quotes s for sh.
