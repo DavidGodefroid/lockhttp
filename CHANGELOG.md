@@ -6,6 +6,54 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (breaking)
+
+- LockHTTP runs in Docker only. On the host, `lockhttp` is now a launcher,
+  a POSIX shell script (`scripts/lockhttp`) that runs every command in the
+  release image, each as the account it needs: `console` as `lockhttp`
+  (uid 10021) in the container `lockhttp-console`, with no log driver and the
+  volumes `lockhttp-run` and `lockhttp-home`; `init`, `policy` and `doctor`
+  as `lockhttp`; `gate` as `gate` (uid 10003, in `lockhttp-clients`) with
+  `lockhttp-run`, published on `127.0.0.1:3130`; `signer` as `signer`
+  (uid 10004); `ca` as the invoking user. See `docs/docker.md`.
+- `scripts/install.sh` installs the launcher, not a binary: it verifies the
+  cosign signature of `checksums.txt` and of the image, and writes the
+  image's verified digest into the launcher, which runs it by digest
+  (`LOCKHTTP_SKIP_COSIGN=1`: by tag, unverified). It warns when a former
+  host install (`/etc/lockhttp/system.toml`) remains.
+- lea integration (`docs/lea.md`): the gate and the signer run as sidecar
+  containers from the image (`--network container:<prefix>-proxy`,
+  `--user gate`, volume `lockhttp-run`). No `allowed_uids`, subuid mapping,
+  `--group-add`, host `/run/lockhttp` or `LOCKHTTP_RUNTIME_DIR`. The file
+  formats are unchanged (contract version 1).
+- `lockhttp doctor` no longer checks that the binary is root-owned, and
+  reports `allowed_uids` only when set.
+
+### Added
+
+- The image `ghcr.io/davidgodefroid/lockhttp:X.Y.Z` (amd64, arm64), built
+  by the release workflow and signed with cosign; a `Dockerfile` with the
+  accounts `lockhttp`, `gate` and `signer` and the build argument
+  `ALLOWED_UIDS`.
+- `lockhttp policy show|edit|path [--config FILE]`: print, edit (with a parse
+  check) or locate the console account's policy.
+- `lockhttp update [vX.Y.Z]` and `lockhttp version` in the launcher: a
+  release's launcher, checked as `install.sh` does, then `docker pull`; the
+  launcher's and the image's versions.
+- `LOCKHTTP_IMAGE`, `LOCKHTTP_DOCKER_ARGS` and `LOCKHTTP_PUBLISH` for the
+  launcher.
+- CI: the image built and driven through the launcher end to end
+  (`test/docker/e2e.py`).
+
+### Removed
+
+- `lockhttp install` (and `setup`): the image refuses them. The host account
+  `lockhttp`, the group `lockhttp-clients`, `/etc/lockhttp/system.toml`,
+  `/run/lockhttp` and the host binary are no longer created; see "Migrating
+  from a host install" in `docs/docker.md`.
+- The `.deb`, `.rpm` and `.apk` packages. Release archives now carry the
+  launcher.
+
 ## [0.1.0] - 2026-10-28
 
 First pre-release. Phase 0 and 1 of the design (CONNECT + SNI gate in front

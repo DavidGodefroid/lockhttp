@@ -11,7 +11,8 @@
 #   gate                  as gate (uid 10003), with the socket volume, its
 #                         port published on 127.0.0.1:3130 (standalone use;
 #                         lea starts its own gate, docs/lea.md)
-#   signer                as signer (uid 10004)
+#   signer                as signer (uid 10004), with the volume
+#                         lockhttp-signer (its socket, reachable by the gate)
 #   ca                    as you, with the --dir directory mounted
 #   anything else         as the image's default account (gate)
 #
@@ -238,7 +239,7 @@ init | policy)
 	;;
 doctor)
 	# shellcheck disable=SC2086
-	docker_run "$tty" --user lockhttp $run $home "$image" "$@"
+	docker_run "$tty" --user lockhttp $home "$image" "$@"
 	;;
 gate)
 	shift
@@ -247,13 +248,15 @@ gate)
 	docker_run "$tty" --name lockhttp-gate --user gate $run -p "${LOCKHTTP_PUBLISH:-127.0.0.1:3130}:3130" "$image" gate "$@"
 	;;
 signer)
-	docker_run "$tty" --user signer "$image" "$@"
+	docker_run "$tty" --user signer -v lockhttp-signer:/run/lockhttp-signer "$image" "$@"
 	;;
 ca)
 	dir="$(flag_value --dir "$@")"
 	[ -n "$dir" ] || die "lockhttp ca init --dir DIR: name the directory"
-	mkdir -p "$dir"
+	mkdir -p -m 0700 "$dir"
 	dir="$(cd "$dir" && pwd -P)"
+	# The CA is named after this machine, not the throwaway container.
+	has_flag --name "$@" || set -- "$@" --name "$(uname -n)"
 	# Rewrite --dir to the absolute path, mounted at its own path. The CA
 	# files are yours: lea reads ca.pem and gives ca-key.pem to the signer
 	# alone.

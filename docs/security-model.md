@@ -4,7 +4,8 @@ LockHTTP puts every outbound HTTP(S) request of an AI agent through a gate
 that decides it with a policy only a human loosens, and holds what needs a
 human until that human answers in a console the agent cannot reach. This
 document says what it protects, how, and where it stops. It describes
-v0.1.0.
+the Docker-only setup ([docker.md](docker.md)): every command runs in the
+image, through the launcher.
 
 ## Principles
 
@@ -31,8 +32,9 @@ v0.1.0.
   (messages, pushes, publishes, API writes).
 - **Attackers:** the agent itself (prompt injection, drift, a malicious
   dependency it runs), and hostile web content that steers it.
-- **Out of scope:** a compromised host or console account, root, Anthropic
-  itself, an attacker on the network upstream of the proxy container. A
+- **Out of scope:** a compromised host or console account, root, any
+  account that may run `docker` on the host (see
+  [Docker](#what-docker-does-and-does-not-separate)), Anthropic itself, an attacker on the network upstream of the proxy container. A
   standalone gate whose agent can reach the network directly.
 
 ## Boundaries
@@ -41,8 +43,9 @@ v0.1.0.
 |---|---|
 | Agent ↔ network | lea: the agent's container is on an `--internal` network whose only peer is the proxy container; squid listens on 127.0.0.1 only, so the gate is the only HTTP way out ([lea.md](lea.md) §2.2). |
 | Agent ↔ gate | the gate reads the container from the local address the connection arrived on (one per internal network, `sources.json`); an unknown address is refused. The agent name (`Proxy-Authorization`) is recorded, not trusted. |
-| Gate ↔ console | lockkit's Unix socket in `/run/lockhttp` (`2710 lockhttp:lockhttp-clients`), bind-mounted in the proxy container only; the console checks the peer's uid (`SO_PEERCRED`) against the clients group and `allowed_uids`; the gate refuses to run as root. |
-| Console ↔ human | the console runs as `lockhttp`, in its own login session; lockkit refuses a console in the agent's account or in a container; approval screens in its own terminal, sanitised; 5 minutes without an answer is a denial. |
+| Gate ↔ console | lockkit's Unix socket in `/run/lockhttp` (`2710 lockhttp:lockhttp-clients`), the volume `lockhttp-run`, mounted only in the console's and the gate's containers; the console checks the peer's uid (`SO_PEERCRED`) against the image's clients group (the `gate` account, uid 10003) and `allowed_uids` (empty unless the image is built with `ALLOWED_UIDS`); the gate refuses to run as root. |
+| Console ↔ human | the console runs as `lockhttp` (uid 10021, not in the clients group) in the container `lockhttp-console`, started by the human through the launcher, with no log driver (no approval screen in `docker logs`); it is the only container with the volume `lockhttp-home` (policy, approved policy, audit); approval screens in its own terminal, sanitised; 5 minutes without an answer is a denial. |
+| Image's accounts | `lockhttp` (console, 10021), `gate` (10003, in `lockhttp-clients`, gid 10020), `signer` (10004); `/etc/lockhttp/system.toml` and the binary owned by root; the launcher on the host root-owned, running the image by the digest verified with cosign at install. |
 | Gate ↔ CA key | `lockhttp signer`, under its own uid, alone reads the key (refused if group- or world-readable) and issues 24-hour leaves over a Unix socket to allowed uids. |
 | Policy | the console account's file, read by the console only, approved by fingerprint; the gate checks the fingerprint of what it receives. |
 
@@ -65,13 +68,16 @@ v0.1.0.
 | T13 | Replay or forgery of an approval. | A decision covers one fingerprint (container, method, URL, media type, every end-to-end header value hashed, normalised body); a single-use authorisation is consumed once and lives 10 minutes; a connect grant is per container × host × port. | During `connect_grant`, a `CONNECT` grant opens the host for any traffic of that container. |
 | T14 | Prompt injection through the approval screen. | Every field the gate sends is bounded (512 B per field, 1 KiB preview, 16 warnings, 32 refs) and sanitised by lockkit; the preview is masked (personal data, credentials); the agent name is labelled "declared". | Text the human reads is still chosen in part by the agent (paths, body preview). |
 | T15 | The console is absent or killed. | Every ASK is refused at once (`E_NO_CONSOLE`); FREE continues on the last approved policy. | Reduced availability, by design. |
-| T16 | The console socket reachable by agents. | Bind-mounted in the proxy container only; `allowed_uids` holds the gate's uid; the clients group is the lea user's. | Processes running as the lea user on the host can reach the socket (they can ask, not approve). |
+| T16 | The console socket reachable by agents. | Besides the console, the volume `lockhttp-run` is mounted in the gate's container only, never in an agent's; the clients group exists only in the image, where it holds the `gate` account; the agent gets neither the socket nor the Docker socket. | Any account that may run `docker` on the host can mount `lockhttp-run`, and more ([below](#what-docker-does-and-does-not-separate)). |
+| T17 | The agent edits the policy or the approved policy. | Both live in `lockhttp-home`, mounted only by the console account's commands (`console`, `init`, `policy`, `doctor`), never by the gate or an agent; a loosening still waits for `:review`. | An account that may run `docker` can open `lockhttp-home` in a container of its own and change the approved policy. |
 
 ## Security requirements
 
 These do not change with the policy ([decisions.md](decisions.md)):
 
-- The console runs on the host, in its own account and login session.
+- The console runs as its own account, in its own container, the only one
+  with the console's home volume; the agent never gets the console's socket
+  or the Docker socket.
 - Every screen is `NeverAuto` unless an approved `auto` rule matches; the
   console re-checks that claim against its own approved policy (rule id,
   active, `auto`, allowed for its host and the profile, host, method, path,
@@ -107,7 +113,32 @@ These do not change with the policy ([decisions.md](decisions.md)):
 - **The agent name is declarative**, for the audit only.
 - **Standalone mode** (no `--sources`) attributes every connection to
   `local` and depends on the agent honouring the proxy variables.
+- **Docker is the separation**: see the next section.
 - **No external review** of LockHTTP has been done yet
   ([SECURITY.md](../SECURITY.md)).
+
+## What Docker does and does not separate
+
+The gate's container reaches the console only through the socket in
+`lockhttp-run`, as uid 10003; it holds no policy file and cannot approve.
+lea's agent containers get neither `lockhttp-run`, nor `lockhttp-home`, nor
+the Docker socket, and reach the network only through the gate.
+
+The Docker daemon is the residual boundary. Whoever can run `docker`
+commands on the host (root, members of the `docker` group, the owner of a
+rootless daemon) can:
+
+- `docker attach lockhttp-console` and type an approval;
+- `docker exec` into the console's container, or read its memory;
+- mount `lockhttp-home` in another container and read or change the policy,
+  the approved policy and the console's audit;
+- mount `lockhttp-run` and talk to the console as `gate`;
+- run the gate's or the signer's container differently, or read the CA key
+  given to the signer.
+
+The console cannot see any of this: its terminal belongs to the container.
+Keep the agent out of every account that may use Docker, and never give an
+agent's container the Docker socket. lea's agents run in containers without
+it.
 
 Report a vulnerability privately: [SECURITY.md](../SECURITY.md).

@@ -49,11 +49,14 @@ RUN case "$ALLOWED_UIDS" in *[!0-9,]*|,*|*,|*,,*) echo "ALLOWED_UIDS: comma-sepa
  && if [ -n "$ALLOWED_UIDS" ]; then printf 'allowed_uids = [%s]\n' "$ALLOWED_UIDS" >> /etc/lockhttp/system.toml; fi \
  && chmod 0644 /etc/lockhttp/system.toml \
  && install -d -m 2710 -o lockhttp -g lockhttp-clients /run/lockhttp \
+ && install -d -m 2750 -o signer -g lockhttp-clients /run/lockhttp-signer \
  && install -d -m 0700 -o gate -g lockhttp-clients /var/log/lockhttp
 COPY --from=build --chown=root:root --chmod=0755 /out/lockhttp /usr/local/bin/lockhttp
 
 # Named volumes take these directories' owner and mode on first use.
-VOLUME ["/run/lockhttp", "/home/lockhttp"]
+# /run/lockhttp-signer: the signer's socket (0660, group lockhttp-clients
+# through the setgid directory), shared with the gate.
+VOLUME ["/run/lockhttp", "/home/lockhttp", "/run/lockhttp-signer"]
 WORKDIR /
 USER gate
 ENTRYPOINT ["lockhttp"]

@@ -59,25 +59,25 @@
 
 <section aria-labelledby="layout">
   <h2 id="layout">Where each piece runs</h2>
-  <pre tabindex="0" class="diagram" role="img" aria-label="Agent containers reach only the lockhttp gate in lea's proxy container; the gate forwards to squid on loopback and the Internet; for requests that need a human it asks the lockhttp console on the host over a Unix socket mounted in the proxy container only."><code> agent container  (internal network, no other route)
+  <pre tabindex="0" class="diagram" role="img" aria-label="Agent containers reach only the lockhttp gate, a container sharing the network namespace of lea's proxy container; the gate forwards to squid on loopback and the Internet; for requests that need a human it asks the lockhttp console, in its own container, over a Unix socket in a volume only the gate and the console mount."><code> agent container  (internal network, no other route)
  ┌──────────────────────────────────────────────────────┐
  │ claude code · curl · git · npm · chromium            │
  │ HTTP(S)_PROXY=http://&lt;agent&gt;:&lt;token&gt;@lea-proxy:3130 │
  └──────────────────────────┬───────────────────────────┘
                             │ the only way out
- lea proxy container        ▼
+ lea proxy network namespace  ▼  (gate + signer sidecars)
  ┌──────────────────────────────────────────────────────┐
  │ lockhttp gate :3130   (own uid, never 0)             │
  │   source → container · policy → FREE / ASK / DENY    │
  │   lockhttp signer     (phase 2: holds the CA key)    │
  │   squid 127.0.0.1:3128 (network floor) ──▶ Internet  │
  └──────────────────────────┬───────────────────────────┘
-                            │ Unix socket, mounted in the
-                            │ proxy container only
- host                       ▼
+                            │ Unix socket, volume lockhttp-run:
+                            │ the gate and the console only
+ console container          ▼
  ┌──────────────────────────────────────────────────────┐
  │ lockhttp console --profile default                   │
- │   account lockhttp, its own login session            │
+ │   account lockhttp, volume lockhttp-home (policy)    │
  │   approvals · policy review · auto mode · audit      │
  └──────────────────────────────────────────────────────┘</code></pre>
   <p class="prose">The agent containers never see the console socket. The console authenticates the gate by its uid (<code>SO_PEERCRED</code>) and never goes on the network itself.</p>

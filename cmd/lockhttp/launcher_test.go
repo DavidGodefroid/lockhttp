@@ -207,13 +207,13 @@ func TestLauncherAccountsPerCommand(t *testing.T) {
 	}{
 		{[]string{"init", "--trusted", "a.com b.com"}, nil, [][]string{{"--user", "lockhttp"}, {"-v", "lockhttp-home:/home/lockhttp"}}, [][]string{{"-v", "lockhttp-run:/run/lockhttp"}}},
 		{[]string{"policy", "edit"}, nil, [][]string{{"--user", "lockhttp"}, {"-v", "lockhttp-home:/home/lockhttp"}}, [][]string{{"-v", "lockhttp-run:/run/lockhttp"}}},
-		{[]string{"doctor"}, nil, [][]string{{"--user", "lockhttp"}, {"-v", "lockhttp-run:/run/lockhttp"}, {"-v", "lockhttp-home:/home/lockhttp"}}, nil},
+		{[]string{"doctor"}, nil, [][]string{{"--user", "lockhttp"}, {"-v", "lockhttp-home:/home/lockhttp"}}, [][]string{{"-v", "lockhttp-run:/run/lockhttp"}}},
 		{[]string{"gate", "--upstream", "http://squid:3128"}, []string{"gate", "--listen", "0.0.0.0:3130", "--upstream", "http://squid:3128"},
 			[][]string{{"--user", "gate"}, {"--name", "lockhttp-gate"}, {"-v", "lockhttp-run:/run/lockhttp"}, {"-p", "127.0.0.1:3130:3130"}},
 			[][]string{{"-v", "lockhttp-home:/home/lockhttp"}}},
 		{[]string{"gate", "--listen=0.0.0.0:3131"}, nil, [][]string{{"--user", "gate"}}, nil},
-		{[]string{"signer", "--listen", "/s/s.sock"}, nil, [][]string{{"--user", "signer"}}, [][]string{{"-v", "lockhttp-run:/run/lockhttp"}, {"-v", "lockhttp-home:/home/lockhttp"}}},
-		{[]string{"ca", "init", "--dir", cadir, "--force"}, nil, [][]string{{"--user", me}, {"-v", cadir + ":" + cadir}}, [][]string{{"-v", "lockhttp-home:/home/lockhttp"}}},
+		{[]string{"signer", "--listen", "/run/lockhttp-signer/s.sock"}, nil, [][]string{{"--user", "signer"}, {"-v", "lockhttp-signer:/run/lockhttp-signer"}}, [][]string{{"-v", "lockhttp-run:/run/lockhttp"}, {"-v", "lockhttp-home:/home/lockhttp"}}},
+		{[]string{"ca", "init", "--dir", cadir, "--force"}, []string{"ca", "init", "--dir", cadir, "--force", "--name", hostname(t)}, [][]string{{"--user", me}, {"-v", cadir + ":" + cadir}}, [][]string{{"-v", "lockhttp-home:/home/lockhttp"}}},
 		{[]string{"ca", "init", "--name", "my host", "--dir=" + cadir}, []string{"ca", "init", "--name", "my host", "--dir=" + cadir}, [][]string{{"--user", me}}, nil},
 		{[]string{"help"}, nil, nil, [][]string{{"--user"}, {"-v", "lockhttp-home:/home/lockhttp"}, {"-v", "lockhttp-run:/run/lockhttp"}}},
 		{nil, nil, nil, [][]string{{"--user"}, {"-v", "lockhttp-home:/home/lockhttp"}}},
@@ -252,6 +252,15 @@ func TestLauncherAccountsPerCommand(t *testing.T) {
 	if out, _, err := f.run(t, f.project, nil, "ca", "init"); err == nil || !strings.Contains(out, "name the directory") {
 		t.Errorf("ca init without --dir: %v %s", err, out)
 	}
+}
+
+func hostname(t *testing.T) string {
+	t.Helper()
+	b, err := exec.Command("uname", "-n").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // LOCKHTTP_PUBLISH moves the gate's published port.

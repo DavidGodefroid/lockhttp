@@ -103,7 +103,7 @@
 <section aria-labelledby="highlights">
   <h2 id="highlights">Highlights</h2>
   <ul class="cards">
-    <li><span class="icon" aria-hidden="true">👤</span><h3>Human in the loop</h3><p>The console runs on the host, in its own <code>lockhttp</code> account and login session. lockkit refuses a console in the agent’s account or in a container.</p></li>
+    <li><span class="icon" aria-hidden="true">👤</span><h3>Human in the loop</h3><p>The console runs in its own container, under its own <code>lockhttp</code> account, the only one with the policy. The agent never gets its socket.</p></li>
     <li><span class="icon" aria-hidden="true">🧱</span><h3>Fail closed</h3><p>No console: an ASK is refused at once (<code>E_NO_CONSOLE</code>). An error while deciding, an unknown source, a policy that does not decode: deny.</p></li>
     <li><span class="icon" aria-hidden="true">🔁</span><h3>Progressive auto mode</h3><p>Every screen is <code>NeverAuto</code> by default. Only a rule with <code>verdict = "auto"</code>, approved by you and scoped to a container, can be answered by auto mode.</p></li>
     <li><span class="icon" aria-hidden="true">🧩</span><h3>Identical, not similar</h3><p>A decision is shared only by requests of identical fingerprint: container, method, URL, significant headers, normalised body.</p></li>
@@ -118,18 +118,20 @@
 <section aria-labelledby="quick-start">
   <h2 id="quick-start">Quick start with lea</h2>
   <p class="prose">lockhttp is built for <a href="https://github.com/DavidGodefroid/lea">lea</a>, which runs agents in containers whose only way out is its proxy container. The planned setup for <code>v0.1.0</code>, from the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">lea integration contract</a>:</p>
-  <pre tabindex="0" class="term"><code># 1. On the host, once: the console account, the clients group, /etc/lockhttp
-sudo lockhttp install --client "$USER" --gate-uid 10003   # add --rootless under Podman
+  <pre tabindex="0" class="term"><code># 1. Install the launcher: every lockhttp command runs in Docker
+V=vX.Y.Z
+curl -fsSLO "https://raw.githubusercontent.com/DavidGodefroid/lockhttp/$V/scripts/install.sh"
+less install.sh && LOCKHTTP_VERSION=$V sh install.sh
 
-# 2. As the lockhttp account: write the policy (trusted read-only hosts)
+# 2. Write the policy (trusted read-only hosts)
 lockhttp init
 
-# 3. As the lockhttp account, in its own login session: keep the console open
-lockhttp console --profile default
+# 3. In a terminal you keep in view: the console
+lockhttp console
 
-# 4. Back in your account: turn lockhttp on in lea (opt-in)
+# 4. In another terminal: turn lockhttp on in lea (opt-in)
 export LEA_LOCKHTTP=1</code></pre>
-  <p class="prose">lea then runs <code>lockhttp gate</code> in its proxy container, in front of squid. Ask your agent to read the docs of a trusted site: it goes through. Ask it to post somewhere: the request waits for your <code>y</code> in the console. <code>lockhttp doctor</code> checks the setup.</p>
+  <p class="prose">lea then runs <code>lockhttp gate</code> in a container beside its proxy container, in front of squid. Ask your agent to read the docs of a trusted site: it goes through. Ask it to post somewhere: the request waits for your <code>y</code> in the console. <code>lockhttp doctor</code> checks the setup.</p>
   <p><a href="install/">Install and setup details</a></p>
 </section>
 
