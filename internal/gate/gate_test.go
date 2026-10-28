@@ -684,6 +684,9 @@ func TestBodyHelpers(t *testing.T) {
 	if BodyFingerprint("application/json", []byte(`{"a":1,"x":{"b":1,"b":2}}`)) == BodyFingerprint("application/json", []byte(`{"a":1,"x":{"b":2}}`)) {
 		t.Fatal("duplicate keys canonicalised")
 	}
+	if BodyFingerprint("application/json", []byte(`{"a":"\ud800"}`)) == BodyFingerprint("application/json", []byte(`{"a":"\ud801"}`)) {
+		t.Fatal("lone surrogates merged")
+	}
 	if !strings.HasPrefix(BodyFingerprint("application/json", []byte(`{"a":[{"b":1},{"b":1}],"c":{"d":{"e":1}}}`)), "json:") {
 		t.Fatal("same key in sibling objects is not a duplicate")
 	}

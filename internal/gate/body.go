@@ -63,10 +63,13 @@ func BodyFingerprint(contentType string, body []byte) string {
 			fmt.Fprintf(h, "%d:%s\n", len(c), sum(c))
 		}
 	case mt == "application/json" || strings.HasSuffix(mt, "+json"):
+		// Canonical only when unambiguous: valid UTF-8, no \u escape (a lone
+		// surrogate decodes to U+FFFD, merging spellings), no duplicate key,
+		// nothing after the value. Anything else is hashed raw.
 		var v any
 		dec := json.NewDecoder(bytes.NewReader(body))
 		dec.UseNumber()
-		if utf8.Valid(body) && noDuplicateKeys(body) && dec.Decode(&v) == nil && atEOF(dec) {
+		if utf8.Valid(body) && !bytes.Contains(body, []byte(`\u`)) && noDuplicateKeys(body) && dec.Decode(&v) == nil && atEOF(dec) {
 			if m, ok := v.(map[string]any); ok {
 				for _, f := range volatileFields {
 					// Only a short scalar is volatile: anything that could
