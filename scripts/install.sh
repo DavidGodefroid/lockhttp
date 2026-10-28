@@ -50,11 +50,23 @@ esac
 
 tag="${LOCKHTTP_VERSION:-}"
 if [ -z "$tag" ]; then
-	tag="$(latest)"
+	tag="$(latest)" || tag=""
 	tag="${tag##*/}"
 	case "$tag" in
 	v[0-9]*) ;;
-	*) die "no published release found; set LOCKHTTP_VERSION" ;;
+	*)
+		# Only pre-releases so far: /releases/latest skips them; take the
+		# newest entry of the releases feed.
+		feed="$(mktemp)"
+		fetch "https://github.com/$repo/releases.atom" "$feed" || true
+		tag="$(grep -o 'releases/tag/v[0-9][^"<]*' "$feed" | head -n 1)"
+		rm -f "$feed"
+		tag="${tag##*/}"
+		case "$tag" in
+		v[0-9]*) say "no stable release yet: installing the latest pre-release $tag" ;;
+		*) die "no published release found; set LOCKHTTP_VERSION" ;;
+		esac
+		;;
 	esac
 fi
 case "$tag" in v*) ;; *) tag="v$tag" ;; esac
