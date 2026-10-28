@@ -352,3 +352,26 @@ func TestClaudeAPI(t *testing.T) {
 		t.Fatalf("keyproxy key: %+v", d)
 	}
 }
+
+func TestClaudeAmbiguity(t *testing.T) {
+	p := pol(t, "")
+	for name, body := range map[string]string{
+		"case variant":   `{"MCP_Servers":[{"url":"https://x"}]}`,
+		"duplicate key":  `{"tools":[],"tools":[{"type":"web_fetch_20250910"}]}`,
+		"tool type case": `{"tools":[{"Type":"web_fetch_20250910"}]}`,
+		"trailing":       `{} {"mcp_servers":[{}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := decideAll(p, post("api.anthropic.com", "/v1/messages", "application/json", body))
+			if d.Verdict != Ask {
+				t.Fatalf("ambiguous body passed: %+v", d)
+			}
+		})
+	}
+	r := post("api.anthropic.com", "/v1/messages", "application/json", `{}`)
+	r.Header.Add("Authorization", "Bearer a")
+	r.Header.Add("Authorization", "Bearer b")
+	if d, _ := claudeCredential(r, fakeCreds{"lea-a": {sha("a")}}); d.Verdict != Deny {
+		t.Fatalf("two Authorization headers: %+v", d)
+	}
+}

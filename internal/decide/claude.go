@@ -1,10 +1,13 @@
 package decide
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -77,29 +80,30 @@ func isOAuth(host, path string) bool {
 	return false
 }
 
-// claudeCredential denies a credential that is not the caller's.
+// claudeCredential denies a credential that is not the caller's. Every
+// value of Authorization and X-Api-Key counts: two credentials, or a
+// header sent twice, are denied (a server may read either one).
 func claudeCredential(r Request, creds Credentials) (Decision, bool) {
 	if creds == nil || r.Header == nil {
 		return Decision{}, false
 	}
-	var cred string
-	if a := r.Header.Get("Authorization"); a != "" {
+	var found []string
+	for _, a := range r.Header.Values("Authorization") {
 		if v, ok := strings.CutPrefix(a, "Bearer "); ok {
-			cred = strings.TrimSpace(v)
-		} else {
-			cred = a
+			a = v
 		}
+		found = append(found, strings.TrimSpace(a))
 	}
-	if k := r.Header.Get("X-Api-Key"); k != "" {
-		if cred != "" {
-			return deny("claude:credential", product.CodeSecretEgress, "two credentials in one request"), true
-		}
-		cred = k
+	for _, k := range r.Header.Values("X-Api-Key") {
+		found = append(found, strings.TrimSpace(k))
 	}
-	if cred == "" {
+	if len(found) == 0 {
 		return Decision{}, false
 	}
-	sum := sha256.Sum256([]byte(cred))
+	if len(found) > 1 {
+		return deny("claude:credential", product.CodeSecretEgress, "more than one credential in one request"), true
+	}
+	sum := sha256.Sum256([]byte(found[0]))
 	on, ok := creds.Known(r.Container, r.Via, hex.EncodeToString(sum[:]))
 	if on && !ok {
 		return deny("claude:credential", product.CodeSecretEgress, "a credential that is not this container's (third-party key)"), true
@@ -107,59 +111,116 @@ func claudeCredential(r Request, creds Credentials) (Decision, bool) {
 	return Decision{}, false
 }
 
-type messagesBody struct {
-	MCPServers []json.RawMessage `json:"mcp_servers"`
-	Tools      []struct {
-		Type string `json:"type"`
-		Name string `json:"name"`
-	} `json:"tools"`
-	Container json.RawMessage `json:"container"`
-}
+// errAmbiguous marks JSON another parser could read differently: a
+// duplicate key, or a key equal to a checked one but for its case.
+var errAmbiguous = errors.New("ambiguous JSON")
 
-type mcpServer struct {
-	URL  string `json:"url"`
-	Name string `json:"name"`
+// strictObject decodes a JSON object into its members, refusing duplicate
+// keys and keys that fold to one of watch without matching it exactly
+// (Go's decoder is case-insensitive, the API's may not be).
+func strictObject(data []byte, watch ...string) (map[string]json.RawMessage, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	t, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	if d, ok := t.(json.Delim); !ok || d != '{' {
+		return nil, errors.New("not an object")
+	}
+	out := map[string]json.RawMessage{}
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		k, _ := t.(string)
+		if _, dup := out[k]; dup {
+			return nil, errAmbiguous
+		}
+		for _, w := range watch {
+			if k != w && strings.EqualFold(k, w) {
+				return nil, errAmbiguous
+			}
+		}
+		var v json.RawMessage
+		if err := dec.Decode(&v); err != nil {
+			return nil, err
+		}
+		out[k] = v
+	}
+	if _, err := dec.Token(); err != nil {
+		return nil, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, errors.New("trailing data")
+	}
+	return out, nil
 }
 
 // claudeMessages applies the parameter allowlist of /v1/messages.
 func claudeMessages(r Request) Decision {
-	if r.Body == nil {
-		return Decision{Verdict: Ask, Rule: "claude:messages", Class: "claude", NeverAuto: true,
-			Code: product.CodeClaudeParam, Warnings: []string{"the request body was not held: its parameters are unknown"}}
+	ask := func(w ...string) Decision {
+		return Decision{Verdict: Ask, Rule: "claude:messages-params", Class: "claude", NeverAuto: true, Red: true,
+			Code: product.CodeClaudeParam, Warnings: w}
 	}
-	var b messagesBody
-	if err := json.Unmarshal(r.Body, &b); err != nil {
-		return Decision{Verdict: Ask, Rule: "claude:messages", Class: "claude", NeverAuto: true,
-			Code: product.CodeClaudeParam, Warnings: []string{"the body is not JSON"}}
+	if r.Body == nil {
+		return ask("the request body was not held: its parameters are unknown")
+	}
+	top, err := strictObject(r.Body, "mcp_servers", "tools", "container")
+	if err != nil {
+		return ask("the body is not an unambiguous JSON object")
 	}
 	var warns []string
-	for _, raw := range b.MCPServers {
-		var s mcpServer
-		_ = json.Unmarshal(raw, &s)
-		warns = append(warns, fmt.Sprintf("mcp_servers: %q %s (the API calls this server for the agent)", s.Name, s.URL))
+	if raw, ok := top["mcp_servers"]; ok && string(raw) != "null" {
+		var servers []json.RawMessage
+		if err := json.Unmarshal(raw, &servers); err != nil {
+			return ask("mcp_servers is not a list")
+		}
+		for _, sr := range servers {
+			m, err := strictObject(sr, "url", "name")
+			if err != nil {
+				return ask("an mcp_servers entry is ambiguous")
+			}
+			var url, name string
+			_ = json.Unmarshal(m["url"], &url)
+			_ = json.Unmarshal(m["name"], &name)
+			warns = append(warns, fmt.Sprintf("mcp_servers: %q %s (the API calls this server for the agent)", name, url))
+		}
 	}
-	for _, t := range b.Tools {
-		if t.Type == "" || t.Type == "custom" {
-			continue
+	if raw, ok := top["tools"]; ok && string(raw) != "null" {
+		var tools []json.RawMessage
+		if err := json.Unmarshal(raw, &tools); err != nil {
+			return ask("tools is not a list")
 		}
-		base := t.Type
-		if i := strings.LastIndex(base, "_20"); i > 0 {
-			base = base[:i]
+		for _, tr := range tools {
+			m, err := strictObject(tr, "type", "name")
+			if err != nil {
+				return ask("a tools entry is ambiguous")
+			}
+			var typ string
+			if raw, ok := m["type"]; ok {
+				if err := json.Unmarshal(raw, &typ); err != nil {
+					return ask("a tool type is not a string")
+				}
+			}
+			if typ == "" || typ == "custom" {
+				continue
+			}
+			base := typ
+			if i := strings.LastIndex(base, "_20"); i > 0 {
+				base = base[:i]
+			}
+			if slices.Contains(serverToolsFree, base) || isClientTool(base) {
+				continue
+			}
+			warns = append(warns, "server tool "+typ+" (runs outside lea)")
 		}
-		if slices.Contains(serverToolsFree, base) {
-			continue
-		}
-		if isClientTool(base) {
-			continue
-		}
-		warns = append(warns, "server tool "+t.Type+" (runs outside lea)")
 	}
-	if len(b.Container) > 0 && string(b.Container) != "null" {
+	if raw, ok := top["container"]; ok && string(raw) != "null" {
 		warns = append(warns, "container parameter (code execution session)")
 	}
 	if len(warns) > 0 {
-		return Decision{Verdict: Ask, Rule: "claude:messages-params", Class: "claude", NeverAuto: true, Red: true,
-			Code: product.CodeClaudeParam, Warnings: warns}
+		return ask(warns...)
 	}
 	return Decision{Verdict: Free, Rule: "claude:messages", Class: "claude"}
 }
