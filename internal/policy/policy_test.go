@@ -164,6 +164,9 @@ func TestDiff(t *testing.T) {
 		{"rule bigger body", func(p *Policy) { p.Rules[1].MaxBody = 0 }, true},
 		{"rule other host", func(p *Policy) { p.Rules[0].Host = "api.gitlab.com" }, true},
 		{"remove free rule", func(p *Policy) { p.Rules = p.Rules[1:] }, false},
+		{"remove auto rule", func(p *Policy) { p.Rules = p.Rules[:1] }, true},
+		{"narrow auto rule", func(p *Policy) { p.Rules[1].Container = "lea-other" }, true},
+		{"narrow free rule", func(p *Policy) { p.Rules[0].Methods = []string{"GET"} }, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

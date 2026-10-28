@@ -105,7 +105,9 @@ func diffRules(old, cur []Rule) []kconfig.Change {
 	}
 	for _, r := range old {
 		if !curIDs[r.ID] {
-			out = append(out, kconfig.Change{Field: "rule " + r.ID, Old: r.String(), Loosens: r.Verdict == VerdictDeny})
+			// Removing a rule other than free lets its requests fall back to
+			// another rule or the defaults, which may let more through.
+			out = append(out, kconfig.Change{Field: "rule " + r.ID, Old: r.String(), Loosens: r.Verdict != VerdictFree})
 		}
 	}
 	return out
@@ -114,9 +116,10 @@ func diffRules(old, cur []Rule) []kconfig.Change {
 // ruleLooser reports whether n lets more through than o.
 func ruleLooser(o, n Rule) bool {
 	widens := verdictRank[n.Verdict] > verdictRank[o.Verdict]
-	if n.Verdict == VerdictDeny {
-		// A deny rule loosens by matching less.
-		return widens || narrower(o, n)
+	if n.Verdict != VerdictFree && narrower(o, n) {
+		// A deny, ask or auto rule loosens by matching less: what it no
+		// longer matches falls back to another rule or the defaults.
+		return true
 	}
 	return widens || narrower(n, o) || (o.Verdict == VerdictDeny && n.Verdict != VerdictDeny)
 }
