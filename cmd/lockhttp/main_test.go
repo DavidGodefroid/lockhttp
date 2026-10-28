@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -62,7 +63,9 @@ func TestInstallPrint(t *testing.T) {
 		t.Fatalf("install: %d\n%s\n%s", code, out, errs)
 	}
 	code, out, errs = runEnv(t, e, "install", "--client", u.Username, "--gate-uid", "10003", "--rootless", "--print", "--trust-binary")
-	if code != exitOK || !strings.Contains(out, "allowed_uids = [110002]") {
+	if runtime.GOOS == "windows" {
+		// Rootless Podman and Unix account names: Unix only.
+	} else if code != exitOK || !strings.Contains(out, "allowed_uids = [110002]") {
 		t.Fatalf("rootless: %d\n%s\n%s", code, out, errs)
 	}
 	if code, _, _ := runEnv(t, e, "install", "--gate-uid", "0", "--print"); code != exitUsage {
@@ -84,7 +87,7 @@ func TestInitWritesValidPolicy(t *testing.T) {
 		t.Fatalf("imports missing:\n%s", b)
 	}
 	fi, _ := os.Stat(path)
-	if fi.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %o", fi.Mode().Perm())
 	}
 	if code, _, _ := runEnv(t, env{}, "init", "--config", path); code != exitFail {
