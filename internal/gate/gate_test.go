@@ -658,7 +658,37 @@ func TestBodyHelpers(t *testing.T) {
 	if len(refs) != 2 || !strings.HasPrefix(refs[0], "create refs/heads/new") || !strings.HasPrefix(refs[1], "DELETE refs/heads/old") {
 		t.Fatalf("refs: %v", refs)
 	}
-	if serverName([]byte{0x16, 3, 1, 0, 1, 1}) != "" {
-		t.Fatal("short hello")
+	if _, ok := serverName([]byte{0x16, 3, 1, 0, 1, 1}); ok {
+		t.Fatal("short hello parsed")
+	}
+	for _, c := range []struct {
+		port            int
+		internal        bool
+		sni             string
+		isTLS, complete bool
+		refused         bool
+	}{
+		{443, false, "a.test", true, true, false},
+		{443, false, "b.test", true, true, true},
+		{443, false, "", true, true, true},
+		{443, false, "a.test", true, false, true},
+		{443, false, "", false, false, true},
+		{80, false, "", false, false, false},
+		{8080, true, "", false, false, false},
+		{443, true, "", false, false, false},
+	} {
+		if got := helloRefusal("a.test", c.port, c.internal, c.sni, c.isTLS, c.complete) != ""; got != c.refused {
+			t.Errorf("helloRefusal(%+v) refused=%v", c, got)
+		}
+	}
+	if BodyFingerprint("application/json", []byte(`{"a":1,"nonce":"x"} {"leak":1}`)) == BodyFingerprint("application/json", []byte(`{"a":1}`)) {
+		t.Fatal("trailing JSON ignored")
+	}
+	if BodyFingerprint("application/json", []byte(`{"a":1,"nonce":{"leak":"data"}}`)) == BodyFingerprint("application/json", []byte(`{"a":1}`)) {
+		t.Fatal("a structured volatile field is dropped")
+	}
+	pre := BodyFingerprint("multipart/form-data; boundary=AAA", []byte("LEAK\r\n--AAA\r\nContent-Disposition: form-data; name=\"f\"\r\n\r\nhello\r\n--AAA--\r\n"))
+	if pre == a {
+		t.Fatal("multipart preamble ignored")
 	}
 }

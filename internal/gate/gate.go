@@ -244,7 +244,8 @@ var hopHeaders = []string{"Proxy-Authorization", "Proxy-Authenticate", "Proxy-Co
 
 func (g *Gate) handle(ctx context.Context, c net.Conn) {
 	defer c.Close()
-	br := bufio.NewReader(c)
+	// Large enough for a whole TLS record (a ClientHello is peeked).
+	br := bufio.NewReaderSize(c, 20<<10)
 	local := localAddr(c)
 	for {
 		_ = c.SetReadDeadline(time.Now().Add(5 * time.Minute))
@@ -278,6 +279,12 @@ func (g *Gate) handle(ctx context.Context, c net.Conn) {
 			return
 		}
 		host, port := splitHostPort(req.URL.Host, 80)
+		if req.Host != "" {
+			if hh, hp := splitHostPort(req.Host, 80); hh != host || hp != port {
+				writeRefusal(c, newRequestID(), string(product.CodeFloor), "the Host header differs from the request URL", true)
+				return
+			}
+		}
 		if !g.serveHTTP(ctx, c, br, req, src, "http", host, port, "plain") {
 			return
 		}
@@ -444,9 +451,9 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 	if _, err := io.WriteString(c, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {
 		return
 	}
-	hello, sni, isTLS := peekClientHello(c, br)
-	if isTLS && sni != "" && !strings.EqualFold(strings.TrimSuffix(sni, "."), host) {
-		rec.Base = audit.Base{Event: "refused", Decision: "refused", Code: string(product.CodeFloor), Reason: "TLS server name " + sni + " differs from the CONNECT host"}
+	hello, sni, isTLS, complete := peekClientHello(c, br)
+	if why := helloRefusal(host, port, internalHost(pol, host), sni, isTLS, complete); why != "" {
+		rec.Base = audit.Base{Event: "refused", Decision: "refused", Code: string(product.CodeFloor), Reason: why}
 		rec.Rule = "floor:sni"
 		g.audit(rec)
 		return
@@ -485,10 +492,37 @@ func (g *Gate) refuse(w io.Writer, d decide.Decision, id string, src wire.Source
 	writeRefusal(w, id, string(d.Code), d.Reason, connect)
 }
 
-// peekClientHello reads the first TLS record from the client (5 s) and
-// returns it with its server name. A non-TLS first byte returns what was
-// buffered and isTLS false.
-func peekClientHello(c net.Conn, br *bufio.Reader) (raw []byte, sni string, isTLS bool) {
+func internalHost(p *policy.Policy, host string) bool {
+	if p == nil {
+		return false
+	}
+	_, ok := p.InternalHost(host)
+	return ok
+}
+
+// helloRefusal checks what a client sends first in a tunnel. On port 443
+// it must be a complete TLS ClientHello naming the CONNECT host; on other
+// ports (internal hosts, plain port 80) a ClientHello, if any, must name
+// it too. "" lets it through.
+func helloRefusal(host string, port int, internal bool, sni string, isTLS, complete bool) string {
+	switch {
+	case isTLS && !complete:
+		return "the TLS ClientHello could not be read whole"
+	case isTLS && sni != "" && !strings.EqualFold(strings.TrimSuffix(sni, "."), host):
+		return "TLS server name " + sni + " differs from the CONNECT host"
+	case port == 443 && !internal && !isTLS:
+		return "not TLS on port 443"
+	case port == 443 && !internal && sni == "":
+		return "a TLS ClientHello without a server name on port 443"
+	}
+	return ""
+}
+
+// peekClientHello reads the first TLS record from the client (10 s) and
+// returns it with its server name; complete is false when the record
+// could not be read whole or parsed. A non-TLS first byte returns what
+// was buffered and isTLS false.
+func peekClientHello(c net.Conn, br *bufio.Reader) (raw []byte, sni string, isTLS, complete bool) {
 	_ = c.SetReadDeadline(time.Now().Add(10 * time.Second))
 	defer c.SetReadDeadline(time.Time{})
 	head, err := br.Peek(5)
@@ -497,51 +531,53 @@ func peekClientHello(c net.Conn, br *bufio.Reader) (raw []byte, sni string, isTL
 		b, _ := br.Peek(n)
 		raw = append([]byte(nil), b...)
 		_, _ = br.Discard(n)
-		return raw, "", false
+		return raw, "", false, false
 	}
 	n := int(head[3])<<8 | int(head[4])
 	rec, err := br.Peek(5 + n)
 	if err != nil {
-		rec, _ = br.Peek(br.Buffered())
+		return nil, "", true, false
 	}
 	raw = append([]byte(nil), rec...)
 	_, _ = br.Discard(len(rec))
-	return raw, serverName(raw), true
+	sni, ok := serverName(raw)
+	return raw, sni, true, ok
 }
 
-// serverName parses the SNI of a ClientHello record ("" when absent).
-func serverName(rec []byte) string {
+// serverName parses the SNI of a ClientHello record; ok is false when the
+// record is not a well-formed ClientHello ("" and true: no SNI).
+func serverName(rec []byte) (string, bool) {
 	if len(rec) < 5+4+2+32+1 {
-		return ""
+		return "", false
 	}
 	p := rec[5:]
 	if p[0] != 1 { // handshake type ClientHello
-		return ""
+		return "", false
 	}
 	p = p[4:]       // type + length
 	p = p[2+32:]    // version + random
 	if len(p) < 1 { //
-		return ""
+		return "", false
 	}
 	sl := int(p[0])
 	if len(p) < 1+sl+2 {
-		return ""
+		return "", false
 	}
 	p = p[1+sl:]
 	cl := int(p[0])<<8 | int(p[1])
 	if len(p) < 2+cl+1 {
-		return ""
+		return "", false
 	}
 	p = p[2+cl:]
 	ml := int(p[0])
 	if len(p) < 1+ml+2 {
-		return ""
+		return "", false
 	}
 	p = p[1+ml:]
 	el := int(p[0])<<8 | int(p[1])
 	p = p[2:]
 	if len(p) < el {
-		return ""
+		return "", false
 	}
 	p = p[:el]
 	for len(p) >= 4 {
@@ -549,26 +585,26 @@ func serverName(rec []byte) string {
 		l := int(p[2])<<8 | int(p[3])
 		p = p[4:]
 		if len(p) < l {
-			return ""
+			return "", false
 		}
 		if typ == 0 { // server_name
 			d := p[:l]
 			if len(d) < 5 {
-				return ""
+				return "", false
 			}
 			d = d[2:]
 			if d[0] != 0 {
-				return ""
+				return "", false
 			}
 			nl := int(d[1])<<8 | int(d[2])
 			if len(d) < 3+nl {
-				return ""
+				return "", false
 			}
-			return strings.ToLower(string(d[3 : 3+nl]))
+			return strings.ToLower(string(d[3 : 3+nl])), true
 		}
 		p = p[l:]
 	}
-	return ""
+	return "", len(p) == 0
 }
 
 // tunnel opens a raw connection to host:port: through the upstream proxy
@@ -704,15 +740,11 @@ func (g *Gate) mitm(ctx context.Context, c net.Conn, br *bufio.Reader, host stri
 	if _, err := io.WriteString(c, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {
 		return
 	}
-	hello, sni, isTLS := peekClientHello(c, br)
+	hello, sni, isTLS, complete := peekClientHello(c, br)
 	id := newRequestID()
 	t := wire.Target{Phase: "connect", TLS: "mitm", Method: http.MethodConnect, Host: host, Port: port}
-	if !isTLS {
-		g.audit(wire.Record{Base: audit.Base{Event: "refused", Decision: "refused", Code: string(product.CodeFloor), Reason: "not TLS on port 443"}, RequestID: id, Source: src, Target: t, Rule: "floor:not-tls"})
-		return
-	}
-	if sni != "" && !strings.EqualFold(strings.TrimSuffix(sni, "."), host) {
-		g.audit(wire.Record{Base: audit.Base{Event: "refused", Decision: "refused", Code: string(product.CodeFloor), Reason: "TLS server name " + sni + " differs from the CONNECT host"}, RequestID: id, Source: src, Target: t, Rule: "floor:sni"})
+	if why := helloRefusal(host, port, false, sni, isTLS, complete); why != "" {
+		g.audit(wire.Record{Base: audit.Base{Event: "refused", Decision: "refused", Code: string(product.CodeFloor), Reason: why}, RequestID: id, Source: src, Target: t, Rule: "floor:sni"})
 		return
 	}
 	cert, err := g.cfg.Certs.Certificate(ctx, host)

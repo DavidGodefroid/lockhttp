@@ -40,7 +40,7 @@ func BodyFingerprint(contentType string, body []byte) string {
 	}
 	mt, params, _ := mime.ParseMediaType(contentType)
 	switch {
-	case strings.HasPrefix(mt, "multipart/") && params["boundary"] != "":
+	case strings.HasPrefix(mt, "multipart/") && params["boundary"] != "" && multipartFramed(body, params["boundary"]):
 		mr := multipart.NewReader(bytes.NewReader(body), params["boundary"])
 		h := sha256.New()
 		for {
@@ -66,10 +66,19 @@ func BodyFingerprint(contentType string, body []byte) string {
 		var v any
 		dec := json.NewDecoder(bytes.NewReader(body))
 		dec.UseNumber()
-		if dec.Decode(&v) == nil {
+		if dec.Decode(&v) == nil && atEOF(dec) {
 			if m, ok := v.(map[string]any); ok {
 				for _, f := range volatileFields {
-					delete(m, f)
+					// Only a short scalar is volatile: anything that could
+					// carry data stays in the fingerprint.
+					switch x := m[f].(type) {
+					case json.Number, bool, nil:
+						delete(m, f)
+					case string:
+						if len(x) <= 64 {
+							delete(m, f)
+						}
+					}
 				}
 			}
 			if b, err := json.Marshal(v); err == nil {
@@ -78,6 +87,22 @@ func BodyFingerprint(contentType string, body []byte) string {
 		}
 	}
 	return "raw:" + sum(body)
+}
+
+// atEOF reports that nothing follows the decoded value.
+func atEOF(dec *json.Decoder) bool {
+	_, err := dec.Token()
+	return err == io.EOF
+}
+
+// multipartFramed reports a body with no preamble and no epilogue: the
+// multipart reader skips both, so data hidden there would not change the
+// normalised fingerprint. Anything else is hashed raw.
+func multipartFramed(body []byte, boundary string) bool {
+	end := "--" + boundary + "--"
+	b := bytes.TrimSuffix(body, []byte("\r\n"))
+	return bytes.HasPrefix(body, []byte("--"+boundary+"\r\n")) && bytes.HasSuffix(b, []byte(end)) &&
+		bytes.Count(body, []byte(end)) == 1
 }
 
 // RequestFingerprint binds an ask (and a single-use authorisation) to a

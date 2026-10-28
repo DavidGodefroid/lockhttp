@@ -84,7 +84,7 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 	default:
 		d = decide.Evaluate(pol, r, g.cfg.Now(), g.cfg.Creds)
 	}
-	if d.Verdict == decide.Free && rest != nil && d.Rule != "grant:once" {
+	if d.Verdict == decide.Free && rest != nil {
 		// Over the buffer limit: only a policy rule may stream it.
 		if pol == nil || !isRuleID(pol, d.Rule) {
 			d = decide.Decision{Verdict: decide.Deny, Rule: "default:body-limit", Code: product.CodeBodyTooLarge,
@@ -130,8 +130,9 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 	out := req.Clone(ctx)
 	out.RequestURI = ""
 	out.URL, _ = url.Parse(target)
-	out.Host = req.Host
-	if out.Host == "" {
+	// The Host sent upstream is the host decided, never the client's.
+	out.Host = host
+	if (scheme == "https" && port != 443) || (scheme == "http" && port != 80) {
 		out.Host = net.JoinHostPort(host, strconv.Itoa(port))
 	}
 	for _, h := range hopHeaders {
