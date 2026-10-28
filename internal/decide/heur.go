@@ -177,11 +177,7 @@ func secretCheck(r Request) (Decision, bool) {
 	if u, err := url.QueryUnescape(r.RawQuery); err == nil {
 		parts = append(parts, u)
 	}
-	for name, vs := range r.Header {
-		ln := strings.ToLower(name)
-		if ln == "cookie" {
-			continue
-		}
+	for _, vs := range r.Header {
 		parts = append(parts, vs...)
 	}
 	if r.Body != nil {

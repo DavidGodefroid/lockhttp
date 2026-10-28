@@ -76,7 +76,10 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 	}
 	fp := RequestFingerprint(src.Container, req.Method, target, req.Header, bodyFP)
 	var d decide.Decision
+	hard, isHard := decide.Hard(pol, r)
 	switch {
+	case isHard:
+		d = hard
 	case g.grants.UseOnce(fp):
 		d = decide.Decision{Verdict: decide.Free, Rule: "grant:once"}
 	case req.Method == http.MethodGet && bodyLen == 0 && g.grants.UseRedirect(src.Container, target):

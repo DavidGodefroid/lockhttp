@@ -163,22 +163,28 @@ func multipartFramed(body []byte, boundary string) bool {
 		bytes.Count(body, []byte(end)) == 1
 }
 
+var fingerprintSkip = map[string]bool{"content-type": true, "content-length": true, "connection": true,
+	"proxy-connection": true, "keep-alive": true, "te": true, "trailer": true, "transfer-encoding": true,
+	"proxy-authorization": true, "x-lea-source": true}
+
 // RequestFingerprint binds an ask (and a single-use authorisation) to a
-// request: container, method, URL, significant headers and normalised
-// body.
+// request: container, method, URL, media type, every end-to-end header and
+// the normalised body.
 func RequestFingerprint(container, method, url string, h http.Header, bodyFP string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n%s\n%s\n", container, method, url)
 	ct, _, _ := mime.ParseMediaType(h.Get("Content-Type"))
 	fmt.Fprintf(&b, "ct:%s\n", ct)
-	for _, a := range h.Values("Authorization") {
-		fmt.Fprintf(&b, "auth:%s\n", sum([]byte(a)))
-	}
+	// Every header a server may act on, values hashed: a request that
+	// differs in any of them (a Cookie, a Referer, an X- header) is
+	// another request. Hop-by-hop and framing headers are left out.
 	var xs []string
 	for k, vs := range h {
-		if strings.HasPrefix(strings.ToLower(k), "x-") {
-			xs = append(xs, strings.ToLower(k)+"="+strings.Join(vs, ","))
+		lk := strings.ToLower(k)
+		if fingerprintSkip[lk] {
+			continue
 		}
+		xs = append(xs, lk+"="+sum([]byte(strings.Join(vs, "\x00"))))
 	}
 	slices.Sort(xs)
 	for _, x := range xs {

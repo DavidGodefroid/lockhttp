@@ -20,13 +20,12 @@ import (
 // version is set at build time (-X main.version=...).
 var version = "dev"
 
-// Exit codes: 0 ok, 1 refused/denied/failed, 2 no console, 3 usage or
-// configuration error.
+// Exit codes: 0 ok, 1 failed, 3 usage or configuration error (2 is
+// reserved, as in the other Lock family tools, for "no console").
 const (
-	exitOK        = 0
-	exitFail      = 1
-	exitNoConsole = 2
-	exitUsage     = 3
+	exitOK    = 0
+	exitFail  = 1
+	exitUsage = 3
 )
 
 // env is what a command reads and writes; tests replace it.
@@ -51,14 +50,15 @@ type env struct {
 const usageText = `usage: lockhttp <command> [arguments]
 
 Human commands (host)
-  install  [--client USER] [--gate-uid N [--rootless]] [--print] [--trust-binary] [--yes]
+  install  [--client USER] [--gate-uid N [--rootless]] [--user lockhttp] [--group lockhttp-clients]
+           [--print] [--trust-binary] [--yes]
                                    separate the console from the agent: console account,
                                    clients group, /etc/lockhttp, the gate's uid (sudo)
-  init     [--profile P] [--trusted "a.com .corp.example"] [--force]
+  init     [--profile P] [--config FILE] [--trusted "a.com .corp.example"] [--force]
                                    write the policy file (as the console account)
   console  [--profile P] [--config FILE] [--auto]
                                    run the approval console (as the console account)
-  doctor   [--config FILE] [--ca-cert FILE] [--gate ADDR]
+  doctor   [--profile P] [--config FILE] [--ca-cert FILE] [--gate ADDR]
                                    check the setup
   ca init  --dir DIR [--name NAME] [--force]
                                    create (or rotate) the local CA for decryption
@@ -74,7 +74,7 @@ Proxy container
 Other
   version, help
 
-Exit codes  0 ok · 1 refused/denied/failed · 2 no console · 3 usage/config error
+Exit codes  0 ok · 1 failed · 3 usage/config error
 `
 
 func main() {

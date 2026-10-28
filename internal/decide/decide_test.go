@@ -222,6 +222,23 @@ func TestShadowMode(t *testing.T) {
 	}
 }
 
+func TestShadowKeepsDenyListAndTrustedAnthropicDocs(t *testing.T) {
+	if d := decideAll(pol(t, "mode = \"shadow\"\n"), connect("evil.example", 443)); d.Verdict != Deny {
+		t.Fatalf("shadow lifted the deny list: %+v", d)
+	}
+	p := pol(t, "")
+	p.Trusted = append(p.Trusted, "docs.anthropic.com")
+	if d := decideAll(p, get("docs.anthropic.com", "/en/docs")); d.Verdict != Free {
+		t.Fatalf("trusted Anthropic docs: %+v", d)
+	}
+	if d := decideAll(p, post("api.anthropic.com", "/v1/messages", "application/json", `{"mcp_servers":[{"url":"x"}]}`)); d.Verdict != Ask {
+		t.Fatalf("Claude hosts keep their allowlist: %+v", d)
+	}
+	if _, err := policy.Parse([]byte("[profiles.default]\n[[profiles.default.internal_hosts]]\nhost = \"*.corp.example\"\nports = [443]\n"), "c", "default"); err == nil {
+		t.Fatal("wildcard internal host accepted")
+	}
+}
+
 func TestNoPolicy(t *testing.T) {
 	if d := decideAll(nil, connect("api.anthropic.com", 443)); d.Verdict != Free {
 		t.Fatalf("claude without policy: %+v", d)

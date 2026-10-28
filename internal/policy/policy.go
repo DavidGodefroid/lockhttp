@@ -252,6 +252,9 @@ func fromRaw(name string, r raw) (Policy, error) {
 		if err != nil {
 			return Policy{}, err
 		}
+		if strings.HasPrefix(h, "*.") {
+			return Policy{}, fmt.Errorf("internal host %s: name an exact host, not a pattern", h)
+		}
 		if len(ih.Ports) == 0 {
 			return Policy{}, fmt.Errorf("internal host %s: list its ports", h)
 		}

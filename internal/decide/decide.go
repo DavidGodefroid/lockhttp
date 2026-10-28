@@ -180,23 +180,34 @@ func isMetadata(host string) bool {
 // free, everything else asks.
 func Evaluate(p *policy.Policy, r Request, now time.Time, creds Credentials) Decision {
 	d := evaluate(p, r, now, creds)
-	if p != nil && p.Mode == policy.ModeShadow && d.Verdict != Free && !strings.HasPrefix(d.Rule, "floor:") && d.Code != product.CodeSecretEgress {
+	if p != nil && p.Mode == policy.ModeShadow && d.Verdict != Free && !strings.HasPrefix(d.Rule, "floor:") &&
+		d.Code != product.CodeSecretEgress && d.Rule != "deny-list" {
 		d.Shadow, d.Verdict = d.Verdict, Free
 	}
 	return d
 }
 
-func evaluate(p *policy.Policy, r Request, now time.Time, creds Credentials) Decision {
-	host := r.Host
-	if p != nil && p.Denied(host) {
-		return deny("deny-list", product.CodeRule, host+" is on the policy's deny list")
+// Hard is what no grant, rule or shadow mode lifts beyond the floor: the
+// deny list and a secret sent outside its hosts. The gate checks it before
+// a single-use or redirect grant too.
+func Hard(p *policy.Policy, r Request) (Decision, bool) {
+	if p != nil && p.Denied(r.Host) {
+		return deny("deny-list", product.CodeRule, r.Host+" is on the policy's deny list"), true
 	}
-	// Secrets first: a credential outside its host is denied, whatever
-	// rule would let the request pass.
+	// A credential outside its host is denied, whatever rule would let
+	// the request pass.
 	if r.Phase == PhaseHTTP {
 		if d, ok := secretCheck(r); ok {
-			return d
+			return d, true
 		}
+	}
+	return Decision{}, false
+}
+
+func evaluate(p *policy.Policy, r Request, now time.Time, creds Credentials) Decision {
+	host := r.Host
+	if d, ok := Hard(p, r); ok {
+		return d
 	}
 	// Internal hosts (D-ih): spliced, decided at the domain.
 	if p != nil {
@@ -236,7 +247,9 @@ func evaluateRules(p *policy.Policy, r Request, now time.Time, creds Credentials
 		}
 	}
 	// Claude API and the Anthropic domains.
-	if policy.UnderAnthropic(host) {
+	// A host the human listed as trusted is an ordinary trusted host
+	// (docs.anthropic.com); the Claude hosts keep their allowlist.
+	if policy.UnderAnthropic(host) && !(p != nil && p.Trusts(host) && !slices.Contains(policy.ClaudeHosts, host)) {
 		return claude(r, creds)
 	}
 	if r.Phase == PhaseConnect {
@@ -380,7 +393,7 @@ func specificity(r policy.Rule) int {
 	switch {
 	case r.Path == "":
 	case strings.HasSuffix(r.Path, "*"):
-		s += 50 + len(r.Path)
+		s += 50 + min(len(r.Path), 240) // below an exact path (300)
 	default:
 		s += 300
 	}

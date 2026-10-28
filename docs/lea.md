@@ -53,7 +53,7 @@ lockhttp gate \
 | Mounts | host `/run/lockhttp` → `/run/lockhttp` (the socket dir, **proxy container only**, never an agent container) | The console authenticates the gate with `SO_PEERCRED` against `allowed_uids`. |
 | Groups | Docker rootful: `--group-add <gid of lockhttp-clients>`; Podman rootless: `--group-add keep-groups` (crun) | The socket directory is `2710 lockhttp:lockhttp-clients`. |
 | Files (read-only bind mounts, written by lea on the host) | `sources.json`, `credentials.json`, `ca.pem` | Reloaded when they change (2 s poll). An unreadable or invalid file is fail-closed (see §2.3). |
-| Writable | `--audit-dir` (persist it on the host, e.g. `~/.local/state/lea/lockhttp/audit/`), `--status-file` dir | JSONL audit of FREE and DENY, daily files, 30 days kept. |
+| Writable | `--audit-dir` (persist it on the host, e.g. `~/.local/state/lea/lockhttp/audit/`), `--status-file` dir | JSONL audit of every decision (FREE, DENY, ask outcomes), daily files, 30 days kept. |
 | Liveness | `lockhttp gate --check --listen 127.0.0.1:3130` exits 0 when the gate answers | For lea's doctor. |
 
 ### 2.2 Network rules lea must apply (security requirements)
@@ -63,7 +63,7 @@ lockhttp gate \
 3. **SSH git forwarders are off**: lea refuses to start the proxy with a non-empty `LEA_GIT_SSH` when `LEA_LOCKHTTP=1`.
 4. **Nested Podman** (`image/containers.conf.tmpl`): `HTTPS_PROXY=http://nested:<container token>@lea-proxy:3130`.
 5. Agent env: `HTTP_PROXY`/`HTTPS_PROXY=http://<agent>:<agent token>@lea-proxy:3130`. `NO_PROXY` may keep `lea-proxy` (keyproxy on 4400 is reached directly; squid is no longer reachable).
-6. The gate refuses connections arriving on the interface of the default route (the egress side), fail-closed.
+6. The gate serves only the local addresses listed in `sources.json` (one per internal network) and loopback with the keyproxy token: a connection arriving on any other address, the egress side included, is refused (`E_SOURCE_UNKNOWN`), fail-closed. Bind the gate where agents can reach it, never expose it on the egress bridge.
 
 ### 2.3 `sources.json`: who is calling
 
@@ -133,7 +133,7 @@ they are decided at the domain, as in phase 1.
 | FREE | the upstream response; header `X-LockHTTP-Request: <id>` on decrypted or plain HTTP responses |
 | DENY | `403`, headers `X-LockHTTP-Code: E_*`, `X-LockHTTP-Request: <id>`, a text body: why, and what to ask of the human |
 | ASK pending past the hold time (60 s) | `403 E_PENDING`: the item stays on the console; once approved, the same request goes through (single-use authorisation, 10 min) |
-| No console | `403 E_NO_CONSOLE`, body: "the human must run: lockhttp console --profile <p>" |
+| No console | `403 E_NO_CONSOLE`, body: "No lockhttp console is running: ask the user to start it (lockhttp console)." |
 
 For a CONNECT, the refusal is the CONNECT's own `403` (clients show it as a
 proxy error).

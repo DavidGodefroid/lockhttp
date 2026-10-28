@@ -16,8 +16,8 @@ import (
 // AuditRetention is how long the gate keeps its daily audit files.
 const AuditRetention = 30 * 24 * time.Hour
 
-// AuditLog is the gate's JSONL audit of FREE and DENY decisions (the
-// console audits the asks): one file per UTC day, gate-YYYY-MM-DD.jsonl,
+// AuditLog is the gate's JSONL audit of every decision it applies: FREE,
+// DENY, and the outcome of each ask (the console audits the human's side): one file per UTC day, gate-YYYY-MM-DD.jsonl,
 // kept 30 days. With no directory it writes to w (stderr) or nowhere.
 type AuditLog struct {
 	dir string
