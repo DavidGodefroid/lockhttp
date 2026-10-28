@@ -54,7 +54,7 @@
   <p class="lead">The gate enforces; the human decides; the agent can neither reach the console nor change the policy.</p>
 </div>
 
-<div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.1.0</code> is out as a pre-release: command names are fixed, flags may still move. TLS decryption ships in it and is optional: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
+<div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.2.0</code> is out as a pre-release and runs in Docker only (one <code>lockhttp</code> launcher, a cosign-signed image): command names are fixed, flags may still move. TLS decryption ships in it and is optional, wired by lea: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
 
 <section aria-labelledby="requirements">
   <h2 id="requirements">Non-negotiable requirements</h2>
@@ -100,7 +100,7 @@
 
 <section aria-labelledby="report">
   <h2 id="report">Report a vulnerability</h2>
-  <p class="prose">Please do not open a public issue. Until the repository publishes its <code>SECURITY.md</code> with <code>v0.1.0</code>, contact the maintainer privately through <a href="https://github.com/DavidGodefroid">GitHub</a>.</p>
+  <p class="prose">Please do not open a public issue. Report it privately as described in <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/SECURITY.md">SECURITY.md</a> (GitHub private vulnerability reporting).</p>
 </section>
     </div>
   </main>
@@ -113,7 +113,7 @@
         <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">Design decisions</a></li>
         <li><a href="https://lockfamily.dev/">The Lock family</a></li>
       </ul>
-      <p>Pre-release: <a href="https://github.com/DavidGodefroid/lockhttp/releases">v0.1.0</a> is out. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p>Pre-release: <a href="https://github.com/DavidGodefroid/lockhttp/releases">v0.2.0</a> is out. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
     </div>
   </footer>
 </body>

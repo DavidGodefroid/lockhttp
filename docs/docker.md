@@ -201,6 +201,13 @@ gate: an agent that ignores them goes straight out. Standalone mode is for
 trying the policy and the console; it is a boundary only when the agent's
 sole route to the network is the gate.
 
+Standalone, the gate decides at the domain only (CONNECT + SNI): the
+launcher's `lockhttp gate` gets no `--ca-cert`/`--signer`, and the signer's
+key and socket volume are wired only by lea ([lea.md](lea.md#3-mitm-phase-2-optional)).
+Decryption, and with it the Claude API allowlist, comes with the lea
+integration; wiring a signer by hand means reproducing that section with
+`LOCKHTTP_DOCKER_ARGS`.
+
 To edit the policy afterwards:
 
 ```sh

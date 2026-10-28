@@ -6,6 +6,8 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-28
+
 ### Changed (breaking)
 
 - LockHTTP runs in Docker only. On the host, `lockhttp` is now a launcher,
@@ -107,5 +109,6 @@ separate signer, Claude API allowlist) available behind `--ca-cert` and
 - Release pipeline: goreleaser, cosign keyless signatures, SBOMs,
   SHA-pinned actions, `scripts/install.sh` with signature verification.
 
-[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.1.0
