@@ -50,10 +50,10 @@
   <main id="main" tabindex="-1">
     <div class="wrap">
 <h1>FAQ</h1>
-<div class="notice" role="note"><p><strong>Pre-release, under construction.</strong> lockhttp <code>v0.1.0</code> is being built now. This site describes its design as recorded in <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a> and <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>; command names are fixed, flags may still move. Phase 2 features (TLS decryption) are marked as such.</p></div>
+<div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.1.0</code> is out as a pre-release: command names are fixed, flags may still move. TLS decryption ships in it and is optional: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
 <div class="prose">
 <h3>Is lockhttp ready to use?</h3>
-<p>Not yet. <code>v0.1.0</code>, the first pre-release, is being built. This site follows the recorded design; anything marked phase 2 comes after it.</p>
+<p>It is a pre-release: <code>v0.1.0</code> is out, built on lockkit v0.2.1. Try it, report what breaks; flags may still move before a stable release.</p>
 
 <h3>Do I need lea?</h3>
 <p>Yes, for now. lockhttp relies on lea’s topology: each agent container on its own internal network, a proxy container as the only way out, and a source map naming the container behind each address. The gate is a plain HTTP(S) proxy, but the guarantee comes from that topology.</p>
@@ -65,7 +65,7 @@
 <p>Requests that need a human are held 60 s, then refused with <code>E_PENDING</code>; the item stays on the console and the same request goes through once you approve it. With no console at all, they are refused at once with <code>E_NO_CONSOLE</code>, while trusted reads continue.</p>
 
 <h3>Does lockhttp decrypt my traffic?</h3>
-<p>Not in phase 1: it decides on the host name and port (CONNECT and SNI). Phase 2 adds TLS decryption with a CA generated per installation, trusted only inside lea’s containers; its key stays in a separate signer process. Hosts that pin their certificates go in a splice list and stay decided at the domain.</p>
+<p>Only if you turn it on. Without it, lockhttp decides HTTPS on the host name and port (CONNECT and SNI). With a CA generated per installation (<code>lockhttp ca init</code>), trusted only inside lea’s containers, and the signer that holds its key, the gate decrypts and decides each request. Hosts that pin their certificates go in a splice list and stay decided at the domain.</p>
 
 <h3>Can the agent approve its own request?</h3>
 <p>No. Approvals happen only in the console, on the host, in another account and session. lea’s deck shows a counter of pending requests, never an approve button.</p>
@@ -91,7 +91,7 @@
         <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">Design decisions</a></li>
         <li><a href="https://lockfamily.dev/">The Lock family</a></li>
       </ul>
-      <p>Under construction: the first pre-release, <code>v0.1.0</code>, is in progress. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p>Pre-release: <a href="https://github.com/DavidGodefroid/lockhttp/releases">v0.1.0</a> is out. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
     </div>
   </footer>
 </body>

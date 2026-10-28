@@ -54,7 +54,7 @@
   <p class="lead">A host console, a gate in lea’s proxy container, and an opt-in switch in lea.</p>
 </div>
 
-<div class="notice" role="note"><p><strong>Pre-release, under construction.</strong> lockhttp <code>v0.1.0</code> is being built now. This site describes its design as recorded in <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a> and <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>; command names are fixed, flags may still move. Phase 2 features (TLS decryption) are marked as such.</p></div>
+<div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.1.0</code> is out as a pre-release: command names are fixed, flags may still move. TLS decryption ships in it and is optional: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
 
 <section aria-labelledby="status">
   <h2 id="status">Status</h2>
@@ -87,7 +87,7 @@ go build -o lockhttp ./cmd/lockhttp
   <tr><th scope="row"><code>lockhttp console</code></th><td>host, as <code>lockhttp</code>, own session</td><td>The approval console: approvals, policy review, auto mode, audit.</td></tr>
   <tr><th scope="row"><code>lockhttp doctor</code></th><td>host</td><td>Checks the setup.</td></tr>
   <tr><th scope="row"><code>lockhttp gate</code></th><td>lea proxy container</td><td>The HTTP(S) proxy. lea starts it; you do not.</td></tr>
-  <tr><th scope="row"><code>lockhttp signer</code>, <code>lockhttp ca init</code></th><td>lea proxy container / host</td><td>Phase 2 (TLS decryption): the local CA and the process that holds its key.</td></tr>
+  <tr><th scope="row"><code>lockhttp signer</code>, <code>lockhttp ca init</code></th><td>lea proxy container / host</td><td>Optional TLS decryption: the local CA and the process that holds its key.</td></tr>
   <tr><th scope="row"><code>lockhttp version</code>, <code>help</code></th><td>anywhere</td><td>Exit codes: 0 ok · 1 refused/denied/failed · 2 no console · 3 usage/config error.</td></tr>
   </tbody>
   </table>
@@ -116,7 +116,7 @@ go build -o lockhttp ./cmd/lockhttp
         <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">Design decisions</a></li>
         <li><a href="https://lockfamily.dev/">The Lock family</a></li>
       </ul>
-      <p>Under construction: the first pre-release, <code>v0.1.0</code>, is in progress. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p>Pre-release: <a href="https://github.com/DavidGodefroid/lockhttp/releases">v0.1.0</a> is out. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
     </div>
   </footer>
 </body>
