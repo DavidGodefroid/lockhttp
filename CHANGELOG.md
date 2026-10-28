@@ -8,6 +8,12 @@ uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `lockhttp ca init` under rootless Podman: the launcher adds
+  `--userns keep-id`, so the CA files are written as the invoking user
+  (they failed with "permission denied" on a subuid).
+
+### Fixed
+
 - The image's `lockhttp version` prints `0.2.1`, not `v0.2.1`, like the
   release archives and the launcher.
 
