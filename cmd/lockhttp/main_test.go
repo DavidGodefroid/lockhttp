@@ -151,3 +151,51 @@ func TestConsoleNeedsTTY(t *testing.T) {
 		t.Fatalf("console without tty: %d %s", code, errs)
 	}
 }
+
+// The hub flags go together, and the instance key comes from the gate's
+// own volume: hub-key prints the public key the hub pins.
+func TestGateHubFlags(t *testing.T) {
+	gate := env{euid: func() int { return 1000 }}
+	for _, args := range [][]string{
+		{"--hub", "http://lockhub:8443"},
+		{"--hub", "http://lockhub:8443", "--hub-key-file", "k"},
+		{"--instance", "egress"},
+		{"--hub-net", "10.89.0.0/24"},
+		{"--hub", "http://lockhub:8443", "--hub-key-file", "k", "--instance", "Not_Valid"},
+		{"--hub-net", "nope"},
+	} {
+		code, _, errs := runEnv(t, gate, append([]string{"gate", "--listen", "127.0.0.1:0"}, args...)...)
+		if code != exitUsage {
+			t.Errorf("%v: %d %s", args, code, errs)
+		}
+	}
+	home := t.TempDir()
+	code, pub, errs := runEnv(t, env{}, "hub-key", "--instance", "egress", "--home", home)
+	if code != exitOK || len(strings.TrimSpace(pub)) != 44 {
+		t.Fatalf("hub-key: %d %q %s", code, pub, errs)
+	}
+	if _, again, _ := runEnv(t, env{}, "hub-key", "--instance", "egress", "--home", home); again != pub {
+		t.Fatalf("hub-key changed the key: %q then %q", pub, again)
+	}
+	if fi, err := os.Stat(filepath.Join(home, "hub", "egress.key")); err != nil || runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+		t.Fatalf("instance key: %v %v", fi, err)
+	}
+	// A bad pinned hub key is refused before the gate listens.
+	bad := filepath.Join(t.TempDir(), "hub.pub")
+	if err := os.WriteFile(bad, []byte("not a key\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errs = runEnv(t, gate, "gate", "--listen", "127.0.0.1:0", "--hub", "http://lockhub:8443", "--hub-key-file", bad, "--instance", "egress", "--home", home)
+	if code != exitUsage || !strings.Contains(errs, "public key") {
+		t.Fatalf("bad hub key: %d %s", code, errs)
+	}
+}
+
+func TestHubAddrs(t *testing.T) {
+	if got := hubAddrs("10.89.0.7"); len(got) != 1 || got[0].String() != "10.89.0.7/32" {
+		t.Fatalf("IP hub: %v", got)
+	}
+	if got := hubAddrs("localhost"); len(got) == 0 {
+		t.Fatalf("localhost: %v", got)
+	}
+}

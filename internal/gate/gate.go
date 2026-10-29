@@ -61,6 +61,9 @@ type Config struct {
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 	// Resolve replaces the resolver of direct mode (tests).
 	Resolve func(ctx context.Context, host string) ([]netip.Addr, error)
+	// Hub, when set, sends the asks to lockhub (hub mode); the console
+	// still serves the policy.
+	Hub *Hub
 	// PolicyPoll is how often the policy is fetched (2 s by default).
 	PolicyPoll time.Duration
 	Now        func() time.Time
@@ -104,6 +107,10 @@ func New(cfg Config) *Gate {
 		cfg.Log = io.Discard
 	}
 	g := &Gate{cfg: cfg, queue: NewQueue(cfg.Console), grants: NewGrants(cfg.Now)}
+	if cfg.Hub != nil {
+		// A hub decision may take hours: its asks wait side by side.
+		g.queue.approve, g.queue.concurrent = g.hubApprove, true
+	}
 	g.pol.Store(&polState{})
 	g.status = Status{Version: ContractVersion, Console: "down", PendingByContainer: map[string]int{}}
 	g.queue.onChange = func(total int, by map[string]int) {
@@ -155,6 +162,9 @@ func (g *Gate) updateStatus(f func(*Status)) {
 // until ctx ends.
 func (g *Gate) Run(ctx context.Context) {
 	go g.queue.Run(ctx)
+	if h := g.cfg.Hub; h != nil {
+		go h.Client.Watch(ctx, h.Plans, func(err error) { fmt.Fprintln(g.cfg.Log, "lockhttp gate: hub:", err) })
+	}
 	t := time.NewTicker(g.cfg.PolicyPoll)
 	defer t.Stop()
 	for {
@@ -401,6 +411,10 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 	r := decide.Request{Phase: decide.PhaseConnect, Container: src.Container, Via: src.Via, Method: http.MethodConnect, Host: host, Port: port}
 	t := wire.Target{Phase: "connect", TLS: "connect", Method: http.MethodConnect, Host: host, Port: port}
 	if d, stop := decide.Floor(pol, r); stop {
+		g.refuse(c, d, id, src, t, true)
+		return
+	}
+	if d, stop := g.hubTarget(ctx, host); stop {
 		g.refuse(c, d, id, src, t, true)
 		return
 	}
@@ -665,6 +679,9 @@ func (g *Gate) dialTarget(ctx context.Context, network, addr string) (net.Conn, 
 	ips, err := resolve(ctx, host)
 	if err != nil {
 		return nil, err
+	}
+	if g.onHubNet(ips) {
+		return nil, fmt.Errorf("%s resolves into the hub's network: refused", host)
 	}
 	pol, _ := g.Policy()
 	internal := false

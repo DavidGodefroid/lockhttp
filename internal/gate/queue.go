@@ -34,6 +34,11 @@ type item struct {
 // with another fingerprint are separate items.
 type Queue struct {
 	console Console
+	// approve, when set, answers an item instead of the console (hub
+	// mode), and concurrent sends the items without waiting for the
+	// previous answer.
+	approve    func(ctx context.Context, fp string, p wire.ApproveParams) (wire.ApproveResult, error)
+	concurrent bool
 
 	mu      sync.Mutex
 	pending map[string]*item // by fingerprint
@@ -115,35 +120,50 @@ func (q *Queue) Run(ctx context.Context) {
 				continue
 			}
 		}
-		res, err := q.console.Approve(ctx, it.params)
-		out := Outcome{Approved: err == nil && res.Approved, Auto: res.Auto}
-		var ref *Refusal
-		switch {
-		case errors.As(err, &ref):
-			out.Code, out.Reason = ref.Code, ref.Reason
-		case errors.Is(err, ErrNoConsole):
-			out.Code, out.Reason = "E_NO_CONSOLE", "no lockhttp console is running"
-		case err != nil:
-			out.Code, out.Reason = "E_NO_CONSOLE", "the console did not answer: "+err.Error()
-		}
-		q.mu.Lock()
-		delete(q.pending, it.fp)
-		q.byKey[it.key]--
-		if q.byKey[it.key] <= 0 {
-			delete(q.byKey, it.key)
-		}
-		gone := len(it.waiters) == 0
-		for ch := range it.waiters {
-			ch <- out
-		}
-		q.notifyLocked()
-		q.mu.Unlock()
-		if out.Approved && it.onApprove != nil {
-			it.onApprove(gone)
+		if q.concurrent {
+			go q.answer(ctx, it)
+		} else {
+			q.answer(ctx, it)
 		}
 		if ctx.Err() != nil {
 			return
 		}
+	}
+}
+
+// answer asks about one item and hands the outcome to its waiters.
+func (q *Queue) answer(ctx context.Context, it *item) {
+	var res wire.ApproveResult
+	var err error
+	if q.approve != nil {
+		res, err = q.approve(ctx, it.fp, it.params)
+	} else {
+		res, err = q.console.Approve(ctx, it.params)
+	}
+	out := Outcome{Approved: err == nil && res.Approved, Auto: res.Auto}
+	var ref *Refusal
+	switch {
+	case errors.As(err, &ref):
+		out.Code, out.Reason = ref.Code, ref.Reason
+	case errors.Is(err, ErrNoConsole):
+		out.Code, out.Reason = "E_NO_CONSOLE", "no lockhttp console is running"
+	case err != nil:
+		out.Code, out.Reason = "E_NO_CONSOLE", "the console did not answer: "+err.Error()
+	}
+	q.mu.Lock()
+	delete(q.pending, it.fp)
+	q.byKey[it.key]--
+	if q.byKey[it.key] <= 0 {
+		delete(q.byKey, it.key)
+	}
+	gone := len(it.waiters) == 0
+	for ch := range it.waiters {
+		ch <- out
+	}
+	q.notifyLocked()
+	q.mu.Unlock()
+	if out.Approved && it.onApprove != nil {
+		it.onApprove(gone)
 	}
 }
 
