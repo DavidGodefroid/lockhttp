@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/netip"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
@@ -56,18 +55,14 @@ func planHashOf(fp string) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// riskOf is the ticket's risk class: a read only for a plain GET or HEAD
-// (no body, no query, no upgrade), a write otherwise (a query string can
-// carry data out, and a CONNECT opens reads and writes), and any request
-// under a production policy a prod-write, which remote facades never
-// answer.
-func riskOf(pol *policy.Policy, p wire.ApproveParams) ticket.Risk {
-	switch {
-	case pol != nil && pol.Production:
+// riskOf is the ticket's risk class: a write, or a prod-write under a
+// production policy (which remote facades never answer). An ask is never
+// a read: every part of a held request (path, headers, query, body, a
+// CONNECT's tunnel) can carry data the agent chose, and the gate asks
+// only about what its policy does not let through freely.
+func riskOf(pol *policy.Policy, _ wire.ApproveParams) ticket.Risk {
+	if pol != nil && pol.Production {
 		return ticket.RiskProdWrite
-	case p.Phase == "http" && (p.Method == "GET" || p.Method == "HEAD") && p.ReqBytes == 0 && p.QueryLen == 0 &&
-		!slices.Contains(p.ReqHeaders, "upgrade"):
-		return ticket.RiskRead
 	}
 	return ticket.RiskWrite
 }
@@ -136,17 +131,22 @@ func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) 
 	}
 	tick := time.NewTicker(poll)
 	defer tick.Stop()
-	// The decision is audited here, as the console audits its own: the
-	// request's later record (grant:once) does not name the ticket.
-	record := func(event, reason string) {
-		g.audit(wire.Record{Base: audit.Base{Event: event, Decision: event, Approval: "hub", Reason: reason, Warnings: p.Warnings},
-			RequestID: p.RequestID, Source: p.Source, Target: p.Target, Rule: p.Rule, Class: p.Class, Score: p.Score, PolicyFP: polFP, Ticket: id})
+	// The decision is audited here, as the console audits its own, with
+	// who answered, where, and the hub's signature: the request's later
+	// record (grant:once) does not name the ticket.
+	record := func(event, reason string, d *ticket.Decision) {
+		b := audit.Base{Event: event, Decision: event, Approval: "hub", Reason: reason, Warnings: p.Warnings, Ticket: id}
+		if d != nil {
+			b.Approver, b.Facade, b.HubSig = &d.Approver, d.Facade, d.Sig
+		}
+		g.audit(wire.Record{Base: b, RequestID: p.RequestID, Source: p.Source, Target: p.Target, Rule: p.Rule, Class: p.Class,
+			Score: p.Score, PolicyFP: polFP})
 	}
 	for {
-		run, err := h.Client.Begin(h.Plans, id, caller, recheck)
+		run, d, err := h.Client.Begin(h.Plans, id, caller, recheck)
 		switch {
 		case err == nil:
-			record(audit.EventApproved, "")
+			record(audit.EventApproved, "", d)
 			// The pass the caller grants is the plan's one run.
 			if err := h.Client.Finish(ctx, h.Plans, run.ID, caller, true, "single-use pass granted"); err != nil {
 				fmt.Fprintln(g.cfg.Log, "lockhttp gate: hub not told ticket", id, "was consumed:", err)
@@ -160,7 +160,7 @@ func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) 
 			if reason == "" {
 				reason = "denied on the hub"
 			}
-			record(audit.EventDenied, reason)
+			record(audit.EventDenied, reason, d)
 			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeDenied), Reason: reason}
 		case errors.Is(err, ticket.ErrExpired):
 			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeTimeout), Reason: "the approval expired"}

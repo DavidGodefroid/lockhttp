@@ -225,7 +225,7 @@ with the socket volume, publishes its port on `LOCKHTTP_PUBLISH`
 | `--hub-key-file FILE` | `LOCKHTTP_HUB_KEY_FILE` | none | The pinned public key of the hub (Ed25519, base64 on one line). Decisions verify under it only. |
 | `--instance NAME` | `LOCKHTTP_INSTANCE` | none | The lock instance name the hub knows the gate by. |
 | `--home DIR` | `LOCKHTTP_HOME` | the home directory | The gate's own volume (`0700`, the gate's uid only): the instance key (`hub/NAME.key`, made by `lockhttp hub-key`), the plans and the hub state (`hub/NAME/`). Never mount it in another container. |
-| `--hub-net CIDR` | | none | A network of the hub. The gate refuses as a target the hub's host name, its addresses (resolved at start) and any name resolving into these networks, even when `internal_hosts` allows private addresses; a name that does not resolve is refused too. Repeatable. |
+| `--hub-net CIDR` | | none | A network of the hub. The gate refuses as a target the hub's host name, its addresses (resolved at start) and any name resolving into these networks, even when `internal_hosts` allows private addresses; a name that does not resolve is refused too. Repeatable. Without it, the hub host must resolve at start, or the gate does not start. |
 | `--check` | | off | Exit 0 if something answers on `--listen` (3 s), else 1. Starts nothing. |
 
 **Hub mode.** An ask becomes a plan in the gate's volume and a ticket signed
@@ -235,8 +235,8 @@ with a console. A decision that verifies under the pinned hub key, for this
 instance and this request's fingerprint, under the policy in force, grants
 the single-use authorisation (10 minutes) or, for a `CONNECT`, the connect
 grant; its nonce is consumed once. A denial answers `E_DENIED` to a waiting
-request. The risk class is `read` for `GET`/`HEAD` without a body, `write`
-otherwise, `prod-write` under a production policy. The console still serves
+request. The risk class is `write` (any part of a held request can carry data
+the agent chose), `prod-write` under a production policy. The console still serves
 the policy; it is not asked. Hub decisions are audited (`approved`/`denied`,
 `approval` `hub`, `ticket`). An unreachable hub leaves the ask pending:
 nothing falls back to the console.

@@ -119,8 +119,4 @@ type Record struct {
 	RespBytes   int64  `json:"resp_bytes,omitempty"`
 	DurationMS  int64  `json:"duration_ms,omitempty"`
 	PolicyFP    string `json:"policy_fp,omitempty"`
-	// Ticket is the hub ticket a hub-mode decision answered.
-	// TODO: lockkit v0.3.0's audit.Base carries ticket, approver, facade
-	// and hub_sig: use them once lockkit is bumped.
-	Ticket string `json:"ticket,omitempty"`
 }

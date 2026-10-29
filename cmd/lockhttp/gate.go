@@ -252,7 +252,13 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix) (*gate
 	if err != nil {
 		return nil, err
 	}
-	return &gate.Hub{Client: c, Plans: st, Hosts: []string{u.Hostname()}, Nets: append(nets, hubAddrs(u.Hostname())...)}, nil
+	nets = append(nets, hubAddrs(u.Hostname())...)
+	if len(nets) == 0 {
+		// Fail closed: without one address of the hub, the gate could not
+		// refuse a name that leads there.
+		return nil, fmt.Errorf("the hub host %s does not resolve: give its network with --hub-net", u.Hostname())
+	}
+	return &gate.Hub{Client: c, Plans: st, Hosts: []string{u.Hostname()}, Nets: nets}, nil
 }
 
 // hubAddrs are the hub's own addresses, refused as targets beside

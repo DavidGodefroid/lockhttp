@@ -237,7 +237,7 @@ func TestHubPendingThenSingleUse(t *testing.T) {
 	// The decision is audited with its ticket, then the request it lets
 	// through as the single-use pass.
 	audit := e.auditText()
-	if !hasRecord(audit, map[string]string{"event": "approved", "approval": "hub", "ticket": tk.ID}) ||
+	if !hasRecord(audit, map[string]string{"event": "approved", "approval": "hub", "ticket": tk.ID, "facade": "tty"}) || !strings.Contains(audit, `"approver":{"id":"u1","display":"Human"}`) || !strings.Contains(audit, `"hub_sig":"`) ||
 		!hasRecord(audit, map[string]string{"event": "free", "rule": "grant:once"}) {
 		t.Errorf("audit lacks the hub approval:\n%s", audit)
 	}
@@ -390,8 +390,8 @@ func TestHubRisk(t *testing.T) {
 		p    wire.ApproveParams
 		want ticket.Risk
 	}{
-		{&policy.Policy{}, wire.ApproveParams{Target: wire.Target{Phase: "http", Method: "GET"}}, ticket.RiskRead},
-		{&policy.Policy{}, wire.ApproveParams{Target: wire.Target{Phase: "http", Method: "HEAD"}}, ticket.RiskRead},
+		{&policy.Policy{}, wire.ApproveParams{Target: wire.Target{Phase: "http", Method: "GET"}}, ticket.RiskWrite},
+		{&policy.Policy{}, wire.ApproveParams{Target: wire.Target{Phase: "http", Method: "HEAD"}}, ticket.RiskWrite},
 		{&policy.Policy{}, wire.ApproveParams{Target: wire.Target{Phase: "http", Method: "GET", ReqBytes: 3}}, ticket.RiskWrite},
 		{&policy.Policy{}, wire.ApproveParams{Target: wire.Target{Phase: "http", Method: "POST"}}, ticket.RiskWrite},
 		{&policy.Policy{}, wire.ApproveParams{Target: wire.Target{Phase: "http", Method: "GET", QueryLen: 12}}, ticket.RiskWrite},

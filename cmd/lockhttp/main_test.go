@@ -199,3 +199,18 @@ func TestHubAddrs(t *testing.T) {
 		t.Fatalf("localhost: %v", got)
 	}
 }
+
+// A hub whose host does not resolve and no --hub-net: the gate does not
+// start, it could not refuse the hub's addresses.
+func TestGateHubNeedsAnAddress(t *testing.T) {
+	home := t.TempDir()
+	key := filepath.Join(t.TempDir(), "hub.pub")
+	if err := os.WriteFile(key, []byte("11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errs := runEnv(t, env{euid: func() int { return 1000 }}, "gate", "--listen", "127.0.0.1:0", "--hub", "http://no-such-hub.invalid:8443",
+		"--hub-key-file", key, "--instance", "egress", "--home", home)
+	if code != exitUsage || !strings.Contains(errs, "--hub-net") {
+		t.Fatalf("unresolvable hub: %d %s", code, errs)
+	}
+}
