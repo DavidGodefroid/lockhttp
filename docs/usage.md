@@ -196,7 +196,9 @@ agents' containers only; give `ca-key.pem` to the signer only.
 ```
 lockhttp gate --listen ADDR [--upstream URL] [--profile P] [--sources FILE]
               [--credentials FILE] [--audit-dir DIR] [--status-file FILE]
-              [--ca-cert FILE --signer SOCKET] [--check]
+              [--ca-cert FILE --signer SOCKET]
+              [--hub URL --hub-key-file FILE --instance NAME [--home DIR]
+               [--hub-net CIDR ...]] [--check]
 ```
 
 The HTTP(S) proxy. It refuses to run as root; in the image it runs as
@@ -219,7 +221,25 @@ with the socket volume, publishes its port on `LOCKHTTP_PUBLISH`
 | `--status-file FILE` | `LOCKHTTP_STATUS_FILE` | none | Status file for lea, rewritten atomically on change: `version`, `console` (`up`/`down`), `pending`, `pending_by_container`, `policy_fp`, `updated`. |
 | `--ca-cert FILE` | `LOCKHTTP_CA_CERT` | none | CA certificate. Enables decryption, with `--signer`. |
 | `--signer SOCKET` | `LOCKHTTP_SIGNER` | none | The signer's Unix socket. `--ca-cert` and `--signer` go together. |
+| `--hub URL` | `LOCKHTTP_HUB` | none | Hub mode: ask lockhub at this URL instead of the console. `--hub`, `--hub-key-file` and `--instance` go together. |
+| `--hub-key-file FILE` | `LOCKHTTP_HUB_KEY_FILE` | none | The pinned public key of the hub (Ed25519, base64 on one line). Decisions verify under it only. |
+| `--instance NAME` | `LOCKHTTP_INSTANCE` | none | The lock instance name the hub knows the gate by. |
+| `--home DIR` | `LOCKHTTP_HOME` | the home directory | The gate's own volume (`0700`, the gate's uid only): the instance key (`hub/NAME.key`, made by `lockhttp hub-key`), the plans and the hub state (`hub/NAME/`). Never mount it in another container. |
+| `--hub-net CIDR` | | none | A network of the hub. The gate refuses as a target the hub's host name, its addresses (resolved at start) and any name resolving into these networks, even when `internal_hosts` allows private addresses; a name that does not resolve is refused too. Repeatable. Without it, the hub host must resolve at start, or the gate does not start. |
 | `--check` | | off | Exit 0 if something answers on `--listen` (3 s), else 1. Starts nothing. |
+
+**Hub mode.** An ask becomes a plan in the gate's volume and a ticket signed
+with the instance key, pushed to the hub with the screen masked (personal
+data and credentials). The request answers `E_PENDING` after `hold`, as
+with a console. A decision that verifies under the pinned hub key, for this
+instance and this request's fingerprint, under the policy in force, grants
+the single-use authorisation (10 minutes) or, for a `CONNECT`, the connect
+grant; its nonce is consumed once. A denial answers `E_DENIED` to a waiting
+request. The risk class is `write` (any part of a held request can carry data
+the agent chose), `prod-write` under a production policy. The console still serves
+the policy; it is not asked. Hub decisions are audited (`approved`/`denied`,
+`approval` `hub`, `ticket`). An unreachable hub leaves the ask pending:
+nothing falls back to the console.
 
 The gate finds the console's socket as a lockkit client, in the socket
 directory of the image's `/etc/lockhttp/system.toml`: `/run/lockhttp`, the
@@ -257,6 +277,17 @@ it with the key and a socket directory shared with the gate
 
 It warns when the CA expires within 7 days. It issues leaves only for a
 valid host name (no wildcard, no IP literal).
+
+## `lockhttp hub-key`
+
+```
+lockhttp hub-key --instance NAME [--home DIR]
+```
+
+Prints the gate's instance public key (Ed25519, base64 on one line) for
+`lock up` to pin at the hub. The first call makes the key in
+`DIR/hub/NAME.key` (`0600`); `--home` defaults to `LOCKHTTP_HOME`, then the
+home directory.
 
 ## `lockhttp version`, `lockhttp help`
 

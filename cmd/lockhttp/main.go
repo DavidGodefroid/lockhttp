@@ -64,9 +64,13 @@ Gate and signer (lea runs them beside its proxy container)
   gate     --listen ADDR [--upstream URL] [--profile P] [--sources FILE]
            [--credentials FILE] [--audit-dir DIR] [--status-file FILE]
            [--ca-cert FILE --signer SOCKET] [--check]
-                                   run the HTTP(S) proxy
+           [--hub URL --hub-key-file FILE --instance NAME [--home DIR]
+            [--hub-net CIDR ...]]
+                                   run the HTTP(S) proxy (--hub: ask lockhub)
   signer   --ca-cert FILE --ca-key FILE --listen SOCKET [--allow-uid N ...]
                                    issue leaf certificates to the gate (holds the CA key)
+  hub-key  --instance NAME [--home DIR]
+                                   print the gate's instance key for lockhub
 
 Other
   version, help
@@ -113,6 +117,8 @@ func run(e env, args []string) int {
 		return runGate(e, args[1:])
 	case "signer":
 		return runSigner(e, args[1:])
+	case "hub-key":
+		return runHubKey(e, args[1:])
 	default:
 		fmt.Fprintf(e.stderr, "lockhttp: unknown command %q\n\n%s", cmd, usageText)
 		return exitUsage

@@ -6,6 +6,15 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Hub mode for the gate (`--hub`, `--hub-key-file`, `--instance`, `--home`,
+  `--hub-net`): asks become signed tickets on lockhub, and a verified
+  decision grants the existing single-use authorisation or connect grant.
+  The gate refuses the hub's addresses as targets, even with
+  `internal_hosts`. `lockhttp hub-key` prints the instance key to pin.
+  Pins lockkit at a pre-release commit (lockkit#52, hub/console-hub) until v0.3.0.
+
 ### Fixed
 
 - `lockhttp ca init` under rootless Podman: the launcher adds

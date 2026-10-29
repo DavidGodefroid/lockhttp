@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -118,16 +117,16 @@ func (b *Backend) approve(ctx context.Context, req ipc.Request, env console.Env)
 	if r := console.Decode(req, &p); r != nil {
 		return *r
 	}
-	if err := check(&p); err != nil {
+	if err := wire.Bound(&p); err != nil {
 		return console.ErrResp(req.ID, ipc.CodeInvalidParams, err.Error())
 	}
 	pol, _ := approvedPolicy(env)
 	neverAuto := p.NeverAuto || !b.autoAllowed(pol, p)
 	b.approvals.Add(1)
 	a := env.Approve(ctx, req.ID, console.Screen{
-		Header:    header(p),
-		Requester: requester(p),
-		Body:      body(p),
+		Header:    wire.ScreenHeader(p),
+		Requester: wire.ScreenRequester(p),
+		Body:      wire.ScreenBody(p),
 		Warnings:  p.Warnings,
 		NeverAuto: neverAuto,
 		Red:       p.Red,
@@ -161,108 +160,4 @@ func (b *Backend) autoAllowed(pol policy.Policy, p wire.ApproveParams) bool {
 			(r.MaxBody == 0 || p.ReqBytes <= r.MaxBody)
 	}
 	return false
-}
-
-// check bounds what the gate sends.
-func check(p *wire.ApproveParams) error {
-	if p.Host == "" || p.Method == "" {
-		return fmt.Errorf("host and method are required")
-	}
-	for _, s := range []*string{&p.RequestID, &p.Container, &p.Project, &p.Via, &p.Agent, &p.Attribution, &p.Role,
-		&p.Parent, &p.TaskID, &p.Branch, &p.SessionID, &p.Phase, &p.TLS, &p.Method, &p.Host, &p.Path,
-		&p.QueryHash, &p.BodyFP, &p.ContentType, &p.Rule, &p.Class, &p.ReplayOf} {
-		if len(*s) > wire.MaxText {
-			*s = (*s)[:wire.MaxText] + "…"
-		}
-	}
-	if len(p.Preview) > wire.MaxPreview {
-		p.Preview = p.Preview[:wire.MaxPreview] + "…"
-	}
-	if len(p.Warnings) > wire.MaxWarnings {
-		p.Warnings = p.Warnings[:wire.MaxWarnings]
-	}
-	if len(p.Refs) > wire.MaxRefs {
-		p.Refs = p.Refs[:wire.MaxRefs]
-	}
-	return nil
-}
-
-func header(p wire.ApproveParams) string {
-	target := p.Host
-	if p.Port != 0 && p.Port != 443 && p.Port != 80 {
-		target = fmt.Sprintf("%s:%d", p.Host, p.Port)
-	}
-	if p.Phase == "connect" {
-		return "OPEN " + target + " · " + p.Container
-	}
-	return p.Method + " " + target + " · " + p.Container
-}
-
-func requester(p wire.ApproveParams) string {
-	s := "container " + p.Container
-	if p.Project != "" {
-		s += " (project " + p.Project + ")"
-	}
-	if p.Agent != "" {
-		s += " · agent " + p.Agent + " (declared, " + p.Attribution + ")"
-	}
-	if p.Via != "" && p.Via != "direct" {
-		s += " · via " + p.Via
-	}
-	return s
-}
-
-func body(p wire.ApproveParams) []string {
-	var out []string
-	if p.Phase == "connect" {
-		out = append(out, fmt.Sprintf("CONNECT %s:%d", p.Host, p.Port))
-		if p.Grant > 0 {
-			out = append(out, fmt.Sprintf("y opens %s:%d for %s for %s: reads AND writes, content invisible", p.Host, p.Port, p.Container, time.Duration(p.Grant)*time.Second))
-		}
-	} else {
-		line := p.Method + " " + p.TLS + "://" + p.Host + p.Path
-		if p.QueryLen > 0 {
-			line += fmt.Sprintf("?…(%d bytes)", p.QueryLen)
-		}
-		out = append(out, line)
-		if p.ReqBytes > 0 || p.ContentType != "" {
-			out = append(out, fmt.Sprintf("body %d bytes %s %s", p.ReqBytes, p.ContentType, short(p.BodyFP)))
-		}
-		if len(p.ReqHeaders) > 0 {
-			out = append(out, "headers: "+strings.Join(p.ReqHeaders, " "))
-		}
-	}
-	if p.TaskID != "" || p.Branch != "" || p.Role != "" {
-		out = append(out, strings.TrimSpace(fmt.Sprintf("task %s · role %s · parent %s · branch %s", p.TaskID, p.Role, p.Parent, p.Branch)))
-	}
-	if p.Rule != "" {
-		out = append(out, "decided by: "+p.Rule)
-	}
-	for _, r := range p.Refs {
-		out = append(out, "push "+r)
-	}
-	if p.Preview != "" {
-		out = append(out, "", "preview (masked):")
-		for _, l := range strings.Split(p.Preview, "\n") {
-			out = append(out, "  "+l)
-		}
-	}
-	if p.Pending > 1 {
-		out = append(out, "", fmt.Sprintf("%d distinct requests pending under %s %s%s: y approves this one only", p.Pending, p.Method, p.Host, p.Path))
-	}
-	if p.ReplayOf != "" {
-		out = append(out, "replay of "+p.ReplayOf+" with another body: not covered by its approval")
-	}
-	if p.ClientGone {
-		out = append(out, "", "client gone: y lets the same request through once in the next 10 minutes")
-	}
-	out = append(out, "request "+p.RequestID)
-	return out
-}
-
-func short(fp string) string {
-	if len(fp) > 19 {
-		return fp[:19] + "…"
-	}
-	return fp
 }

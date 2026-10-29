@@ -74,6 +74,10 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 		g.refuse(w, d, id, src, t, true)
 		return false
 	}
+	if d, stop := g.hubTarget(ctx, host); stop {
+		g.refuse(w, d, id, src, t, true)
+		return false
+	}
 	fp := RequestFingerprint(src.Container, req.Method, target, req.Header, bodyFP)
 	var d decide.Decision
 	hard, isHard := decide.Hard(pol, r)
