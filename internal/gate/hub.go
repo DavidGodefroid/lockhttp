@@ -163,6 +163,7 @@ func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) 
 			record(audit.EventDenied, reason, d)
 			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeDenied), Reason: reason}
 		case errors.Is(err, ticket.ErrExpired):
+			record(audit.EventTimeout, "the approval expired", d)
 			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeTimeout), Reason: "the approval expired"}
 		case errors.Is(err, plans.ErrStale):
 			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeDenied), Reason: "the policy changed while the request waited: send it again"}
@@ -171,6 +172,14 @@ func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) 
 		}
 		select {
 		case <-ctx.Done():
+			// The gate stops: no one holds this request any more, so its
+			// ticket is withdrawn rather than left for a decision nothing
+			// will act on (a retry asks again).
+			wctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := h.Client.Withdraw(wctx, h.Plans, pl.ID, caller, "the gate stopped"); err != nil {
+				fmt.Fprintln(g.cfg.Log, "lockhttp gate: ticket", id, "not withdrawn:", err)
+			}
+			cancel()
 			return wire.ApproveResult{}, ctx.Err()
 		case <-tick.C:
 		}

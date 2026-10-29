@@ -147,6 +147,10 @@ func (g *Gate) Policy() (*policy.Policy, string) {
 	return s.p, s.fp
 }
 
+// Stopped is closed once Run's queue stopped and every ask it was
+// answering ended (in hub mode, their tickets withdrawn).
+func (g *Gate) Stopped() <-chan struct{} { return g.queue.stopped }
+
 // SetPolicy installs a policy (tests and the poller).
 func (g *Gate) SetPolicy(p *policy.Policy, fp string) { g.pol.Store(&polState{p: p, fp: fp}) }
 

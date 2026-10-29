@@ -39,6 +39,10 @@ type Queue struct {
 	// previous answer.
 	approve    func(ctx context.Context, fp string, p wire.ApproveParams) (wire.ApproveResult, error)
 	concurrent bool
+	// answering counts the answers in flight; stopped closes once Run
+	// returned and they ended.
+	answering sync.WaitGroup
+	stopped   chan struct{}
 
 	mu      sync.Mutex
 	pending map[string]*item // by fingerprint
@@ -51,7 +55,7 @@ type Queue struct {
 
 // NewQueue returns a queue sending to c.
 func NewQueue(c Console) *Queue {
-	return &Queue{console: c, pending: map[string]*item{}, byKey: map[string]int{}, wake: make(chan struct{}, 1)}
+	return &Queue{console: c, pending: map[string]*item{}, byKey: map[string]int{}, wake: make(chan struct{}, 1), stopped: make(chan struct{})}
 }
 
 // Submit adds a waiter for the request of fingerprint fp. It returns the
@@ -102,6 +106,10 @@ func (q *Queue) notifyLocked() {
 
 // Run sends the queued items until ctx ends.
 func (q *Queue) Run(ctx context.Context) {
+	defer func() {
+		q.answering.Wait()
+		close(q.stopped)
+	}()
 	for {
 		q.mu.Lock()
 		var it *item
@@ -121,7 +129,11 @@ func (q *Queue) Run(ctx context.Context) {
 			}
 		}
 		if q.concurrent {
-			go q.answer(ctx, it)
+			q.answering.Add(1)
+			go func() {
+				defer q.answering.Done()
+				q.answer(ctx, it)
+			}()
 		} else {
 			q.answer(ctx, it)
 		}

@@ -37,14 +37,17 @@ type fakeHub struct {
 	decisions []json.RawMessage // decisions[i] has seq i+1
 	ids       []string
 	consumed  map[string]bool
+	withdraws map[string]bool
 }
+
+func (h *fakeHub) withdrawn(id string) bool { h.mu.Lock(); defer h.mu.Unlock(); return h.withdraws[id] }
 
 func newFakeHub(t *testing.T, lockPub ed25519.PublicKey) (*fakeHub, *httptest.Server) {
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &fakeHub{t: t, lockPub: lockPub, key: key, consumed: map[string]bool{}}
+	h := &fakeHub{t: t, lockPub: lockPub, key: key, consumed: map[string]bool{}, withdraws: map[string]bool{}}
 	s := httptest.NewServer(h)
 	t.Cleanup(s.Close)
 	return h, s
@@ -88,6 +91,11 @@ func (h *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/consumed"):
 		h.mu.Lock()
 		h.consumed[strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/tickets/"), "/consumed")] = true
+		h.mu.Unlock()
+		_, _ = io.WriteString(w, "{}")
+	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/withdraw"):
+		h.mu.Lock()
+		h.withdraws[strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/tickets/"), "/withdraw")] = true
 		h.mu.Unlock()
 		_, _ = io.WriteString(w, "{}")
 	default:
@@ -169,7 +177,18 @@ func hubEnv(t *testing.T, conf string, mutate func(*Hub)) (*env, *fakeHub) {
 	if mutate != nil {
 		mutate(h)
 	}
+	// Runs after newEnv's cleanup stopped the gate, before the hub and the
+	// plans directory go: the stopped asks withdraw their tickets first.
+	var g *Gate
+	t.Cleanup(func() {
+		select {
+		case <-g.Stopped():
+		case <-time.After(10 * time.Second):
+			t.Error("the gate did not stop")
+		}
+	})
 	e := newEnv(t, conf, true, func(cfg *Config) { cfg.Hub = h; cfg.Log = testLog{t} })
+	g = e.gate
 	// The console is never asked in hub mode.
 	e.console.answer = func(p wire.ApproveParams) (wire.ApproveResult, error) {
 		t.Errorf("the console was asked about %s %s", p.Method, p.Host)
@@ -428,4 +447,24 @@ func hasRecord(audit string, want map[string]string) bool {
 		}
 	}
 	return false
+}
+
+// A gate that stops withdraws the tickets it was waiting on.
+func TestHubWithdrawOnStop(t *testing.T) {
+	e, fh := hubEnv(t, hubTestPolicy, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := e.gate.hubApprove(ctx, "fp-withdraw", wire.ApproveParams{Source: wire.Source{Container: "local"},
+			Target: wire.Target{Phase: "http", Method: "POST", Host: "example.com"}})
+		done <- err
+	}()
+	tk := fh.waitTickets(1)[0]
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("stopped ask: %v", err)
+	}
+	if !fh.withdrawn(tk.ID) {
+		t.Fatal("the ticket of a stopped ask was not withdrawn")
+	}
 }
