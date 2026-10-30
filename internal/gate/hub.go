@@ -146,6 +146,7 @@ func (g *Gate) hubRequest(q *ticket.HubRequest, renewal string, err error) {
 	case q.Kind == ticket.RequestReveal:
 		fmt.Fprintf(g.cfg.Log, "lockhttp gate: ticket %s: clear screen sealed to %s on %s\n", q.Ticket, q.Approver.ID, q.Facade)
 	default:
+		g.cfg.Hub.forgetTicket(q.Ticket)
 		b.Reason = "renewed by ticket " + renewal
 		fmt.Fprintf(g.cfg.Log, "lockhttp gate: ticket %s: asked again by %s on %s as ticket %s\n", q.Ticket, q.Approver.ID, q.Facade, renewal)
 	}
@@ -197,6 +198,25 @@ func (h *Hub) remember(fp, id string, now time.Time) {
 	h.expired[fp] = expiredTicket{id: id, at: now}
 }
 
+// forgetTicket drops the expired ticket id, whatever request it was
+// remembered for: the hub renewed it (the renewal is pending, found by
+// its plan hash).
+func (h *Hub) forgetTicket(id string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for fp, x := range h.expired {
+		if x.id == id {
+			delete(h.expired, fp)
+		}
+	}
+}
+
+// pendingTicket reports whether ticket id's plan waits for a decision.
+func (h *Hub) pendingTicket(id string, caller plans.Caller) bool {
+	pl, err := h.Plans.ByTicket(id, caller)
+	return err == nil && pl.State == plans.Pending
+}
+
 // takeExpired returns, and forgets, the expired ticket of fp.
 func (h *Hub) takeExpired(fp string, now time.Time) string {
 	h.mu.Lock()
@@ -221,22 +241,30 @@ func (g *Gate) hubSubmit(ctx context.Context, fp string, p wire.ApproveParams, p
 	if err != nil {
 		return "", "", err
 	}
+	// Either way the expired ticket remembered for this request is spent:
+	// a pending plan (a renewal the human made from the hub) supersedes it.
+	old := h.takeExpired(fp, g.cfg.Now())
 	if pl, ok := h.Plans.FindPending(caller, planHash); ok && pl.Ticket != "" {
 		return pl.Ticket, "", nil
 	}
-	if old := h.takeExpired(fp, g.cfg.Now()); old != "" {
+	if old != "" {
 		id, err := h.Client.Renew(ctx, h.Plans, old, caller)
 		switch {
-		case id != "":
+		case id != "" && h.pendingTicket(id, caller):
 			if err != nil {
 				fmt.Fprintln(g.cfg.Log, "lockhttp gate: renewal", id, "of ticket", old, "not sent yet:", err)
 			}
 			return id, old, nil
+		case id != "":
+			// A renewal that ran, was denied or ended otherwise: nothing to
+			// wait on. A new plan.
+			fmt.Fprintln(g.cfg.Log, "lockhttp gate: renewal", id, "of ticket", old, "is not pending: asking again")
 		case errors.Is(err, hubclient.ErrRateLimited):
 			return "", "", &Refusal{Code: string(product.CodePending), Reason: "too many requests wait for the hub: retry later"}
 		default:
-			// Not renewable (the policy changed, the plan is gone): a
-			// new plan, under the policy in force.
+			// Not renewable (hubclient.ErrNotRenewable: the policy
+			// changed, the plan is gone, its renewal ran or was denied):
+			// a new plan, under the policy in force.
 			fmt.Fprintln(g.cfg.Log, "lockhttp gate: ticket", old, "not renewed:", err)
 		}
 	}
@@ -353,7 +381,7 @@ func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) 
 				// waited: ask again (Renew), and its retries see the new
 				// ticket pending.
 				nid, rerr := h.Client.Renew(ctx, h.Plans, id, caller)
-				if nid != "" {
+				if nid != "" && h.pendingTicket(nid, caller) {
 					if rerr != nil {
 						fmt.Fprintln(g.cfg.Log, "lockhttp gate: renewal", nid, "of ticket", id, "not sent yet:", rerr)
 					}
@@ -368,8 +396,8 @@ func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) 
 				h.remember(fp, id, g.cfg.Now())
 			}
 			record(audit.EventTimeout, "the approval expired", d)
-			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeTimeout),
-				Reason: "ticket " + id + " expired before it was used: send the same request again to ask the hub again"}
+			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeTimeout), Ticket: id,
+				Reason: "ticket " + id + " expired before it was decided"}
 		case errors.Is(err, plans.ErrStale):
 			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeDenied), Reason: "the policy changed while the request waited: send it again"}
 		default:

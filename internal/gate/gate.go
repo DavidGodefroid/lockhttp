@@ -349,7 +349,12 @@ func writeRefusal(w io.Writer, id, c, reason string, connect bool) {
 // waits on (X-LockHTTP-Ticket), when tk is not "".
 func writeRefusalTicket(w io.Writer, id, c, reason, tk string, connect bool) {
 	body := fmt.Sprintf("LockHTTP refused this request (%s): %s\n", c, reason)
-	if hint := hintFor(c); hint != "" {
+	hint := hintFor(c)
+	if tk != "" && c == string(product.CodeTimeout) {
+		// Hub mode: the same request sent again renews the expired ticket.
+		hint = "Ask the user to watch the hub, then send the same request again: it asks the hub again (a renewal of the expired ticket)."
+	}
+	if hint != "" {
 		body += hint + "\n"
 	}
 	body += "request id: " + id + "\n"
@@ -373,7 +378,7 @@ func hintFor(code string) string {
 	case "E_PENDING":
 		return "The request waits for the human in the lockhttp console: retry the same request in a moment."
 	case "E_WITHDRAWN":
-		return "The gate now runs without its hub: send the same request again, the human answers it in the lockhttp console."
+		return "The gate now runs without its hub: tell the user, then send the same request again; the human answers it in the lockhttp console."
 	case "E_DENIED", "E_TIMEOUT":
 		return "Do not retry the same request; ask the user."
 	case "E_HOST_UNKNOWN", "E_CLAUDE_API_PARAM", "E_EXFIL_SUSPECT", "E_RULE", "E_METHOD":
@@ -397,7 +402,14 @@ func (g *Gate) ask(p wire.ApproveParams, fp, key string, hold time.Duration, onA
 	case <-t.C:
 		cancel()
 		if h := g.cfg.Hub; h != nil {
-			if tk := h.ticketOf(fp); tk != "" {
+			// The ticket may still be on its way (hubSubmit): wait for it a
+			// moment, so that the answer names it.
+			tk := h.ticketOf(fp)
+			for i := 0; tk == "" && i < 50 && g.queue.queued(fp); i++ {
+				time.Sleep(20 * time.Millisecond)
+				tk = h.ticketOf(fp)
+			}
+			if tk != "" {
 				return Outcome{Code: string(product.CodePending), Ticket: tk, Reason: "the request waits for a decision on the hub (ticket " + tk + ")"}
 			}
 		}

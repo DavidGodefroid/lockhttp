@@ -103,6 +103,13 @@ func (q *Queue) asks(fp string) int {
 	return 0
 }
 
+// queued reports whether an item of fingerprint fp is queued.
+func (q *Queue) queued(fp string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.pending[fp] != nil
+}
+
 // Pending is the number of queued items.
 func (q *Queue) Pending() int {
 	q.mu.Lock()
@@ -173,7 +180,7 @@ func (q *Queue) answer(ctx context.Context, it *item) {
 	var ref *Refusal
 	switch {
 	case errors.As(err, &ref):
-		out.Code, out.Reason = ref.Code, ref.Reason
+		out.Code, out.Reason, out.Ticket = ref.Code, ref.Reason, ref.Ticket
 	case errors.Is(err, ErrNoConsole):
 		out.Code, out.Reason = "E_NO_CONSOLE", "no lockhttp console is running"
 	case err != nil:

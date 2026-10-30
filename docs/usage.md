@@ -246,11 +246,15 @@ nothing falls back to the console.
 
 In hub mode the `E_PENDING` answer names the ticket (`X-LockHTTP-Ticket`
 and a `hub ticket:` line in the body); a retry of the same request waits on
-the same ticket. A ticket that expires undecided (24 h for `write`, 4 h for
+the same ticket (when the hub is slow to take the ticket, past `hold`
+plus one second, the `E_PENDING` may come without one). A ticket that expires undecided (24 h for `write`, 4 h for
 `prod-write`) is asked again rather than refused: while the agent keeps
 sending the request, the gate renews it at once; otherwise the ask ends
-(`E_TIMEOUT`, audited `timeout`) and the same request sent later (within
-24 h, same gate process) renews it. A renewal is a new ticket that names
+(`E_TIMEOUT`, audited `timeout`, naming the ticket; its hint says to send
+the same request again) and the same request sent later (within 24 h, same
+gate process) renews it. A renewal the human made on the hub is picked up
+by the request sent again; once it ran, was denied or expired too, the
+request sent again is a new ticket. A renewal is a new ticket that names
 the expired one (`renews`), re-checked against the policy in force (a
 changed policy is a new ticket instead); the agent's retries get
 `E_PENDING` with the new ticket, and an approval lets the request through

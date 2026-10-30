@@ -148,8 +148,7 @@ func (e *lockhubEnv) signed(id string) *ticket.Ticket {
 }
 
 // The recompute of a renewal is the run's recheck: same policy, same plan
-// hash, and the inputs the plan was bound to; another request moves the
-// input "request".
+// hash, and the inputs the plan was bound to; a moved input shows by name.
 func TestHubRecomputeIsRecheck(t *testing.T) {
 	e := newLockhubEnv(t, nil)
 	_, polFP := e.gate.Policy()
@@ -174,12 +173,22 @@ func TestHubRecomputeIsRecheck(t *testing.T) {
 	if ch := ticket.DiffInputs(inputs, rinputs); len(ch) != 0 {
 		t.Fatalf("the same plan moved: %v", ch)
 	}
+	// Through recompute, each input shows by name when it moves: a body
+	// that no longer matches the plan's binding (another request) ...
 	other := RequestFingerprint("dev-5", "POST", "https://example.com/up", http.Header{"Content-Type": {"application/json"}}, "sha256:y")
-	_, moved, _ := bindingOf(other, polFP)
-	ch := ticket.DiffInputs(inputs, moved)
-	if len(ch) != 1 || ch[0].Input != "request" {
-		t.Fatalf("another request: changes %v, want request", ch)
+	otherBody, _ := json.Marshal(hubPlan{Fingerprint: other})
+	_, ohash, moved, err := e.gate.recompute(&plans.Plan{Body: otherBody, Binding: pl.Binding})
+	if ch := ticket.DiffInputs(inputs, moved); err != nil || ohash == hash || len(ch) != 1 || ch[0].Input != "request" {
+		t.Fatalf("another request: changes %v (%v), want request", ch, err)
 	}
+	// ... and a new policy (which lockkit refuses to renew under).
+	pol, _ := e.gate.Policy()
+	e.gate.SetPolicy(pol, "sha256:"+strings.Repeat("0", 64))
+	newFP, _, moved, err := e.gate.recompute(pl)
+	if ch := ticket.DiffInputs(inputs, moved); err != nil || newFP == polFP || len(ch) != 1 || ch[0].Input != "policy" {
+		t.Fatalf("another policy: changes %v (%v), want policy", ch, err)
+	}
+	e.gate.SetPolicy(pol, polFP)
 	if _, _, _, err := e.gate.recompute(&plans.Plan{Body: []byte("not json")}); err == nil {
 		t.Fatal("a broken plan recomputed")
 	}
@@ -332,6 +341,61 @@ func TestHubRevealAndRenewRequests(t *testing.T) {
 	}
 }
 
+// A renewal made on the hub supersedes the expired ticket the gate kept
+// for the request: once it ran (or expired in turn), the same request sent
+// again is a new ticket, never a refusal about a spent one.
+func TestHubRenewedOnHubThenSentAgain(t *testing.T) {
+	e := newLockhubEnv(t, nil)
+	var hits atomic.Int32
+	e.backend("example.com", true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1); ok(w, r) }))
+	e.remap("example.com", "443")
+	c := e.client("dev-5", true)
+	const u, body = "https://example.com/up", `{"a":4}`
+	at := func(q *ticket.HubRequest) { q.At = e.clock.now() }
+	renewOnHub := func(id string) string {
+		t.Helper()
+		var r struct{ Ticket string }
+		if err := json.Unmarshal(waitAnswer(t, e.hub, e.hub.Request(id, ticket.RequestRenew, nil, at)), &r); err != nil || !ticket.ValidID(r.Ticket) {
+			t.Fatalf("renewal of %s: %v", id, err)
+		}
+		return r.Ticket
+	}
+	// T1 expires with nobody asking; the human renews it on the hub as T2.
+	t1 := pending(t, e.send(c, u, body))
+	e.clock.add(25 * time.Hour)
+	e.waitIdle()
+	t2 := renewOnHub(t1)
+	if got := pending(t, e.send(c, u, body)); got != t2 {
+		t.Fatalf("retry on %s, want the hub's renewal %s", got, t2)
+	}
+	e.h.mu.Lock()
+	kept := len(e.h.expired)
+	e.h.mu.Unlock()
+	if kept != 0 {
+		t.Fatalf("the gate still keeps %d expired ticket(s) the hub renewed", kept)
+	}
+	e.hub.DecideWith(t2, ticket.Approved, "", nil, func(d *ticket.Decision) { d.At = e.clock.now() })
+	e.waitIdle()
+	if r := e.send(c, u, body); r.StatusCode != 200 || hits.Load() != 1 {
+		t.Fatalf("approved renewal: %s %v (ran %d)", r.Status, r.Header, hits.Load())
+	}
+	// Sent again: a new ticket, renewing nothing.
+	t3 := pending(t, e.send(c, u, body))
+	if t3 == t1 || t3 == t2 || e.signed(t3).Renews != nil {
+		t.Fatalf("sent again: ticket %s renews %+v", t3, e.signed(t3).Renews)
+	}
+	// Variant: T3 expires, the hub renews it as T4, which expires too: the
+	// request sent again is pending (a new ticket), not E_TIMEOUT.
+	e.clock.add(25 * time.Hour)
+	e.waitIdle()
+	t4 := renewOnHub(t3)
+	e.clock.add(25 * time.Hour)
+	t5 := pending(t, e.send(c, u, body))
+	if t5 == t3 || t5 == t4 || hits.Load() != 1 {
+		t.Fatalf("after an expired hub renewal: ticket %s, ran %d", t5, hits.Load())
+	}
+}
+
 func waitAnswer(t *testing.T, h *hubtest.Hub, q string) []byte {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -438,5 +502,19 @@ func TestHubWithdrawnStandalone(t *testing.T) {
 	}
 	if reason, ok := hub.Withdrawn(id); !ok || reason != StandaloneReason {
 		t.Fatalf("hub withdrawal %q %v", reason, ok)
+	}
+}
+
+// In hub mode an E_TIMEOUT names its expired ticket, and its hint says
+// what renews it; the console's keeps "do not retry".
+func TestHubTimeoutHint(t *testing.T) {
+	var hub, console strings.Builder
+	writeRefusalTicket(&hub, "r1", "E_TIMEOUT", "ticket T expired before it was decided", "01M66R207TNWTJZASPXWVT2225", false)
+	writeRefusal(&console, "r2", "E_TIMEOUT", "nobody answered", false)
+	if h := hub.String(); !strings.Contains(h, "X-LockHTTP-Ticket: 01M66R207TNWTJZASPXWVT2225") || !strings.Contains(h, "send the same request again") || strings.Contains(h, "Do not retry") {
+		t.Errorf("hub E_TIMEOUT:\n%s", h)
+	}
+	if !strings.Contains(console.String(), "Do not retry") {
+		t.Errorf("console E_TIMEOUT:\n%s", console.String())
 	}
 }

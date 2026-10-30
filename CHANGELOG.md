@@ -6,7 +6,9 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Builds on lockkit v0.5.0 (reveal and re-approval).
+Builds on lockkit v0.5.0 (reveal and re-approval), pinned at commit
+`cbdcf00d6e12` (lockkit#84: a renewal that ran or was denied is not
+renewable) until v0.6.0.
 
 ### Added
 
@@ -16,7 +18,8 @@ Builds on lockkit v0.5.0 (reveal and re-approval).
   undecided is renewed, as a new ticket naming the expired one, while the
   agent still sends the request, or when it sends it again; the agent gets
   `E_PENDING` with the new ticket, and an approval lets the request through
-  once. Renewals re-check the plan as a run does (`SetRecompute`; plan
+  once; in hub mode `E_TIMEOUT` names the expired ticket and its hint says
+  to send the same request again. Renewals re-check the plan as a run does (`SetRecompute`; plan
   inputs `request` and `policy`).
 - Reveal (Ctrl-O on a local facade of the hub): `--facade-keys-file`
   (`LOCKHTTP_FACADE_KEYS_FILE`) pins the facade keys; each ticket keeps the

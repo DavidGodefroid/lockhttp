@@ -28,6 +28,9 @@ type Console interface {
 type Refusal struct {
 	Code   string
 	Reason string
+	// Ticket is the hub ticket the refusal is about (hub mode), "" for
+	// none.
+	Ticket string
 }
 
 func (r *Refusal) Error() string { return r.Reason }
