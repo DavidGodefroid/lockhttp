@@ -6,6 +6,10 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-30
+
+Hub mode: the gate can hand its asks to lockhub instead of its own console.
+
 ### Changed
 
 - Hub mode: an `http://` `--hub` URL is refused unless the host is a loopback address, or
@@ -22,14 +26,13 @@ uses [Semantic Versioning](https://semver.org/).
   `internal_hosts`. `lockhttp hub-key` prints the instance key to pin.
   Builds on lockkit v0.3.1 (hub support).
 
+## [0.2.1] - 2026-10-28
+
 ### Fixed
 
 - `lockhttp ca init` under rootless Podman: the launcher adds
   `--userns keep-id`, so the CA files are written as the invoking user
   (they failed with "permission denied" on a subuid).
-
-### Fixed
-
 - The image's `lockhttp version` prints `0.2.1`, not `v0.2.1`, like the
   release archives and the launcher.
 

@@ -53,7 +53,7 @@
 <div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.1.0</code> is out as a pre-release: command names are fixed, flags may still move. TLS decryption ships in it and is optional: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
 <div class="prose">
 <h3>Is lockhttp ready to use?</h3>
-<p>It is a pre-release: <code>v0.1.0</code> is out, built on lockkit v0.2.1. Try it, report what breaks; flags may still move before a stable release.</p>
+<p>It is a pre-release: <code>v0.3.0</code> is out, built on lockkit v0.3.1. Try it, report what breaks; flags may still move before a stable release.</p>
 
 <h3>Do I need lea?</h3>
 <p>Yes, for now. lockhttp relies on lea’s topology: each agent container on its own internal network, a proxy container as the only way out, and a source map naming the container behind each address. The gate is a plain HTTP(S) proxy, but the guarantee comes from that topology.</p>
