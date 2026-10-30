@@ -35,6 +35,13 @@ was denied is not renewable, an expired renewal is renewed in turn).
   hub) and answers their request once with the new code `E_WITHDRAWN`,
   without asking the console or sending it.
 
+### Changed
+
+- Hub mode: the `E_TIMEOUT` reason says the ticket "expired before it was
+  used" (it also covers an approval that aged before use); the security
+  model (T18) says a clear screen also leaves sealed to the pinned devices
+  with `--seal-clear` (#19).
+
 ## [0.4.0] - 2026-10-30
 
 Hub mode: decisions taken on lockhub's mobile facade, signed by a pinned phone.
