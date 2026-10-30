@@ -509,7 +509,7 @@ func TestHubWithdrawnStandalone(t *testing.T) {
 // what renews it; the console's keeps "do not retry".
 func TestHubTimeoutHint(t *testing.T) {
 	var hub, console strings.Builder
-	writeRefusalTicket(&hub, "r1", "E_TIMEOUT", "ticket T expired before it was decided", "01M66R207TNWTJZASPXWVT2225", false)
+	writeRefusalTicket(&hub, "r1", "E_TIMEOUT", "ticket T expired before it was used", "01M66R207TNWTJZASPXWVT2225", false)
 	writeRefusal(&console, "r2", "E_TIMEOUT", "nobody answered", false)
 	if h := hub.String(); !strings.Contains(h, "X-LockHTTP-Ticket: 01M66R207TNWTJZASPXWVT2225") || !strings.Contains(h, "send the same request again") || strings.Contains(h, "Do not retry") {
 		t.Errorf("hub E_TIMEOUT:\n%s", h)
