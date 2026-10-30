@@ -41,7 +41,7 @@ cannot reach it. Every decision is traced to the container, the agent and the se
 that asked.
 
 > [!NOTE]
-> **Pre-release** (`v0.4.0`). Built on [lockkit](https://github.com/DavidGodefroid/lockkit) v0.4.0.
+> **Pre-release** (`v0.5.0`). Built on [lockkit](https://github.com/DavidGodefroid/lockkit) v0.6.0.
 > Design decisions: [docs/decisions.md](docs/decisions.md).
 
 ## Why LockHTTP?

@@ -50,10 +50,10 @@
   <main id="main" tabindex="-1">
     <div class="wrap">
 <h1>FAQ</h1>
-<div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.4.0</code> is out as a pre-release and runs in Docker only (one <code>lockhttp</code> launcher, a cosign-signed image): command names are fixed, flags may still move. TLS decryption ships in it and is optional, wired by lea: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
+<div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.5.0</code> is out as a pre-release and runs in Docker only (one <code>lockhttp</code> launcher, a cosign-signed image): command names are fixed, flags may still move. TLS decryption ships in it and is optional, wired by lea: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
 <div class="prose">
 <h3>Is lockhttp ready to use?</h3>
-<p>It is a pre-release: <code>v0.4.0</code> is out, built on lockkit v0.4.0. Try it, report what breaks; flags may still move before a stable release.</p>
+<p>It is a pre-release: <code>v0.5.0</code> is out, built on lockkit v0.6.0. Try it, report what breaks; flags may still move before a stable release.</p>
 
 <h3>Do I need lea?</h3>
 <p>Yes, for now. lockhttp relies on lea’s topology: each agent container on its own internal network, a proxy container as the only way out, and a source map naming the container behind each address. The gate is a plain HTTP(S) proxy, but the guarantee comes from that topology.</p>
@@ -91,7 +91,7 @@
         <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">Design decisions</a></li>
         <li><a href="https://lockfamily.dev/">The Lock family</a></li>
       </ul>
-      <p>Pre-release: <a href="https://github.com/DavidGodefroid/lockhttp/releases">v0.4.0</a> is out. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p>Pre-release: <a href="https://github.com/DavidGodefroid/lockhttp/releases">v0.5.0</a> is out. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
     </div>
   </footer>
 </body>
