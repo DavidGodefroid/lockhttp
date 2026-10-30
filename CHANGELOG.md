@@ -6,6 +6,16 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Hub mode: the gate pins approval devices, with the same flags as lockkit's
+  console: `--devices-file` (`LOCKHTTP_DEVICES_FILE`), `--require-device`
+  (`LOCKHTTP_REQUIRE_DEVICE`) and `--seal-clear` (`LOCKHTTP_SEAL_CLEAR=1`). A
+  decision of the hub's mobile facade runs only when signed by a pinned device;
+  without one it is refused, as it always was before. With `--seal-clear` the
+  clear screen goes to the devices sealed, the hub relaying ciphertext. Uses
+  lockkit's device decisions (`hubclient.Config.Devices`).
+
 ## [0.3.0] - 2026-10-30
 
 Hub mode: the gate can hand its asks to lockhub instead of its own console.

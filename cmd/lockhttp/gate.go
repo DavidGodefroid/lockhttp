@@ -19,12 +19,13 @@ import (
 	"github.com/DavidGodefroid/lockhttp/internal/signer"
 	"github.com/DavidGodefroid/lockkit/hubclient"
 	"github.com/DavidGodefroid/lockkit/plans"
+	"github.com/DavidGodefroid/lockkit/ticket"
 )
 
 // runGate is `lockhttp gate`: the proxy, in lea's proxy container (or
 // beside the agent on a host, as another account than the console's).
 func runGate(e env, args []string) int {
-	const usage = "lockhttp gate --listen ADDR [--upstream URL] [--profile P] [--sources FILE] [--credentials FILE] [--audit-dir DIR] [--status-file FILE] [--ca-cert FILE --signer SOCKET] [--hub URL --hub-key-file FILE --instance NAME [--home DIR] [--hub-net CIDR ...] [--hub-plain-http]] [--check]"
+	const usage = "lockhttp gate --listen ADDR [--upstream URL] [--profile P] [--sources FILE] [--credentials FILE] [--audit-dir DIR] [--status-file FILE] [--ca-cert FILE --signer SOCKET] [--hub URL --hub-key-file FILE --instance NAME [--home DIR] [--hub-net CIDR ...] [--hub-plain-http] [--devices-file FILE [--require-device RISKS] [--seal-clear]]] [--check]"
 	fs := flag.NewFlagSet("gate", flag.ContinueOnError)
 	listen := fs.String("listen", envOr("LOCKHTTP_LISTEN", "127.0.0.1:3130"), "address to listen on")
 	upstream := fs.String("upstream", os.Getenv("LOCKHTTP_UPSTREAM"), "proxy to send through (squid: http://127.0.0.1:3128); empty dials directly")
@@ -41,6 +42,9 @@ func runGate(e env, args []string) int {
 	instance := fs.String("instance", os.Getenv("LOCKHTTP_INSTANCE"), "the lock instance name the hub knows this gate by")
 	home := fs.String("home", os.Getenv("LOCKHTTP_HOME"), "the gate's own volume: instance key, plans and hub state (default: the home directory)")
 	plainHTTP := fs.Bool("hub-plain-http", os.Getenv("LOCKHTTP_HUB_PLAIN_HTTP") == "1", "allow an http:// hub URL on a network of its own (a service name without a dot or a private address)")
+	devicesFile := fs.String("devices-file", os.Getenv("LOCKHTTP_DEVICES_FILE"), "the approval devices this gate pins (JSON, written by lock up): device decisions must carry their signature")
+	requireDevice := fs.String("require-device", os.Getenv("LOCKHTTP_REQUIRE_DEVICE"), "risk classes (comma-separated) whose approvals must be signed by a pinned device, from any facade")
+	sealClear := fs.Bool("seal-clear", os.Getenv("LOCKHTTP_SEAL_CLEAR") == "1", "send the clear screen sealed to the pinned devices (end to end; the hub relays ciphertext)")
 	var hubNets prefixList
 	fs.Var(&hubNets, "hub-net", "a network of the hub, refused as a target (repeatable)")
 	if !parse(e, fs, "gate", usage, args) {
@@ -71,8 +75,9 @@ func runGate(e env, args []string) int {
 		fmt.Fprintln(e.stderr, "lockhttp gate:", err)
 		return exitUsage
 	}
-	if *hubURL != "" || *hubKeyFile != "" || *instance != "" || len(hubNets) > 0 || *plainHTTP {
-		h, err := openHub(*hubURL, *hubKeyFile, *instance, *home, hubNets, *plainHTTP)
+	devs := hubDevices{File: *devicesFile, Require: *requireDevice, SealClear: *sealClear}
+	if *hubURL != "" || *hubKeyFile != "" || *instance != "" || len(hubNets) > 0 || *plainHTTP || devs.set() {
+		h, err := openHub(*hubURL, *hubKeyFile, *instance, *home, hubNets, *plainHTTP, devs)
 		if err != nil {
 			return usageFail(e, "gate", usage, err.Error())
 		}
@@ -229,8 +234,8 @@ func runCA(e env, args []string) int {
 // openHub opens the gate's hub mode: the pinned hub key, the instance key
 // in the gate's own volume (made by `lockhttp hub-key`), the plans and the
 // hub state beside it. The hub's host name and nets are refused as
-// targets.
-func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainHTTP bool) (*gate.Hub, error) {
+// targets; decisions taken on a device verify under the devices pinned.
+func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainHTTP bool, devs hubDevices) (*gate.Hub, error) {
 	switch {
 	case rawURL == "" || keyFile == "" || instance == "":
 		return nil, errors.New("--hub, --hub-key-file and --instance go together")
@@ -242,6 +247,10 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 		return nil, fmt.Errorf("--hub must be a URL: %q", rawURL)
 	}
 	hubKey, err := hubclient.ReadHubKey(keyFile)
+	if err != nil {
+		return nil, err
+	}
+	devices, require, err := devs.read()
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +269,7 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 	}
 	// The client first: a refused configuration leaves no plan store open.
 	c, err := hubclient.New(hubclient.Config{URL: rawURL, Instance: instance, Key: key, HubKey: hubKey, PlainHTTP: plainHTTP,
-		StateFile: filepath.Join(dir, "state.json")})
+		StateFile: filepath.Join(dir, "state.json"), Devices: devices, RequireDevice: require, SealClear: devs.SealClear})
 	if err != nil {
 		return nil, err
 	}
@@ -276,6 +285,44 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 		return nil, err
 	}
 	return &gate.Hub{Client: c, Plans: st, Hosts: []string{u.Hostname()}, Nets: nets}, nil
+}
+
+// hubDevices are the device flags of hub mode, as lockkit's console takes
+// them: --devices-file (the devices `lock up` pins, read with
+// hubclient.ReadDevices), --require-device (risk classes, comma-separated)
+// and --seal-clear. Without pinned devices, a decision of the mobile
+// facade is refused.
+type hubDevices struct {
+	File, Require string
+	SealClear     bool
+}
+
+func (d hubDevices) set() bool { return d.File != "" || d.Require != "" || d.SealClear }
+
+// read checks the flags and reads the pinned devices and the risk classes
+// that need one.
+func (d hubDevices) read() ([]ticket.Device, []ticket.Risk, error) {
+	switch {
+	case d.Require != "" && d.File == "":
+		return nil, nil, errors.New("--require-device needs --devices-file")
+	case d.SealClear && d.File == "":
+		return nil, nil, errors.New("--seal-clear needs --devices-file")
+	}
+	require, err := hubclient.ParseRisks(d.Require)
+	if err != nil {
+		return nil, nil, fmt.Errorf("--require-device: %w", err)
+	}
+	if d.File == "" {
+		return nil, nil, nil
+	}
+	devices, err := hubclient.ReadDevices(d.File)
+	if err != nil {
+		return nil, nil, err
+	}
+	if (len(require) > 0 || d.SealClear) && len(devices) == 0 {
+		return nil, nil, fmt.Errorf("--require-device or --seal-clear, and %s pins no device", d.File)
+	}
+	return devices, require, nil
 }
 
 // hubAddrs are the hub's own addresses, refused as targets beside

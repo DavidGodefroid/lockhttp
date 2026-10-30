@@ -102,13 +102,19 @@ func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) 
 	// The hub cannot check a verdict="auto" rule against the console's
 	// policy, as the console does: no hub auto mode for the gate's asks.
 	t.Flags = ticket.Flags{Production: pol.Production, NeverAuto: true}
-	lines := []render.Line{render.Structure("from " + wire.ScreenRequester(p))}
-	for _, l := range wire.ScreenBody(p) {
+	header, rows := wire.ScreenHeader(p), append([]string{"from " + wire.ScreenRequester(p)}, wire.ScreenBody(p)...)
+	lines := make([]render.Line, 0, len(rows))
+	for _, l := range rows {
 		lines = append(lines, render.Structure(l))
 	}
-	screen := render.MaskScreen(render.ScreenSource{Header: wire.ScreenHeader(p), Body: lines, Warnings: p.Warnings, Red: p.Red},
+	screen := render.MaskScreen(render.ScreenSource{Header: header, Body: lines, Warnings: p.Warnings, Red: p.Red},
 		render.Masking{Detectors: previewDetectors})
-	id, err := h.Client.Submit(ctx, h.Plans, pl.ID, caller, t, screen)
+	// The screen the console would show, personal data unmasked (the body
+	// preview stays masked, as on the console): with --seal-clear it is
+	// sealed to each pinned device, which the hub relays without reading;
+	// otherwise it never leaves the gate.
+	clearScreen := &ticket.Screen{Header: header, Body: rows, Warnings: p.Warnings, Red: p.Red}
+	id, err := h.Client.SubmitClear(ctx, h.Plans, pl.ID, caller, t, screen, clearScreen)
 	switch {
 	case errors.Is(err, hubclient.ErrRateLimited):
 		_ = h.Plans.End(pl.ID, caller, plans.Withdrawn, err.Error())
@@ -156,9 +162,19 @@ func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) 
 				fmt.Fprintln(g.cfg.Log, "lockhttp gate: hub not told ticket", id, "was consumed:", err)
 			}
 			return wire.ApproveResult{Approved: true}, nil
-		case errors.Is(err, hubclient.ErrPending), errors.Is(err, hubclient.ErrBadDecision):
-			// A decision that does not verify was dropped: wait for one
-			// that does.
+		case errors.Is(err, ticket.ErrDevice) && d != nil:
+			// An approval this gate wants signed by a pinned device
+			// (--require-device) came without one: the plan ended Denied.
+			// The audit names the facade it came from.
+			reason := "the approval was not signed by a pinned device"
+			record(audit.EventDenied, reason, d)
+			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeDenied), Reason: reason}
+		case errors.Is(err, hubclient.ErrPending):
+		case errors.Is(err, hubclient.ErrBadDecision):
+			// A decision that does not verify was dropped (a forged one,
+			// or one of the mobile facade without the signature of a
+			// pinned device): wait for one that does.
+			fmt.Fprintln(g.cfg.Log, "lockhttp gate: ticket", id, "decision dropped:", err)
 		case errors.Is(err, hubclient.ErrDenied):
 			reason := strings.TrimPrefix(strings.TrimPrefix(err.Error(), hubclient.ErrDenied.Error()), ": ")
 			if reason == "" {
