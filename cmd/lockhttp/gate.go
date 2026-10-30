@@ -128,7 +128,20 @@ func runGate(e env, args []string) int {
 		mode += ", asks on hub " + *hubURL + " as " + *instance
 	}
 	fmt.Fprintf(e.stderr, "lockhttp gate %s: listening on %s, profile %s, %s\n", version, ln.Addr(), *profile, mode)
-	if err := g.Serve(ctx, ln); err != nil {
+	err = g.Serve(ctx, ln)
+	if cfg.Hub != nil {
+		// The asks withdraw their tickets as the gate stops; then the plan
+		// store is closed.
+		stop()
+		select {
+		case <-g.Stopped():
+		case <-time.After(10 * time.Second):
+		}
+		if cerr := cfg.Hub.Close(); cerr != nil {
+			fmt.Fprintln(e.stderr, "lockhttp gate:", cerr)
+		}
+	}
+	if err != nil {
 		fmt.Fprintln(e.stderr, "lockhttp gate:", err)
 		return exitFail
 	}

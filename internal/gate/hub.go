@@ -42,6 +42,10 @@ type Hub struct {
 	Poll time.Duration
 }
 
+// Close closes the plan store (it holds its directory for this process):
+// after the gate stopped (Gate.Stopped), never while asks wait.
+func (h *Hub) Close() error { return h.Plans.Close() }
+
 // hubPlan is the body of a plan: the request fingerprint (the plan hash is
 // its hash) and what the screen showed.
 type hubPlan struct {

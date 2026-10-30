@@ -186,6 +186,11 @@ func hubEnv(t *testing.T, conf string, mutate func(*Hub)) (*env, *fakeHub) {
 		case <-time.After(10 * time.Second):
 			t.Error("the gate did not stop")
 		}
+		// Before the plans directory goes (Windows refuses to remove a
+		// locked file).
+		if err := h.Close(); err != nil {
+			t.Error(err)
+		}
 	})
 	e := newEnv(t, conf, true, func(cfg *Config) { cfg.Hub = h; cfg.Log = testLog{t} })
 	g = e.gate
