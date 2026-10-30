@@ -11,13 +11,6 @@ was denied is not renewable, an expired renewal is renewed in turn).
 
 ### Added
 
-- Hub mode: the gate pins approval devices, with the same flags as lockkit's
-  console: `--devices-file` (`LOCKHTTP_DEVICES_FILE`), `--require-device`
-  (`LOCKHTTP_REQUIRE_DEVICE`) and `--seal-clear` (`LOCKHTTP_SEAL_CLEAR=1`). A
-  decision of the hub's mobile facade runs only when signed by a pinned device;
-  without one it is refused, as it always was before. With `--seal-clear` the
-  clear screen goes to the devices sealed, the hub relaying ciphertext. Uses
-  lockkit's device decisions (`hubclient.Config.Devices`).
 - Hub mode: an `E_PENDING` names the hub ticket the request waits on
   (`X-LockHTTP-Ticket`).
 - Re-approval of expired tickets (lockkit H1): a ticket that expires
@@ -25,8 +18,8 @@ was denied is not renewable, an expired renewal is renewed in turn).
   agent still sends the request, or when it sends it again; the agent gets
   `E_PENDING` with the new ticket, and an approval lets the request through
   once; in hub mode `E_TIMEOUT` names the expired ticket and its hint says
-  to send the same request again. Renewals re-check the plan as a run does (`SetRecompute`; plan
-  inputs `request` and `policy`).
+  to send the same request again. Renewals re-check the plan as a run
+  does (`SetRecompute`; plan inputs `request` and `policy`).
 - Reveal (Ctrl-O on a local facade of the hub): `--facade-keys-file`
   (`LOCKHTTP_FACADE_KEYS_FILE`) pins the facade keys; each ticket keeps the
   console's clear screen in the gate's volume, sealed to a pinned facade
@@ -36,6 +29,20 @@ was denied is not renewable, an expired renewal is renewed in turn).
   tickets its hub mode left pending (the next start in hub mode tells the
   hub) and answers their request once with the new code `E_WITHDRAWN`,
   without asking the console or sending it.
+
+## [0.4.0] - 2026-10-30
+
+Hub mode: decisions taken on lockhub's mobile facade, signed by a pinned phone.
+
+### Added
+
+- Hub mode: the gate pins approval devices, with the same flags as lockkit's
+  console: `--devices-file` (`LOCKHTTP_DEVICES_FILE`), `--require-device`
+  (`LOCKHTTP_REQUIRE_DEVICE`) and `--seal-clear` (`LOCKHTTP_SEAL_CLEAR=1`). A
+  decision of the hub's mobile facade runs only when signed by a pinned device;
+  without one it is refused, as it always was before. With `--seal-clear` the
+  clear screen goes to the devices sealed, the hub relaying ciphertext. Uses
+  lockkit's device decisions (`hubclient.Config.Devices`).
 
 ## [0.3.0] - 2026-10-30
 
@@ -170,7 +177,8 @@ separate signer, Claude API allowlist) available behind `--ca-cert` and
 - Release pipeline: goreleaser, cosign keyless signatures, SBOMs,
   SHA-pinned actions, `scripts/install.sh` with signature verification.
 
-[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.4.0
 [0.3.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.3.0
 [0.2.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.2.1
 [0.2.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.2.0
