@@ -39,6 +39,7 @@ type fakeHub struct {
 	ids       []string
 	consumed  map[string]bool
 	withdraws map[string]bool
+	logs      []string // what the gate logged
 }
 
 func (h *fakeHub) withdrawn(id string) bool { h.mu.Lock(); defer h.mu.Unlock(); return h.withdraws[id] }
@@ -215,7 +216,7 @@ func hubEnvWith(t *testing.T, conf string, config func(*hubclient.Config), mutat
 			t.Error(err)
 		}
 	})
-	e := newEnv(t, conf, true, func(cfg *Config) { cfg.Hub = h; cfg.Log = testLog{t} })
+	e := newEnv(t, conf, true, func(cfg *Config) { cfg.Hub = h; cfg.Log = hubLog{t, fh} })
 	g = e.gate
 	// The console is never asked in hub mode.
 	e.console.answer = func(p wire.ApproveParams) (wire.ApproveResult, error) {
@@ -449,6 +450,46 @@ func TestHubRisk(t *testing.T) {
 		if got := riskOf(c.pol, c.p); got != c.want {
 			t.Errorf("%+v production=%v: %s, want %s", c.p.Target, c.pol.Production, got, c.want)
 		}
+	}
+}
+
+// hubLog is testLog that also keeps the lines for fakeHub.waitLog.
+type hubLog struct {
+	t  *testing.T
+	fh *fakeHub
+}
+
+func (l hubLog) Write(p []byte) (int, error) {
+	l.fh.mu.Lock()
+	l.fh.logs = append(l.fh.logs, string(p))
+	l.fh.mu.Unlock()
+	return testLog{l.t}.Write(p)
+}
+
+// waitLog waits for n lines of the gate's log holding every one of subs.
+func (h *fakeHub) waitLog(n int, subs ...string) {
+	h.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		h.mu.Lock()
+		got := 0
+		for _, l := range h.logs {
+			all := true
+			for _, s := range subs {
+				all = all && strings.Contains(l, s)
+			}
+			if all {
+				got++
+			}
+		}
+		h.mu.Unlock()
+		if got >= n {
+			return
+		}
+		if time.Now().After(deadline) {
+			h.t.Fatalf("the gate logged %d lines with %q, want %d", got, subs, n)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

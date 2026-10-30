@@ -169,10 +169,12 @@ func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) 
 			reason := "the approval was not signed by a pinned device"
 			record(audit.EventDenied, reason, d)
 			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeDenied), Reason: reason}
-		case errors.Is(err, hubclient.ErrPending), errors.Is(err, hubclient.ErrBadDecision):
+		case errors.Is(err, hubclient.ErrPending):
+		case errors.Is(err, hubclient.ErrBadDecision):
 			// A decision that does not verify was dropped (a forged one,
 			// or one of the mobile facade without the signature of a
 			// pinned device): wait for one that does.
+			fmt.Fprintln(g.cfg.Log, "lockhttp gate: ticket", id, "decision dropped:", err)
 		case errors.Is(err, hubclient.ErrDenied):
 			reason := strings.TrimPrefix(strings.TrimPrefix(err.Error(), hubclient.ErrDenied.Error()), ": ")
 			if reason == "" {
