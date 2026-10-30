@@ -6,6 +6,11 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-30
+
+Hub mode on lockkit v0.6.0: expired tickets are approved again, reveal from a local
+facade, and a gate started without the hub withdraws its hub tickets.
+
 Builds on lockkit v0.6.0 (reveal and re-approval; a renewal that ran or
 was denied is not renewable, an expired renewal is renewed in turn).
 
@@ -29,6 +34,13 @@ was denied is not renewable, an expired renewal is renewed in turn).
   tickets its hub mode left pending (the next start in hub mode tells the
   hub) and answers their request once with the new code `E_WITHDRAWN`,
   without asking the console or sending it.
+
+### Changed
+
+- Hub mode: the `E_TIMEOUT` reason says the ticket "expired before it was
+  used" (it also covers an approval that aged before use); the security
+  model (T18) says a clear screen also leaves sealed to the pinned devices
+  with `--seal-clear` (#19).
 
 ## [0.4.0] - 2026-10-30
 
@@ -177,7 +189,8 @@ separate signer, Claude API allowlist) available behind `--ca-cert` and
 - Release pipeline: goreleaser, cosign keyless signatures, SBOMs,
   SHA-pinned actions, `scripts/install.sh` with signature verification.
 
-[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.5.0
 [0.4.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.4.0
 [0.3.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.3.0
 [0.2.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.2.1
