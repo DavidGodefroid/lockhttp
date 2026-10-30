@@ -281,6 +281,28 @@ own at the hub), logs them, and answers the first request of each
 the console or sending it; sent again, the request is asked on the console
 like any other. The next start in hub mode tells the hub.
 
+**Supported lockhub versions.** Which [lockhub](https://github.com/DavidGodefroid/lockhub)
+releases each lockhttp release works with. Under `lock up`, lea runs the gate in hub mode
+(lockhub's `docs/lock-up.md`), and only from an `up.json` that says what the gate pins
+(`"lockhttp_gate": 1`): that needs lockhub v0.2.2 or later and lea v0.3.0 or later, for every
+lockhttp release below; with an older lockhub, lea runs its standalone gate and says why. A
+gate run by hand with `--hub` works with the hub image of the last column.
+
+| lockhttp | lockkit | Under `lock up` (lea's gate) | Hub image, gate run by hand |
+|---|---|---|---|
+| v0.5.0 | v0.6.0 | lockhub v0.2.2 + lea v0.3.0 or later: hub mode, reveals (`reveal: true`), renewals, `devices: true` | v0.2.0 or later |
+| v0.4.0 | v0.4.0 | lockhub v0.2.2 + lea v0.3.0 or later: hub mode, `devices: true`; no reveals, no renewals | v0.1.1 or later; device-signed decisions from v0.2.0 (its mobile facade) |
+| v0.3.0 | v0.3.1 | lockhub v0.2.2 + lea v0.3.0 or later: hub mode only | v0.1.1 or later |
+| v0.2.1 and older | older than v0.3.1 | none (no hub mode): lea runs the standalone gate | none |
+
+lea checks the pinned lockhttp release and never passes the gate a flag it does not know: with
+`reveal: true` on a gate older than v0.5.0 it warns and pins no facade key (no reveal); with
+`devices: true` on one older than v0.4.0 it warns and pins no device, or runs the standalone
+gate when `require_device` or `seal_clear` is set. A gate on lockkit older than v0.5.0 ignores
+the hub's reveal and renewal requests, which then time out. lockhub's
+[CHANGELOG](https://github.com/DavidGodefroid/lockhub/blob/main/CHANGELOG.md) ("Supported locks")
+and lea's `internal/launcher/lockhubgate.go` are the references.
+
 The gate finds the console's socket as a lockkit client, in the socket
 directory of the image's `/etc/lockhttp/system.toml`: `/run/lockhttp`, the
 volume `lockhttp-run` it shares with the console.
