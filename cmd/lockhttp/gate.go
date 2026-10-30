@@ -25,7 +25,7 @@ import (
 // runGate is `lockhttp gate`: the proxy, in lea's proxy container (or
 // beside the agent on a host, as another account than the console's).
 func runGate(e env, args []string) int {
-	const usage = "lockhttp gate --listen ADDR [--upstream URL] [--profile P] [--sources FILE] [--credentials FILE] [--audit-dir DIR] [--status-file FILE] [--ca-cert FILE --signer SOCKET] [--hub URL --hub-key-file FILE --instance NAME [--home DIR] [--hub-net CIDR ...] [--hub-plain-http] [--devices-file FILE [--require-device RISKS] [--seal-clear]]] [--check]"
+	const usage = "lockhttp gate --listen ADDR [--upstream URL] [--profile P] [--sources FILE] [--credentials FILE] [--audit-dir DIR] [--status-file FILE] [--ca-cert FILE --signer SOCKET] [--hub URL --hub-key-file FILE --instance NAME [--home DIR] [--hub-net CIDR ...] [--hub-plain-http] [--devices-file FILE [--require-device RISKS] [--seal-clear]] [--facade-keys-file FILE]] [--check]"
 	fs := flag.NewFlagSet("gate", flag.ContinueOnError)
 	listen := fs.String("listen", envOr("LOCKHTTP_LISTEN", "127.0.0.1:3130"), "address to listen on")
 	upstream := fs.String("upstream", os.Getenv("LOCKHTTP_UPSTREAM"), "proxy to send through (squid: http://127.0.0.1:3128); empty dials directly")
@@ -45,6 +45,7 @@ func runGate(e env, args []string) int {
 	devicesFile := fs.String("devices-file", os.Getenv("LOCKHTTP_DEVICES_FILE"), "the approval devices this gate pins (JSON, written by lock up): device decisions must carry their signature")
 	requireDevice := fs.String("require-device", os.Getenv("LOCKHTTP_REQUIRE_DEVICE"), "risk classes (comma-separated) whose approvals must be signed by a pinned device, from any facade")
 	sealClear := fs.Bool("seal-clear", os.Getenv("LOCKHTTP_SEAL_CLEAR") == "1", "send the clear screen sealed to the pinned devices (end to end; the hub relays ciphertext)")
+	facadeKeys := fs.String("facade-keys-file", os.Getenv("LOCKHTTP_FACADE_KEYS_FILE"), "the facade keys the gate pins (JSON, written by lock up): reveals of a clear screen are sealed only to them")
 	var hubNets prefixList
 	fs.Var(&hubNets, "hub-net", "a network of the hub, refused as a target (repeatable)")
 	if !parse(e, fs, "gate", usage, args) {
@@ -76,12 +77,23 @@ func runGate(e env, args []string) int {
 		return exitUsage
 	}
 	devs := hubDevices{File: *devicesFile, Require: *requireDevice, SealClear: *sealClear}
-	if *hubURL != "" || *hubKeyFile != "" || *instance != "" || len(hubNets) > 0 || *plainHTTP || devs.set() {
-		h, err := openHub(*hubURL, *hubKeyFile, *instance, *home, hubNets, *plainHTTP, devs)
+	if *hubURL != "" || *hubKeyFile != "" || *instance != "" || len(hubNets) > 0 || *plainHTTP || devs.set() || *facadeKeys != "" {
+		h, err := openHub(*hubURL, *hubKeyFile, *instance, *home, hubNets, *plainHTTP, devs, *facadeKeys)
 		if err != nil {
 			return usageFail(e, "gate", usage, err.Error())
 		}
 		cfg.Hub = h
+	} else {
+		// Rollback of hub mode: the plans a hub mode left pending in the
+		// gate's volume are withdrawn, and their requests refused once.
+		w, err := withdrawStandalone(*home)
+		if err != nil {
+			fmt.Fprintln(e.stderr, "lockhttp gate: hub plans:", err)
+		}
+		if tks := w.Tickets(); len(tks) > 0 {
+			fmt.Fprintf(e.stderr, "lockhttp gate: running without the hub: withdrew %d pending hub ticket(s): %s\n", len(tks), strings.Join(tks, " "))
+		}
+		cfg.Withdrawn = w
 	}
 	if *upstream != "" {
 		u, err := url.Parse(*upstream)
@@ -235,7 +247,7 @@ func runCA(e env, args []string) int {
 // in the gate's own volume (made by `lockhttp hub-key`), the plans and the
 // hub state beside it. The hub's host name and nets are refused as
 // targets; decisions taken on a device verify under the devices pinned.
-func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainHTTP bool, devs hubDevices) (*gate.Hub, error) {
+func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainHTTP bool, devs hubDevices, facadeKeys string) (*gate.Hub, error) {
 	switch {
 	case rawURL == "" || keyFile == "" || instance == "":
 		return nil, errors.New("--hub, --hub-key-file and --instance go together")
@@ -254,6 +266,12 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 	if err != nil {
 		return nil, err
 	}
+	var facades []ticket.PinnedFacade
+	if facadeKeys != "" {
+		if facades, err = hubclient.ReadFacades(facadeKeys); err != nil {
+			return nil, err
+		}
+	}
 	if home == "" {
 		if home, err = os.UserHomeDir(); err != nil {
 			return nil, err
@@ -269,7 +287,7 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 	}
 	// The client first: a refused configuration leaves no plan store open.
 	c, err := hubclient.New(hubclient.Config{URL: rawURL, Instance: instance, Key: key, HubKey: hubKey, PlainHTTP: plainHTTP,
-		StateFile: filepath.Join(dir, "state.json"), Devices: devices, RequireDevice: require, SealClear: devs.SealClear})
+		StateFile: filepath.Join(dir, "state.json"), Devices: devices, RequireDevice: require, SealClear: devs.SealClear, Facades: facades})
 	if err != nil {
 		return nil, err
 	}
@@ -285,6 +303,18 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 		return nil, err
 	}
 	return &gate.Hub{Client: c, Plans: st, Hosts: []string{u.Hostname()}, Nets: nets}, nil
+}
+
+// withdrawStandalone withdraws the pending plans of every hub instance in
+// the gate's volume (home, or the home directory).
+func withdrawStandalone(home string) (*gate.Withdrawn, error) {
+	if home == "" {
+		var err error
+		if home, err = os.UserHomeDir(); err != nil {
+			return nil, err
+		}
+	}
+	return gate.WithdrawStandalone(hubclient.KeyDir(home))
 }
 
 // hubDevices are the device flags of hub mode, as lockkit's console takes

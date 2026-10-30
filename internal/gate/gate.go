@@ -64,6 +64,10 @@ type Config struct {
 	// Hub, when set, sends the asks to lockhub (hub mode); the console
 	// still serves the policy.
 	Hub *Hub
+	// Withdrawn, in standalone mode, are the hub tickets the gate's last
+	// hub mode left pending and this start withdrew (WithdrawStandalone):
+	// the request of one is refused once, explicitly (E_WITHDRAWN).
+	Withdrawn *Withdrawn
 	// PolicyPoll is how often the policy is fetched (2 s by default).
 	PolicyPoll time.Duration
 	Now        func() time.Time
@@ -110,6 +114,11 @@ func New(cfg Config) *Gate {
 	if cfg.Hub != nil {
 		// A hub decision may take hours: its asks wait side by side.
 		g.queue.approve, g.queue.concurrent = g.hubApprove, true
+		// A renewal (the hub's renew request, or Renew on a request sent
+		// again) checks the plan as the run's recheck does; reveals and
+		// renewals are audited.
+		cfg.Hub.Client.SetRecompute(g.recompute)
+		cfg.Hub.Client.OnRequest(g.hubRequest)
 	}
 	g.pol.Store(&polState{})
 	g.status = Status{Version: ContractVersion, Console: "down", PendingByContainer: map[string]int{}}
@@ -333,13 +342,29 @@ func (g *Gate) audit(rec wire.Record) {
 // writeRefusal answers 403 with the refusal code, on a CONNECT (no body
 // framing kept: the connection closes) or a request.
 func writeRefusal(w io.Writer, id, c, reason string, connect bool) {
+	writeRefusalTicket(w, id, c, reason, "", connect)
+}
+
+// writeRefusalTicket is writeRefusal naming the hub ticket the request
+// waits on (X-LockHTTP-Ticket), when tk is not "".
+func writeRefusalTicket(w io.Writer, id, c, reason, tk string, connect bool) {
 	body := fmt.Sprintf("LockHTTP refused this request (%s): %s\n", c, reason)
-	if hint := hintFor(c); hint != "" {
+	hint := hintFor(c)
+	if tk != "" && c == string(product.CodeTimeout) {
+		// Hub mode: the same request sent again renews the expired ticket.
+		hint = "Ask the user to watch the hub, then send the same request again: it asks the hub again (a renewal of the expired ticket)."
+	}
+	if hint != "" {
 		body += hint + "\n"
 	}
 	body += "request id: " + id + "\n"
+	extra := ""
+	if tk != "" {
+		body += "hub ticket: " + tk + "\n"
+		extra = "X-LockHTTP-Ticket: " + tk + "\r\n"
+	}
 	status := "403 Forbidden"
-	fmt.Fprintf(w, "HTTP/1.1 %s\r\nContent-Type: text/plain; charset=utf-8\r\nX-LockHTTP-Code: %s\r\nX-LockHTTP-Request: %s\r\nContent-Length: %d\r\n", status, c, id, len(body))
+	fmt.Fprintf(w, "HTTP/1.1 %s\r\nContent-Type: text/plain; charset=utf-8\r\nX-LockHTTP-Code: %s\r\nX-LockHTTP-Request: %s\r\n%sContent-Length: %d\r\n", status, c, id, extra, len(body))
 	if connect {
 		fmt.Fprint(w, "Connection: close\r\n")
 	}
@@ -352,6 +377,8 @@ func hintFor(code string) string {
 		return "No lockhttp console is running: ask the user to start it (lockhttp console)."
 	case "E_PENDING":
 		return "The request waits for the human in the lockhttp console: retry the same request in a moment."
+	case "E_WITHDRAWN":
+		return "The gate now runs without its hub: tell the user, then send the same request again; the human answers it in the lockhttp console."
 	case "E_DENIED", "E_TIMEOUT":
 		return "Do not retry the same request; ask the user."
 	case "E_HOST_UNKNOWN", "E_CLAUDE_API_PARAM", "E_EXFIL_SUSPECT", "E_RULE", "E_METHOD":
@@ -374,6 +401,18 @@ func (g *Gate) ask(p wire.ApproveParams, fp, key string, hold time.Duration, onA
 		return out
 	case <-t.C:
 		cancel()
+		if h := g.cfg.Hub; h != nil {
+			// The ticket may still be on its way (hubSubmit): wait for it a
+			// moment, so that the answer names it.
+			tk := h.ticketOf(fp)
+			for i := 0; tk == "" && i < 50 && g.queue.queued(fp); i++ {
+				time.Sleep(20 * time.Millisecond)
+				tk = h.ticketOf(fp)
+			}
+			if tk != "" {
+				return Outcome{Code: string(product.CodePending), Ticket: tk, Reason: "the request waits for a decision on the hub (ticket " + tk + ")"}
+			}
+		}
 		return Outcome{Code: string(product.CodePending), Reason: "the request waits for the human (kept on the console)"}
 	}
 }
@@ -437,7 +476,9 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 	}
 	hostport := net.JoinHostPort(host, strconv.Itoa(port))
 	var d decide.Decision
-	if g.grants.Connect(src.Container, hostport) {
+	if wd, ok := g.withdrawnRefusal("connect|" + src.Container + "|" + hostport); ok {
+		d = wd
+	} else if g.grants.Connect(src.Container, hostport) {
 		d = decide.Decision{Verdict: decide.Free, Rule: "grant:connect", Class: "connect"}
 	} else {
 		d = decide.Evaluate(pol, r, g.cfg.Now(), g.cfg.Creds)
@@ -454,9 +495,9 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 		key := src.Container + "|" + hostport
 		out := g.ask(params, "connect|"+key, key, holdOf(pol), func(bool) { g.grants.GrantConnect(src.Container, hostport, grant) })
 		if !out.Approved {
-			rec.Base = audit.Base{Event: "refused", Decision: "refused", Code: out.Code, Reason: out.Reason, Warnings: d.Warnings}
+			rec.Base = audit.Base{Event: "refused", Decision: "refused", Code: out.Code, Reason: out.Reason, Warnings: d.Warnings, Ticket: out.Ticket}
 			g.audit(rec)
-			writeRefusal(c, id, out.Code, out.Reason, true)
+			writeRefusalTicket(c, id, out.Code, out.Reason, out.Ticket, true)
 			return
 		}
 		g.grants.GrantConnect(src.Container, hostport, grant)

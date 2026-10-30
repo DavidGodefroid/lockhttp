@@ -199,7 +199,8 @@ lockhttp gate --listen ADDR [--upstream URL] [--profile P] [--sources FILE]
               [--ca-cert FILE --signer SOCKET]
               [--hub URL --hub-key-file FILE --instance NAME [--home DIR]
                [--hub-net CIDR ...] [--hub-plain-http]
-               [--devices-file FILE [--require-device RISKS] [--seal-clear]]]
+               [--devices-file FILE [--require-device RISKS] [--seal-clear]]
+               [--facade-keys-file FILE]]
               [--check]
 ```
 
@@ -228,6 +229,7 @@ with the socket volume, publishes its port on `LOCKHTTP_PUBLISH`
 | `--instance NAME` | `LOCKHTTP_INSTANCE` | none | The lock instance name the hub knows the gate by. |
 | `--home DIR` | `LOCKHTTP_HOME` | the home directory | The gate's own volume (`0700`, the gate's uid only): the instance key (`hub/NAME.key`, made by `lockhttp hub-key`), the plans and the hub state (`hub/NAME/`). Never mount it in another container. |
 | `--hub-plain-http` | `LOCKHTTP_HUB_PLAIN_HTTP=1` | off | Allow an `http://` `--hub` URL to a hub on a network of its own: a service name without a dot (`lockhub`) or a private address only. Without it an `http://` hub is refused unless it is a loopback address; use `https`. Requests and decisions are signed either way. |
+| `--facade-keys-file FILE` | `LOCKHTTP_FACADE_KEYS_FILE` | none | The facade keys the gate pins (JSON, written by `lock up`). A reveal (Ctrl-O on a local facade of the hub) is answered with the ticket's clear screen sealed to the facade's ephemeral key, only when one of these keys signed it; the hub relays ciphertext. Without it, reveals are refused. |
 | `--devices-file FILE` | `LOCKHTTP_DEVICES_FILE` | none | The approval devices the gate pins (JSON, written by `lock up` at `/run/lockfamily/devices.json`). A decision taken on a device (the hub's mobile facade) is acted on only if it carries the signature of one of them over the gate's own signed ticket. Without it, every decision of the mobile facade is refused. |
 | `--require-device RISKS` | `LOCKHTTP_REQUIRE_DEVICE` | none | Risk classes, comma-separated (`write`, `prod-write`), whose approvals must be signed by a pinned device, from any facade: an approval without one is a denial. The gate's asks are `write`, or `prod-write` under a production policy. Needs `--devices-file`. |
 | `--seal-clear` | `LOCKHTTP_SEAL_CLEAR=1` | off | Send each ticket's clear screen (the console's, personal data unmasked) sealed to every pinned device; the hub relays ciphertext. Off, the clear screen never leaves the gate. Needs `--devices-file`. |
@@ -246,6 +248,38 @@ the agent chose), `prod-write` under a production policy. The console still serv
 the policy; it is not asked. Hub decisions are audited (`approved`/`denied`,
 `approval` `hub`, `ticket`). An unreachable hub leaves the ask pending:
 nothing falls back to the console.
+
+In hub mode the `E_PENDING` answer names the ticket (`X-LockHTTP-Ticket`
+and a `hub ticket:` line in the body); a retry of the same request waits on
+the same ticket (when the hub is slow to take the ticket, past `hold`
+plus one second, the `E_PENDING` may come without one). A ticket that expires undecided (24 h for `write`, 4 h for
+`prod-write`) is asked again rather than refused: while the agent keeps
+sending the request, the gate renews it at once; otherwise the ask ends
+(`E_TIMEOUT`, audited `timeout`, naming the ticket; its hint says to send
+the same request again) and the same request sent later (within 24 h, same
+gate process) renews it. A renewal the human made on the hub is picked up
+by the request sent again; once it ran, was denied or expired too, the
+request sent again is a new ticket. A renewal is a new ticket that names
+the expired one (`renews`), re-checked against the policy in force (a
+changed policy is a new ticket instead); the agent's retries get
+`E_PENDING` with the new ticket, and an approval lets the request through
+once. A plan of the gate is the request itself, so a renewal never shows a
+moved input. A human can also ask again from the hub. The plan hash inputs
+the gate binds are `request` (the request fingerprint) and `policy`.
+
+The gate keeps each ticket's clear screen (the console's screen, the body
+preview masked as there) in its volume; it leaves only sealed: to a
+pinned facade key (`--facade-keys-file`) on a reveal, and with
+`--seal-clear` to each pinned device. Reveals and renewals asked
+by the hub are audited (`reveal`/`renew`, `approval` `hub-claimed`).
+
+**Rollback.** A gate started without the hub flags withdraws the tickets a
+hub mode left pending in its volume (`hub/NAME/plans` under `--home`, after
+a gate that died while it waited; a gate that stops cleanly withdraws its
+own at the hub), logs them, and answers the first request of each
+`E_WITHDRAWN` ("withdrawn: the gate runs without its hub"), without asking
+the console or sending it; sent again, the request is asked on the console
+like any other. The next start in hub mode tells the hub.
 
 The gate finds the console's socket as a lockkit client, in the socket
 directory of the image's `/etc/lockhttp/system.toml`: `/run/lockhttp`, the

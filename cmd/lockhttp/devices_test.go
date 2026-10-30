@@ -99,7 +99,7 @@ func TestHubDevicesRead(t *testing.T) {
 	}
 	// A gate with pinned devices opens its hub mode.
 	h, err := openHub("http://127.0.0.1:8443", writeHubPub(t), "egress", t.TempDir(), nil, false,
-		hubDevices{File: writeDevicesFile(t, a.Device()), Require: "write", SealClear: true})
+		hubDevices{File: writeDevicesFile(t, a.Device()), Require: "write", SealClear: true}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DavidGodefroid/lockkit/audit"
@@ -40,6 +41,14 @@ type Hub struct {
 	// Poll is how often a held ask looks for its decision (1 s by
 	// default); the decisions arrive by the client's long poll.
 	Poll time.Duration
+
+	mu sync.Mutex
+	// current is the ticket each ask in flight waits on, by request
+	// fingerprint (the E_PENDING answer names it); expired the tickets
+	// that expired with nobody asking, renewed when the same request
+	// comes again.
+	current map[string]string
+	expired map[string]expiredTicket
 }
 
 // Close closes the plan store (it holds its directory for this process):
@@ -71,31 +80,205 @@ func riskOf(pol *policy.Policy, _ wire.ApproveParams) ticket.Risk {
 	return ticket.RiskWrite
 }
 
-// hubApprove asks the hub about one held request and waits for its
-// decision, until ctx ends. It answers like a console: nil when approved,
-// a *Refusal for a denial, an expired ticket or a request that went stale.
-func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) (wire.ApproveResult, error) {
-	h := g.cfg.Hub
-	pol, polFP := g.Policy()
-	if pol == nil || polFP == "" {
-		return wire.ApproveResult{}, ErrNoConsole
+// planInputs are the inputs of a plan hash (ticket.InputDigests): the
+// request fingerprint, which the plan hash is the hash of, and the policy
+// it was asked under. A renewal names those that moved
+// (ticket.Renewal.Changes): a plan of the gate is the request itself, so
+// only a policy change can move one, and lockkit refuses that renewal
+// (plan again).
+type planInputs struct {
+	Request string `json:"request"`
+	Policy  string `json:"policy"`
+}
+
+// bindingOf is what the gate binds a plan to, from the request
+// fingerprint fp and the policy fingerprint polFP: the plan hash and its
+// inputs. The plan, the run's recheck and a renewal's recompute all use
+// it.
+func bindingOf(fp, polFP string) (planHash string, inputs map[string]string, err error) {
+	inputs, err = ticket.InputDigests(planInputs{Request: fp, Policy: polFP})
+	return planHashOf(fp), inputs, err
+}
+
+// recompute is the gate's hubclient.Recompute: the policy fingerprint in
+// force, the plan hash and its inputs of a stored plan, as the recheck
+// before a run computes them. It runs nothing.
+func (g *Gate) recompute(pl *plans.Plan) (policyFP, planHash string, inputs map[string]string, err error) {
+	var b hubPlan
+	if err := json.Unmarshal(pl.Body, &b); err != nil {
+		return "", "", nil, err
 	}
-	if err := wire.Bound(&p); err != nil {
-		return wire.ApproveResult{}, &Refusal{Code: string(product.CodeFloor), Reason: err.Error()}
+	_, polFP := g.Policy()
+	if polFP == "" {
+		return "", "", nil, ErrNoConsole
+	}
+	planHash, inputs, err = bindingOf(b.Fingerprint, polFP)
+	return polFP, planHash, inputs, err
+}
+
+// recheck is the gate's hubclient.Recheck: recompute without the inputs.
+func (g *Gate) recheck(pl *plans.Plan) (string, string, error) {
+	fp, hash, _, err := g.recompute(pl)
+	return fp, hash, err
+}
+
+// hubRequest audits a hub request the gate acted on or refused (a reveal
+// of a ticket's clear screen, a renewal of an expired ticket): the
+// hubclient.Client.OnRequest of the gate, as lockkit's console does.
+func (g *Gate) hubRequest(q *ticket.HubRequest, renewal string, err error) {
+	if q == nil {
+		fmt.Fprintln(g.cfg.Log, "lockhttp gate: hub request refused:", err)
+		g.audit(wire.Record{Base: audit.Base{Event: audit.EventHubRequest, Decision: "refused", Error: err.Error(), Approval: "hub"}})
+		return
+	}
+	// The approver is the hub's word: audited as claimed by the hub.
+	b := audit.Base{Ticket: q.Ticket, Approver: &ticket.Approver{ID: q.Approver.ID, Display: q.Approver.Display}, Facade: q.Facade, Approval: "hub-claimed"}
+	switch q.Kind {
+	case ticket.RequestReveal:
+		b.Event, b.Decision = audit.EventReveal, "sealed"
+	default:
+		b.Event, b.Decision = audit.EventRenew, "renewed"
+	}
+	switch {
+	case err != nil:
+		b.Decision, b.Error = "refused", err.Error()
+		fmt.Fprintf(g.cfg.Log, "lockhttp gate: ticket %s: %s by %s on %s refused: %v\n", q.Ticket, q.Kind, q.Approver.ID, q.Facade, err)
+	case q.Kind == ticket.RequestReveal:
+		fmt.Fprintf(g.cfg.Log, "lockhttp gate: ticket %s: clear screen sealed to %s on %s\n", q.Ticket, q.Approver.ID, q.Facade)
+	default:
+		g.cfg.Hub.forgetTicket(q.Ticket)
+		b.Reason = "renewed by ticket " + renewal
+		fmt.Fprintf(g.cfg.Log, "lockhttp gate: ticket %s: asked again by %s on %s as ticket %s\n", q.Ticket, q.Approver.ID, q.Facade, renewal)
+	}
+	g.audit(wire.Record{Base: b})
+}
+
+// expiredKeep is how long the gate remembers an expired ticket for a
+// request sent again: a renewal asks again for it (plans.Retention).
+const expiredKeep = plans.Retention
+
+type expiredTicket struct {
+	id string
+	at time.Time
+}
+
+// ticketOf is the ticket an ask of fingerprint fp waits on, "" for none.
+func (h *Hub) ticketOf(fp string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.current[fp]
+}
+
+func (h *Hub) setTicket(fp, id string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.current == nil {
+		h.current = map[string]string{}
+	}
+	if id == "" {
+		delete(h.current, fp)
+	} else {
+		h.current[fp] = id
+	}
+}
+
+// remember keeps the expired ticket id of fp, for a renewal when the same
+// request comes again.
+func (h *Hub) remember(fp, id string, now time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.expired == nil {
+		h.expired = map[string]expiredTicket{}
+	}
+	for k, x := range h.expired {
+		if now.Sub(x.at) > expiredKeep {
+			delete(h.expired, k)
+		}
+	}
+	h.expired[fp] = expiredTicket{id: id, at: now}
+}
+
+// forgetTicket drops the expired ticket id, whatever request it was
+// remembered for: the hub renewed it (the renewal is pending, found by
+// its plan hash).
+func (h *Hub) forgetTicket(id string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for fp, x := range h.expired {
+		if x.id == id {
+			delete(h.expired, fp)
+		}
+	}
+}
+
+// pendingTicket reports whether ticket id's plan waits for a decision.
+func (h *Hub) pendingTicket(id string, caller plans.Caller) bool {
+	pl, err := h.Plans.ByTicket(id, caller)
+	return err == nil && pl.State == plans.Pending
+}
+
+// takeExpired returns, and forgets, the expired ticket of fp.
+func (h *Hub) takeExpired(fp string, now time.Time) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	x, ok := h.expired[fp]
+	delete(h.expired, fp)
+	if !ok || now.Sub(x.at) > expiredKeep {
+		return ""
+	}
+	return x.id
+}
+
+// hubSubmit gives the ticket the ask of fingerprint fp waits on: the
+// pending ticket of the same plan (a gate restarted while it waited), the
+// renewal of the ticket that expired for it (decision H1: the hub shows
+// it as asked again, with what moved; renewed is the expired ticket), or
+// a new plan and ticket. It answers like hubApprove when no ticket can be
+// had.
+func (g *Gate) hubSubmit(ctx context.Context, fp string, p wire.ApproveParams, pol *policy.Policy, polFP string, caller plans.Caller) (id, renewed string, err error) {
+	h := g.cfg.Hub
+	planHash, inputs, err := bindingOf(fp, polFP)
+	if err != nil {
+		return "", "", err
+	}
+	// Either way the expired ticket remembered for this request is spent:
+	// a pending plan (a renewal the human made from the hub) supersedes it.
+	old := h.takeExpired(fp, g.cfg.Now())
+	if pl, ok := h.Plans.FindPending(caller, planHash); ok && pl.Ticket != "" {
+		return pl.Ticket, "", nil
+	}
+	if old != "" {
+		id, err := h.Client.Renew(ctx, h.Plans, old, caller)
+		switch {
+		case id != "" && h.pendingTicket(id, caller):
+			if err != nil {
+				fmt.Fprintln(g.cfg.Log, "lockhttp gate: renewal", id, "of ticket", old, "not sent yet:", err)
+			}
+			return id, old, nil
+		case id != "":
+			// A renewal that ran, was denied or ended otherwise: nothing to
+			// wait on. A new plan.
+			fmt.Fprintln(g.cfg.Log, "lockhttp gate: renewal", id, "of ticket", old, "is not pending: asking again")
+		case errors.Is(err, hubclient.ErrRateLimited):
+			return "", "", &Refusal{Code: string(product.CodePending), Reason: "too many requests wait for the hub: retry later"}
+		default:
+			// Not renewable (hubclient.ErrNotRenewable: the policy
+			// changed, the plan is gone, its renewal ran or was denied):
+			// a new plan, under the policy in force.
+			fmt.Fprintln(g.cfg.Log, "lockhttp gate: ticket", old, "not renewed:", err)
+		}
 	}
 	// A hub decision comes long after the agent stopped waiting: approving
 	// lets the same request through once.
 	p.ClientGone = true
 	body, err := json.Marshal(hubPlan{Fingerprint: fp, Params: p})
 	if err != nil {
-		return wire.ApproveResult{}, err
+		return "", "", err
 	}
 	risk := riskOf(pol, p)
-	planHash := planHashOf(fp)
-	caller := plans.Caller{UID: os.Getuid()}
-	pl, err := h.Plans.Create(plans.Binding{UID: caller.UID, Agent: p.Agent, PolicyFP: polFP, PlanHash: planHash}, body, ticket.ClampTTL(risk, 0))
+	pl, err := h.Plans.Create(plans.Binding{UID: caller.UID, Agent: p.Agent, PolicyFP: polFP, PlanHash: planHash, Inputs: inputs}, body, ticket.ClampTTL(risk, 0))
 	if err != nil {
-		return wire.ApproveResult{}, &Refusal{Code: string(product.CodePending), Reason: "the gate cannot hold more requests for the hub: " + err.Error()}
+		return "", "", &Refusal{Code: string(product.CodePending), Reason: "the gate cannot hold more requests for the hub: " + err.Error()}
 	}
 	t := ticket.NewTicket(ticket.Source{Lock: product.P.Name}, risk, planHash, polFP, g.cfg.Now(), ticket.ClampTTL(risk, 0))
 	t.Requester = ticket.Requester{Agent: p.Agent, Session: p.Container}
@@ -110,31 +293,49 @@ func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) 
 	screen := render.MaskScreen(render.ScreenSource{Header: header, Body: lines, Warnings: p.Warnings, Red: p.Red},
 		render.Masking{Detectors: previewDetectors})
 	// The screen the console would show, personal data unmasked (the body
-	// preview stays masked, as on the console): with --seal-clear it is
-	// sealed to each pinned device, which the hub relays without reading;
-	// otherwise it never leaves the gate.
+	// preview stays masked, as on the console): kept in the gate's volume,
+	// it leaves only sealed: to a pinned facade on a reveal (Ctrl-O), and
+	// with --seal-clear to each pinned device. The hub relays ciphertext.
 	clearScreen := &ticket.Screen{Header: header, Body: rows, Warnings: p.Warnings, Red: p.Red}
-	id, err := h.Client.SubmitClear(ctx, h.Plans, pl.ID, caller, t, screen, clearScreen)
+	id, err = h.Client.SubmitClear(ctx, h.Plans, pl.ID, caller, t, screen, clearScreen)
 	switch {
 	case errors.Is(err, hubclient.ErrRateLimited):
 		_ = h.Plans.End(pl.ID, caller, plans.Withdrawn, err.Error())
-		return wire.ApproveResult{}, &Refusal{Code: string(product.CodePending), Reason: "too many requests wait for the hub: retry later"}
+		return "", "", &Refusal{Code: string(product.CodePending), Reason: "too many requests wait for the hub: retry later"}
 	case errors.Is(err, hubclient.ErrUnreachable):
 		// The ticket is signed and kept: the client's watch sends it when
 		// the hub answers again. Nothing falls back to another approver.
 		fmt.Fprintln(g.cfg.Log, "lockhttp gate: hub unreachable, ticket", id, "kept pending")
 	case err != nil:
 		_ = h.Plans.End(pl.ID, caller, plans.Withdrawn, err.Error())
-		return wire.ApproveResult{}, &Refusal{Code: string(product.CodeNoConsole), Reason: "the hub refused the ticket"}
+		return "", "", &Refusal{Code: string(product.CodeNoConsole), Reason: "the hub refused the ticket"}
 	}
-	recheck := func(pl *plans.Plan) (string, string, error) {
-		var b hubPlan
-		if err := json.Unmarshal(pl.Body, &b); err != nil {
-			return "", "", err
-		}
-		_, fp := g.Policy()
-		return fp, planHashOf(b.Fingerprint), nil
+	return id, "", nil
+}
+
+// hubApprove asks the hub about one held request and waits for its
+// decision, until ctx ends. It answers like a console: nil when approved,
+// a *Refusal for a denial, an expired ticket or a request that went stale.
+// A ticket that expires while the agent still sends the request is asked
+// again (a renewal, decision H1); one nobody asks for any more ends the
+// ask, and the same request sent later renews it.
+func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) (wire.ApproveResult, error) {
+	h := g.cfg.Hub
+	pol, polFP := g.Policy()
+	if pol == nil || polFP == "" {
+		return wire.ApproveResult{}, ErrNoConsole
 	}
+	if err := wire.Bound(&p); err != nil {
+		return wire.ApproveResult{}, &Refusal{Code: string(product.CodeFloor), Reason: err.Error()}
+	}
+	caller := plans.Caller{UID: os.Getuid()}
+	id, renewed, err := g.hubSubmit(ctx, fp, p, pol, polFP, caller)
+	if err != nil {
+		return wire.ApproveResult{}, err
+	}
+	h.setTicket(fp, id)
+	defer h.setTicket(fp, "")
+	asks := g.queue.asks(fp)
 	poll := h.Poll
 	if poll <= 0 {
 		poll = time.Second
@@ -152,8 +353,11 @@ func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) 
 		g.audit(wire.Record{Base: b, RequestID: p.RequestID, Source: p.Source, Target: p.Target, Rule: p.Rule, Class: p.Class,
 			Score: p.Score, PolicyFP: polFP})
 	}
+	if renewed != "" {
+		record(audit.EventRenew, "ticket "+renewed+" expired: asked again as ticket "+id, nil)
+	}
 	for {
-		run, d, err := h.Client.Begin(h.Plans, id, caller, recheck)
+		run, d, err := h.Client.Begin(h.Plans, id, caller, g.recheck)
 		switch {
 		case err == nil:
 			record(audit.EventApproved, "", d)
@@ -183,8 +387,28 @@ func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) 
 			record(audit.EventDenied, reason, d)
 			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeDenied), Reason: reason}
 		case errors.Is(err, ticket.ErrExpired):
+			if n := g.queue.asks(fp); n > asks {
+				// The agent sent the request again while this ticket
+				// waited: ask again (Renew), and its retries see the new
+				// ticket pending.
+				nid, rerr := h.Client.Renew(ctx, h.Plans, id, caller)
+				if nid != "" && h.pendingTicket(nid, caller) {
+					if rerr != nil {
+						fmt.Fprintln(g.cfg.Log, "lockhttp gate: renewal", nid, "of ticket", id, "not sent yet:", rerr)
+					}
+					old := id
+					id, asks = nid, n
+					record(audit.EventRenew, "ticket "+old+" expired: asked again as ticket "+id, d)
+					h.setTicket(fp, id)
+					break
+				}
+				fmt.Fprintln(g.cfg.Log, "lockhttp gate: ticket", id, "not renewed:", rerr)
+			} else {
+				h.remember(fp, id, g.cfg.Now())
+			}
 			record(audit.EventTimeout, "the approval expired", d)
-			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeTimeout), Reason: "the approval expired"}
+			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeTimeout), Ticket: id,
+				Reason: "ticket " + id + " expired before it was decided"}
 		case errors.Is(err, plans.ErrStale):
 			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeDenied), Reason: "the policy changed while the request waited: send it again"}
 		default:
@@ -196,8 +420,10 @@ func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) 
 			// ticket is withdrawn rather than left for a decision nothing
 			// will act on (a retry asks again).
 			wctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			if err := h.Client.Withdraw(wctx, h.Plans, pl.ID, caller, "the gate stopped"); err != nil {
-				fmt.Fprintln(g.cfg.Log, "lockhttp gate: ticket", id, "not withdrawn:", err)
+			if pl, err := h.Plans.ByTicket(id, caller); err == nil {
+				if err := h.Client.Withdraw(wctx, h.Plans, pl.ID, caller, "the gate stopped"); err != nil {
+					fmt.Fprintln(g.cfg.Log, "lockhttp gate: ticket", id, "not withdrawn:", err)
+				}
 			}
 			cancel()
 			return wire.ApproveResult{}, ctx.Err()

@@ -3,7 +3,7 @@ module github.com/DavidGodefroid/lockhttp
 go 1.26.0
 
 require (
-	github.com/DavidGodefroid/lockkit v0.4.0
+	github.com/DavidGodefroid/lockkit v0.6.0
 	golang.org/x/term v0.47.0
 )
 

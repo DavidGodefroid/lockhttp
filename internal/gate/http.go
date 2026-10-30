@@ -81,7 +81,10 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 	fp := RequestFingerprint(src.Container, req.Method, target, req.Header, bodyFP)
 	var d decide.Decision
 	hard, isHard := decide.Hard(pol, r)
+	wd, withdrawn := g.withdrawnRefusal(fp)
 	switch {
+	case withdrawn:
+		d = wd
 	case isHard:
 		d = hard
 	case g.grants.UseOnce(fp):
@@ -123,9 +126,9 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 			}
 		})
 		if !out.Approved {
-			rec.Base = audit.Base{Event: "refused", Decision: "refused", Code: out.Code, Reason: out.Reason, Warnings: d.Warnings}
+			rec.Base = audit.Base{Event: "refused", Decision: "refused", Code: out.Code, Reason: out.Reason, Warnings: d.Warnings, Ticket: out.Ticket}
 			g.audit(rec)
-			writeRefusal(w, id, out.Code, out.Reason, false)
+			writeRefusalTicket(w, id, out.Code, out.Reason, out.Ticket, false)
 			return true
 		}
 		rec.Base.Approval = "console"

@@ -311,7 +311,8 @@ A refusal is a `403 Forbidden` with a plain-text body that says why and
 what to ask of the human, and two headers: `X-LockHTTP-Code` and
 `X-LockHTTP-Request` (the id to find in the console and the audit). For a
 `CONNECT` it is the `CONNECT`'s own response, which clients show as a proxy
-error. A forwarded response carries `X-LockHTTP-Request` too (decrypted or
+error. In hub mode an `E_PENDING` also names the hub ticket the request
+waits on (`X-LockHTTP-Ticket`). A forwarded response carries `X-LockHTTP-Request` too (decrypted or
 plain HTTP); a target the gate cannot reach is a `502`.
 
 | Code | Meaning | What the agent should do |
@@ -325,6 +326,7 @@ plain HTTP); a target the gate cannot reach is a `502`.
 | `E_SECRET_EGRESS` | A known credential sent outside its own hosts, or a Claude credential that is not the container's. | Never send a credential to another host. |
 | `E_BODY_TOO_LARGE` | The body is over `buffer_limit` and cannot be held for a human. | Send less, or ask for a rule. |
 | `E_SOURCE_UNKNOWN` | The gate cannot tell which container sent the request. | Use the proxy address lea gave. |
+| `E_WITHDRAWN` | The request waited on a hub ticket, and the gate now runs without its hub: the ticket was withdrawn (once per ticket). | Tell the user, then send the same request again: the console asks the human. |
 
 `E_HOST_UNKNOWN`, `E_CLAUDE_API_PARAM`, `E_EXFIL_SUSPECT`, `E_METHOD` and
 `E_PINNED` are registered codes too; in v0.1.0 a refused ASK reaches the
