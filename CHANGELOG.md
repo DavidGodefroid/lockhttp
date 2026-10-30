@@ -6,6 +6,10 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-30
+
+Hub mode: decisions taken on lockhub's mobile facade, signed by a pinned phone.
+
 ### Added
 
 - Hub mode: the gate pins approval devices, with the same flags as lockkit's
@@ -149,7 +153,8 @@ separate signer, Claude API allowlist) available behind `--ca-cert` and
 - Release pipeline: goreleaser, cosign keyless signatures, SBOMs,
   SHA-pinned actions, `scripts/install.sh` with signature verification.
 
-[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.4.0
 [0.3.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.3.0
 [0.2.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.2.1
 [0.2.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.2.0
