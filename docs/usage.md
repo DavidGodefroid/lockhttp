@@ -198,7 +198,7 @@ lockhttp gate --listen ADDR [--upstream URL] [--profile P] [--sources FILE]
               [--credentials FILE] [--audit-dir DIR] [--status-file FILE]
               [--ca-cert FILE --signer SOCKET]
               [--hub URL --hub-key-file FILE --instance NAME [--home DIR]
-               [--hub-net CIDR ...]] [--check]
+               [--hub-net CIDR ...] [--hub-plain-http]] [--check]
 ```
 
 The HTTP(S) proxy. It refuses to run as root; in the image it runs as
@@ -225,6 +225,7 @@ with the socket volume, publishes its port on `LOCKHTTP_PUBLISH`
 | `--hub-key-file FILE` | `LOCKHTTP_HUB_KEY_FILE` | none | The pinned public key of the hub (Ed25519, base64 on one line). Decisions verify under it only. |
 | `--instance NAME` | `LOCKHTTP_INSTANCE` | none | The lock instance name the hub knows the gate by. |
 | `--home DIR` | `LOCKHTTP_HOME` | the home directory | The gate's own volume (`0700`, the gate's uid only): the instance key (`hub/NAME.key`, made by `lockhttp hub-key`), the plans and the hub state (`hub/NAME/`). Never mount it in another container. |
+| `--hub-plain-http` | `LOCKHTTP_HUB_PLAIN_HTTP=1` | off | Allow an `http://` `--hub` URL to a hub on a network of its own: a service name without a dot (`lockhub`) or a private address only. Without it an `http://` hub is refused unless it is a loopback address; use `https`. Requests and decisions are signed either way. |
 | `--hub-net CIDR` | | none | A network of the hub. The gate refuses as a target the hub's host name, its addresses (resolved at start) and any name resolving into these networks, even when `internal_hosts` allows private addresses; a name that does not resolve is refused too. Repeatable. Without it, the hub host must resolve at start, or the gate does not start. |
 | `--check` | | off | Exit 0 if something answers on `--listen` (3 s), else 1. Starts nothing. |
 

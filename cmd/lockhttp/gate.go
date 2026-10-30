@@ -24,7 +24,7 @@ import (
 // runGate is `lockhttp gate`: the proxy, in lea's proxy container (or
 // beside the agent on a host, as another account than the console's).
 func runGate(e env, args []string) int {
-	const usage = "lockhttp gate --listen ADDR [--upstream URL] [--profile P] [--sources FILE] [--credentials FILE] [--audit-dir DIR] [--status-file FILE] [--ca-cert FILE --signer SOCKET] [--hub URL --hub-key-file FILE --instance NAME [--home DIR] [--hub-net CIDR ...]] [--check]"
+	const usage = "lockhttp gate --listen ADDR [--upstream URL] [--profile P] [--sources FILE] [--credentials FILE] [--audit-dir DIR] [--status-file FILE] [--ca-cert FILE --signer SOCKET] [--hub URL --hub-key-file FILE --instance NAME [--home DIR] [--hub-net CIDR ...] [--hub-plain-http]] [--check]"
 	fs := flag.NewFlagSet("gate", flag.ContinueOnError)
 	listen := fs.String("listen", envOr("LOCKHTTP_LISTEN", "127.0.0.1:3130"), "address to listen on")
 	upstream := fs.String("upstream", os.Getenv("LOCKHTTP_UPSTREAM"), "proxy to send through (squid: http://127.0.0.1:3128); empty dials directly")
@@ -40,6 +40,7 @@ func runGate(e env, args []string) int {
 	hubKeyFile := fs.String("hub-key-file", os.Getenv("LOCKHTTP_HUB_KEY_FILE"), "the pinned public key of the hub (base64, one line)")
 	instance := fs.String("instance", os.Getenv("LOCKHTTP_INSTANCE"), "the lock instance name the hub knows this gate by")
 	home := fs.String("home", os.Getenv("LOCKHTTP_HOME"), "the gate's own volume: instance key, plans and hub state (default: the home directory)")
+	plainHTTP := fs.Bool("hub-plain-http", os.Getenv("LOCKHTTP_HUB_PLAIN_HTTP") == "1", "allow an http:// hub URL on a network of its own (a service name without a dot or a private address)")
 	var hubNets prefixList
 	fs.Var(&hubNets, "hub-net", "a network of the hub, refused as a target (repeatable)")
 	if !parse(e, fs, "gate", usage, args) {
@@ -70,8 +71,8 @@ func runGate(e env, args []string) int {
 		fmt.Fprintln(e.stderr, "lockhttp gate:", err)
 		return exitUsage
 	}
-	if *hubURL != "" || *hubKeyFile != "" || *instance != "" || len(hubNets) > 0 {
-		h, err := openHub(*hubURL, *hubKeyFile, *instance, *home, hubNets)
+	if *hubURL != "" || *hubKeyFile != "" || *instance != "" || len(hubNets) > 0 || *plainHTTP {
+		h, err := openHub(*hubURL, *hubKeyFile, *instance, *home, hubNets, *plainHTTP)
 		if err != nil {
 			return usageFail(e, "gate", usage, err.Error())
 		}
@@ -127,7 +128,20 @@ func runGate(e env, args []string) int {
 		mode += ", asks on hub " + *hubURL + " as " + *instance
 	}
 	fmt.Fprintf(e.stderr, "lockhttp gate %s: listening on %s, profile %s, %s\n", version, ln.Addr(), *profile, mode)
-	if err := g.Serve(ctx, ln); err != nil {
+	err = g.Serve(ctx, ln)
+	if cfg.Hub != nil {
+		// The asks withdraw their tickets as the gate stops; then the plan
+		// store is closed.
+		stop()
+		select {
+		case <-g.Stopped():
+		case <-time.After(10 * time.Second):
+		}
+		if cerr := cfg.Hub.Close(); cerr != nil {
+			fmt.Fprintln(e.stderr, "lockhttp gate:", cerr)
+		}
+	}
+	if err != nil {
 		fmt.Fprintln(e.stderr, "lockhttp gate:", err)
 		return exitFail
 	}
@@ -216,7 +230,7 @@ func runCA(e env, args []string) int {
 // in the gate's own volume (made by `lockhttp hub-key`), the plans and the
 // hub state beside it. The hub's host name and nets are refused as
 // targets.
-func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix) (*gate.Hub, error) {
+func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainHTTP bool) (*gate.Hub, error) {
 	switch {
 	case rawURL == "" || keyFile == "" || instance == "":
 		return nil, errors.New("--hub, --hub-key-file and --instance go together")
@@ -244,11 +258,9 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix) (*gate
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	st, err := plans.Open(filepath.Join(dir, "plans"))
-	if err != nil {
-		return nil, err
-	}
-	c, err := hubclient.New(hubclient.Config{URL: rawURL, Instance: instance, Key: key, HubKey: hubKey, StateFile: filepath.Join(dir, "state.json")})
+	// The client first: a refused configuration leaves no plan store open.
+	c, err := hubclient.New(hubclient.Config{URL: rawURL, Instance: instance, Key: key, HubKey: hubKey, PlainHTTP: plainHTTP,
+		StateFile: filepath.Join(dir, "state.json")})
 	if err != nil {
 		return nil, err
 	}
@@ -257,6 +269,11 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix) (*gate
 		// Fail closed: without one address of the hub, the gate could not
 		// refuse a name that leads there.
 		return nil, fmt.Errorf("the hub host %s does not resolve: give its network with --hub-net", u.Hostname())
+	}
+	// Last: an open store holds its directory for this process.
+	st, err := plans.Open(filepath.Join(dir, "plans"))
+	if err != nil {
+		return nil, err
 	}
 	return &gate.Hub{Client: c, Plans: st, Hosts: []string{u.Hostname()}, Nets: nets}, nil
 }
