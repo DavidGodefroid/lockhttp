@@ -6,9 +6,8 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Builds on lockkit v0.5.0 (reveal and re-approval), pinned at commit
-`cbdcf00d6e12` (lockkit#84: a renewal that ran or was denied is not
-renewable) until v0.6.0.
+Builds on lockkit v0.6.0 (reveal and re-approval; a renewal that ran or
+was denied is not renewable, an expired renewal is renewed in turn).
 
 ### Added
 
