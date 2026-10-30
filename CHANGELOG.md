@@ -20,7 +20,7 @@ uses [Semantic Versioning](https://semver.org/).
   decision grants the existing single-use authorisation or connect grant.
   The gate refuses the hub's addresses as targets, even with
   `internal_hosts`. `lockhttp hub-key` prints the instance key to pin.
-  Pins lockkit at a pre-release commit (lockkit#52, hub/console-hub) until v0.3.0.
+  Builds on lockkit v0.3.1 (hub support).
 
 ### Fixed
 
