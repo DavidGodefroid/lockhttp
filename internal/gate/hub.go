@@ -408,7 +408,7 @@ func (g *Gate) hubApprove(ctx context.Context, fp string, p wire.ApproveParams) 
 			}
 			record(audit.EventTimeout, "the approval expired", d)
 			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeTimeout), Ticket: id,
-				Reason: "ticket " + id + " expired before it was decided"}
+				Reason: "ticket " + id + " expired before it was used"}
 		case errors.Is(err, plans.ErrStale):
 			return wire.ApproveResult{}, &Refusal{Code: string(product.CodeDenied), Reason: "the policy changed while the request waited: send it again"}
 		default:
