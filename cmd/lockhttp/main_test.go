@@ -214,3 +214,32 @@ func TestGateHubNeedsAnAddress(t *testing.T) {
 		t.Fatalf("unresolvable hub: %d %s", code, errs)
 	}
 }
+
+// An http:// hub on a network of its own needs --hub-plain-http; a public
+// http:// hub is refused even with it.
+func TestGateHubPlainHTTP(t *testing.T) {
+	home := t.TempDir()
+	key := filepath.Join(t.TempDir(), "hub.pub")
+	if err := os.WriteFile(key, []byte("11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gate := env{euid: func() int { return 1000 }}
+	base := []string{"gate", "--listen", "127.0.0.1:0", "--hub-key-file", key, "--instance", "egress", "--home", home, "--hub-net", "10.89.0.0/24"}
+	for _, c := range []struct {
+		url   string
+		plain bool
+		want  string
+	}{
+		{"http://lockhub:8443", false, "--hub-plain-http"},
+		{"http://hub.example.com:8443", true, "--hub-plain-http is only for"},
+	} {
+		args := append(append([]string{}, base...), "--hub", c.url)
+		if c.plain {
+			args = append(args, "--hub-plain-http")
+		}
+		code, _, errs := runEnv(t, gate, args...)
+		if code != exitUsage || !strings.Contains(errs, c.want) {
+			t.Errorf("%s plain=%v: %d %s", c.url, c.plain, code, errs)
+		}
+	}
+}

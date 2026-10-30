@@ -65,7 +65,7 @@ Gate and signer (lea runs them beside its proxy container)
            [--credentials FILE] [--audit-dir DIR] [--status-file FILE]
            [--ca-cert FILE --signer SOCKET] [--check]
            [--hub URL --hub-key-file FILE --instance NAME [--home DIR]
-            [--hub-net CIDR ...]]
+            [--hub-net CIDR ...] [--hub-plain-http]]
                                    run the HTTP(S) proxy (--hub: ask lockhub)
   signer   --ca-cert FILE --ca-key FILE --listen SOCKET [--allow-uid N ...]
                                    issue leaf certificates to the gate (holds the CA key)

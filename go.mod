@@ -3,7 +3,7 @@ module github.com/DavidGodefroid/lockhttp
 go 1.26.0
 
 require (
-	github.com/DavidGodefroid/lockkit v0.2.2-0.20261029231339-c4db41a7130c // TODO: bump to lockkit v0.3.0 once tagged
+	github.com/DavidGodefroid/lockkit v0.2.2-0.20261030000007-0db05b8a8de7 // TODO: bump to lockkit v0.3.0 once tagged
 	golang.org/x/term v0.47.0
 )
 

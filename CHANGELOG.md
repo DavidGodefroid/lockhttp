@@ -6,6 +6,13 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Hub mode: an `http://` `--hub` URL is refused unless the host is a loopback address, or
+  `--hub-plain-http` (`LOCKHTTP_HUB_PLAIN_HTTP=1`) is given for a hub on a network of its
+  own (a service name without a dot or a private address); redirects from the hub are
+  refused and the hub state file must be private (lockkit#57).
+
 ### Added
 
 - Hub mode for the gate (`--hub`, `--hub-key-file`, `--instance`, `--home`,
