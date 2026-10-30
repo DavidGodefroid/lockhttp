@@ -198,7 +198,9 @@ lockhttp gate --listen ADDR [--upstream URL] [--profile P] [--sources FILE]
               [--credentials FILE] [--audit-dir DIR] [--status-file FILE]
               [--ca-cert FILE --signer SOCKET]
               [--hub URL --hub-key-file FILE --instance NAME [--home DIR]
-               [--hub-net CIDR ...] [--hub-plain-http] [--facade-keys-file FILE]]
+               [--hub-net CIDR ...] [--hub-plain-http]
+               [--devices-file FILE [--require-device RISKS] [--seal-clear]]
+               [--facade-keys-file FILE]]
               [--check]
 ```
 
@@ -228,6 +230,9 @@ with the socket volume, publishes its port on `LOCKHTTP_PUBLISH`
 | `--home DIR` | `LOCKHTTP_HOME` | the home directory | The gate's own volume (`0700`, the gate's uid only): the instance key (`hub/NAME.key`, made by `lockhttp hub-key`), the plans and the hub state (`hub/NAME/`). Never mount it in another container. |
 | `--hub-plain-http` | `LOCKHTTP_HUB_PLAIN_HTTP=1` | off | Allow an `http://` `--hub` URL to a hub on a network of its own: a service name without a dot (`lockhub`) or a private address only. Without it an `http://` hub is refused unless it is a loopback address; use `https`. Requests and decisions are signed either way. |
 | `--facade-keys-file FILE` | `LOCKHTTP_FACADE_KEYS_FILE` | none | The facade keys the gate pins (JSON, written by `lock up`). A reveal (Ctrl-O on a local facade of the hub) is answered with the ticket's clear screen sealed to the facade's ephemeral key, only when one of these keys signed it; the hub relays ciphertext. Without it, reveals are refused. |
+| `--devices-file FILE` | `LOCKHTTP_DEVICES_FILE` | none | The approval devices the gate pins (JSON, written by `lock up` at `/run/lockfamily/devices.json`). A decision taken on a device (the hub's mobile facade) is acted on only if it carries the signature of one of them over the gate's own signed ticket. Without it, every decision of the mobile facade is refused. |
+| `--require-device RISKS` | `LOCKHTTP_REQUIRE_DEVICE` | none | Risk classes, comma-separated (`write`, `prod-write`), whose approvals must be signed by a pinned device, from any facade: an approval without one is a denial. The gate's asks are `write`, or `prod-write` under a production policy. Needs `--devices-file`. |
+| `--seal-clear` | `LOCKHTTP_SEAL_CLEAR=1` | off | Send each ticket's clear screen (the console's, personal data unmasked) sealed to every pinned device; the hub relays ciphertext. Off, the clear screen never leaves the gate. Needs `--devices-file`. |
 | `--hub-net CIDR` | | none | A network of the hub. The gate refuses as a target the hub's host name, its addresses (resolved at start) and any name resolving into these networks, even when `internal_hosts` allows private addresses; a name that does not resolve is refused too. Repeatable. Without it, the hub host must resolve at start, or the gate does not start. |
 | `--check` | | off | Exit 0 if something answers on `--listen` (3 s), else 1. Starts nothing. |
 
@@ -263,8 +268,9 @@ moved input. A human can also ask again from the hub. The plan hash inputs
 the gate binds are `request` (the request fingerprint) and `policy`.
 
 The gate keeps each ticket's clear screen (the console's screen, the body
-preview masked as there) in its volume; it leaves only sealed to a pinned
-facade key (`--facade-keys-file`) on a reveal. Reveals and renewals asked
+preview masked as there) in its volume; it leaves only sealed: to a
+pinned facade key (`--facade-keys-file`) on a reveal, and with
+`--seal-clear` to each pinned device. Reveals and renewals asked
 by the hub are audited (`reveal`/`renew`, `approval` `hub-claimed`).
 
 **Rollback.** A gate started without the hub flags withdraws the tickets a

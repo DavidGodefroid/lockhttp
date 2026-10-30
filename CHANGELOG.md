@@ -11,6 +11,13 @@ was denied is not renewable, an expired renewal is renewed in turn).
 
 ### Added
 
+- Hub mode: the gate pins approval devices, with the same flags as lockkit's
+  console: `--devices-file` (`LOCKHTTP_DEVICES_FILE`), `--require-device`
+  (`LOCKHTTP_REQUIRE_DEVICE`) and `--seal-clear` (`LOCKHTTP_SEAL_CLEAR=1`). A
+  decision of the hub's mobile facade runs only when signed by a pinned device;
+  without one it is refused, as it always was before. With `--seal-clear` the
+  clear screen goes to the devices sealed, the hub relaying ciphertext. Uses
+  lockkit's device decisions (`hubclient.Config.Devices`).
 - Hub mode: an `E_PENDING` names the hub ticket the request waits on
   (`X-LockHTTP-Ticket`).
 - Re-approval of expired tickets (lockkit H1): a ticket that expires
