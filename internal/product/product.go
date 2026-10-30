@@ -35,6 +35,7 @@ const (
 	CodeClaudeParam   refusal.Code = "E_CLAUDE_API_PARAM"
 	CodeSourceUnknown refusal.Code = "E_SOURCE_UNKNOWN"
 	CodeRule          refusal.Code = "E_RULE"
+	CodeWithdrawn     refusal.Code = "E_WITHDRAWN"
 )
 
 func init() {
@@ -64,6 +65,8 @@ func init() {
 		"a Claude API parameter needs a human (mcp_servers, a server tool, files)", "ask the user to approve it in the lockhttp console")
 	refusal.Register(CodeSourceUnknown, refusal.RetryStop,
 		"the gate cannot tell which container sent the request", "connect through the proxy address lea gave you")
+	refusal.Register(CodeWithdrawn, refusal.RetryRewrite,
+		"the hub ticket of this request was withdrawn: the gate now runs without its hub", "send the same request again: the human answers it in the lockhttp console")
 	refusal.Register(CodeRule, refusal.RetryAskUser,
 		"a policy rule denies the request", "ask the user to change the rule")
 }

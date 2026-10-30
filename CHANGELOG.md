@@ -6,6 +6,28 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Builds on lockkit v0.5.0 (reveal and re-approval).
+
+### Added
+
+- Hub mode: an `E_PENDING` names the hub ticket the request waits on
+  (`X-LockHTTP-Ticket`).
+- Re-approval of expired tickets (lockkit H1): a ticket that expires
+  undecided is renewed, as a new ticket naming the expired one, while the
+  agent still sends the request, or when it sends it again; the agent gets
+  `E_PENDING` with the new ticket, and an approval lets the request through
+  once. Renewals re-check the plan as a run does (`SetRecompute`; plan
+  inputs `request` and `policy`).
+- Reveal (Ctrl-O on a local facade of the hub): `--facade-keys-file`
+  (`LOCKHTTP_FACADE_KEYS_FILE`) pins the facade keys; each ticket keeps the
+  console's clear screen in the gate's volume, sealed to a pinned facade
+  only. Reveals and renewals asked by the hub are audited (`reveal`,
+  `renew`).
+- Rollback of hub mode: a gate started without the hub flags withdraws the
+  tickets its hub mode left pending (the next start in hub mode tells the
+  hub) and answers their request once with the new code `E_WITHDRAWN`,
+  without asking the console or sending it.
+
 ## [0.3.0] - 2026-10-30
 
 Hub mode: the gate can hand its asks to lockhub instead of its own console.

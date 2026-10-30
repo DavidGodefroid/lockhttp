@@ -15,6 +15,8 @@ type Outcome struct {
 	Auto     bool
 	Code     string
 	Reason   string
+	// Ticket is the hub ticket an E_PENDING ask waits on (hub mode).
+	Ticket string
 }
 
 // item is one held request; requests of identical fingerprint share it.
@@ -26,6 +28,9 @@ type item struct {
 	onApprove func(clientGone bool)
 	waiters   map[chan Outcome]bool
 	sent      bool
+	// asked counts the requests that waited on the item (the first and
+	// every retry that joined it).
+	asked int
 }
 
 // Queue holds the asks and sends them to the console one at a time
@@ -72,6 +77,7 @@ func (q *Queue) Submit(fp, key string, p wire.ApproveParams, onApprove func(clie
 		q.byKey[key]++
 	}
 	it.waiters[ch] = true
+	it.asked++
 	q.notifyLocked()
 	q.mu.Unlock()
 	select {
@@ -84,6 +90,17 @@ func (q *Queue) Submit(fp, key string, p wire.ApproveParams, onApprove func(clie
 		q.mu.Unlock()
 	}
 	return ch, cancel
+}
+
+// asks is how many requests waited on the item of fingerprint fp so far
+// (0 when none is queued).
+func (q *Queue) asks(fp string) int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if it := q.pending[fp]; it != nil {
+		return it.asked
+	}
+	return 0
 }
 
 // Pending is the number of queued items.

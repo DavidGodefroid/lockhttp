@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -163,6 +166,7 @@ func TestGateHubFlags(t *testing.T) {
 		{"--hub-net", "10.89.0.0/24"},
 		{"--hub", "http://lockhub:8443", "--hub-key-file", "k", "--instance", "Not_Valid"},
 		{"--hub-net", "nope"},
+		{"--facade-keys-file", "facades.json"},
 	} {
 		code, _, errs := runEnv(t, gate, append([]string{"gate", "--listen", "127.0.0.1:0"}, args...)...)
 		if code != exitUsage {
@@ -188,6 +192,18 @@ func TestGateHubFlags(t *testing.T) {
 	code, _, errs = runEnv(t, gate, "gate", "--listen", "127.0.0.1:0", "--hub", "http://lockhub:8443", "--hub-key-file", bad, "--instance", "egress", "--home", home)
 	if code != exitUsage || !strings.Contains(errs, "public key") {
 		t.Fatalf("bad hub key: %d %s", code, errs)
+	}
+	// So are facade keys that do not parse.
+	hubPub, _, _ := ed25519.GenerateKey(rand.Reader)
+	good := filepath.Join(t.TempDir(), "hub.pub")
+	facades := filepath.Join(t.TempDir(), "facades.json")
+	if os.WriteFile(good, []byte(base64.StdEncoding.EncodeToString(hubPub)+"\n"), 0o644) != nil || os.WriteFile(facades, []byte("[{]"), 0o644) != nil {
+		t.Fatal("cannot write the key files")
+	}
+	code, _, errs = runEnv(t, gate, "gate", "--listen", "127.0.0.1:0", "--hub", "http://127.0.0.1:8443", "--hub-key-file", good, "--instance", "egress", "--home", home,
+		"--facade-keys-file", facades)
+	if code != exitUsage || !strings.Contains(errs, "facades.json") {
+		t.Fatalf("bad facade keys: %d %s", code, errs)
 	}
 }
 
