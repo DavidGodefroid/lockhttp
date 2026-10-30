@@ -34,6 +34,7 @@ type fakeHub struct {
 
 	mu        sync.Mutex
 	tickets   []*ticket.Ticket
+	raw       map[string][]byte // the signed tickets, by id
 	decisions []json.RawMessage // decisions[i] has seq i+1
 	ids       []string
 	consumed  map[string]bool
@@ -47,7 +48,7 @@ func newFakeHub(t *testing.T, lockPub ed25519.PublicKey) (*fakeHub, *httptest.Se
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &fakeHub{t: t, lockPub: lockPub, key: key, consumed: map[string]bool{}, withdraws: map[string]bool{}}
+	h := &fakeHub{t: t, lockPub: lockPub, key: key, consumed: map[string]bool{}, withdraws: map[string]bool{}, raw: map[string][]byte{}}
 	s := httptest.NewServer(h)
 	t.Cleanup(s.Close)
 	return h, s
@@ -68,6 +69,7 @@ func (h *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		h.mu.Lock()
 		h.tickets = append(h.tickets, t)
+		h.raw[t.ID] = b
 		h.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]string{"ticket": t.ID})
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/decisions":
@@ -127,6 +129,13 @@ func (h *fakeHub) waitTickets(n int) []*ticket.Ticket {
 // for instance (t's when "").
 func (h *fakeHub) decide(t *ticket.Ticket, o ticket.Outcome, reason string, key ed25519.PrivateKey, instance string) *ticket.Decision {
 	h.t.Helper()
+	return h.decideWith(t, o, reason, key, instance, nil)
+}
+
+// decideWith is decide with mod applied before the hub signs (a device's
+// assertion, another facade).
+func (h *fakeHub) decideWith(t *ticket.Ticket, o ticket.Outcome, reason string, key ed25519.PrivateKey, instance string, mod func(*ticket.Decision)) *ticket.Decision {
+	h.t.Helper()
 	if key == nil {
 		key = h.key
 	}
@@ -136,6 +145,9 @@ func (h *fakeHub) decide(t *ticket.Ticket, o ticket.Outcome, reason string, key 
 	d := &ticket.Decision{V: ticket.Version, Ticket: t.ID, Instance: instance, KeyID: t.Source.KeyID, PlanHash: t.PlanHash,
 		Decision: o, Reason: reason, Approver: ticket.Approver{ID: "u1", Display: "Human"}, Facade: "tty",
 		At: time.Now().UTC().Truncate(time.Millisecond), Nonce: ticket.NewNonce(), HubKeyID: ticket.KeyID(key.Public().(ed25519.PublicKey))}
+	if mod != nil {
+		mod(d)
+	}
 	if err := d.Sign(key); err != nil {
 		h.t.Fatal(err)
 	}
@@ -158,6 +170,13 @@ func (h *fakeHub) file(id string, d *ticket.Decision) {
 // hubEnv is a gate in hub mode, its fake hub and its plan store.
 func hubEnv(t *testing.T, conf string, mutate func(*Hub)) (*env, *fakeHub) {
 	t.Helper()
+	return hubEnvWith(t, conf, nil, mutate)
+}
+
+// hubEnvWith is hubEnv with the hub client's configuration changed by
+// config (pinned devices).
+func hubEnvWith(t *testing.T, conf string, config func(*hubclient.Config), mutate func(*Hub)) (*env, *fakeHub) {
+	t.Helper()
 	pub, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -168,8 +187,12 @@ func hubEnv(t *testing.T, conf string, mutate func(*Hub)) (*env, *fakeHub) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := hubclient.New(hubclient.Config{URL: srv.URL, Instance: "egress", Key: key, HubKey: fh.key.Public().(ed25519.PublicKey),
-		StateFile: filepath.Join(dir, "hub-state.json")})
+	cfg := hubclient.Config{URL: srv.URL, Instance: "egress", Key: key, HubKey: fh.key.Public().(ed25519.PublicKey),
+		StateFile: filepath.Join(dir, "hub-state.json")}
+	if config != nil {
+		config(&cfg)
+	}
+	c, err := hubclient.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
