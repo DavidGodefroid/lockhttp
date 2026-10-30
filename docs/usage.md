@@ -281,6 +281,22 @@ own at the hub), logs them, and answers the first request of each
 the console or sending it; sent again, the request is asked on the console
 like any other. The next start in hub mode tells the hub.
 
+**Supported lockhub versions.** Which [lockhub](https://github.com/DavidGodefroid/lockhub)
+releases each lockhttp release's gate works with in hub mode:
+
+| lockhttp | lockkit | lockhub |
+|---|---|---|
+| v0.5.0 | v0.6.0 | v0.2.0 or later (tested through v0.2.2): hub mode, reveals (`--facade-keys-file`) and renewals, device-signed decisions (`--devices-file`) |
+| v0.4.0 | v0.4.0 | v0.1.1 or later: hub mode; device-signed decisions from lockhub v0.2.0 (its mobile facade); no reveals |
+| v0.3.0 | v0.3.1 | v0.1.1 or later: hub mode only |
+
+Under `lock up`, lea runs the gate in hub mode (lockhub's `docs/lock-up.md`), and only from an
+`up.json` that says what the gate pins (`"lockhttp_gate": 1`): that needs lockhub v0.2.2 or
+later and lea v0.3.0 or later, whatever the lockhttp release. With an older lockhub, lea runs
+its standalone gate and says why. `reveal: true` needs lockhttp v0.5.0, `devices: true` v0.4.0
+or later: a gate older than a flag asked of it refuses the flag and does not start. lockhub's [CHANGELOG](https://github.com/DavidGodefroid/lockhub/blob/main/CHANGELOG.md)
+("Supported locks") is the reference; this table follows it.
+
 The gate finds the console's socket as a lockkit client, in the socket
 directory of the image's `/etc/lockhttp/system.toml`: `/run/lockhttp`, the
 volume `lockhttp-run` it shares with the console.
