@@ -709,10 +709,15 @@ func TestSourcesErrorDoesNotEcho(t *testing.T) {
 	const canary = "glsa_CanarySecretToken123"
 	for _, n := range []string{
 		`{"local_ip":"` + canary + `","container":"c"}`,
-		`{"local_ip":"10.0.0.2","container":""},{"local_ip":"https://user:` + canary + `@h","container":"c"}`,
+		`{"local_ip":"10.0.0.2","container":"a"},{"local_ip":"https://user:` + canary + `@h","container":"c"}`,
+		`{"local_ip":"10.0.0.2","container":"a"},{"local_ip":"10.0.0.3","container":""}`,
 	} {
 		_, err := parseSources([]byte(`{"version":` + strconv.Itoa(ContractVersion) + `,"networks":[` + n + `]}`))
-		if err == nil || strings.Contains(err.Error(), canary) || !strings.Contains(err.Error(), "networks entry 1") {
+		want := "networks entry 1"
+		if strings.Count(n, "local_ip") == 2 {
+			want = "networks entry 2"
+		}
+		if err == nil || strings.Contains(err.Error(), canary) || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: %v", n, err)
 		}
 	}

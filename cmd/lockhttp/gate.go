@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/netip"
 	"net/url"
@@ -350,6 +351,10 @@ func netErrKind(err error) string {
 	var ae *net.AddrError
 	if errors.As(err, &ae) {
 		return ae.Err
+	}
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Op + ": " + pe.Err.Error()
 	}
 	return "failed"
 }

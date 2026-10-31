@@ -14,11 +14,13 @@ uses [Semantic Versioning](https://semver.org/).
   `internal_hosts entry 1 host`, `rules entry 3`; a rule by its place, not
   its `id`) with the allowed values; the sources file names a bad
   `networks` entry by its place; `--hub`, `--instance` (`gate` and
-  `hub-key`), `--hub-net`, `--require-device`, `--allow-uid`, `--profile`,
-  `--listen` (gate, `--check`, signer), `doctor --gate` and `init
-  --trusted` errors, flag parse errors, unknown commands, subcommands and
-  flags, and stray arguments omit the value (lockkit's hub client errors
-  have the `--hub` URL replaced). File paths are still named. The `mcp_servers` warning (shown and audited) names the
+  `hub-key`), `--hub-net`, `--require-device`, `--allow-uid`, `--listen`
+  (gate, `--check`, signer), `doctor --gate` and `init --trusted` errors,
+  flag parse errors, unknown commands, subcommands and flags (an unknown
+  flag is named only when it looks like a flag name), stray arguments and
+  "no profile of that name" omit the value (lockkit's hub client errors
+  have the `--hub` URL replaced). Profile names are keys and file paths
+  are still named. The `mcp_servers` warning (shown and audited) names the
   server URL without its userinfo, query or fragment.
 
 ### Changed

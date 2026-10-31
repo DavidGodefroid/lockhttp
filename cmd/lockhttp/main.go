@@ -154,6 +154,8 @@ func parse(e env, fs *flag.FlagSet, cmd, usage string, args []string) bool {
 // ("invalid value \"...\" for flag -x: ...").
 var flagValueRe = regexp.MustCompile(`^(invalid (?:boolean )?value) ".*" (for (?:flag )?-[A-Za-z0-9_-]+: )`)
 
+var flagNameRe = regexp.MustCompile(`^-{1,2}[a-z][a-z-]{0,30}$`)
+
 // flagError is a flag parse error without the value given: a flag value
 // may be a secret (a URL with userinfo).
 func flagError(err error) string {
@@ -162,6 +164,10 @@ func flagError(err error) string {
 	case strings.HasPrefix(msg, "bad flag syntax: "):
 		return "bad flag syntax (-flag, --flag or --flag=value)"
 	case strings.HasPrefix(msg, "flag provided but not defined: "):
+		// Named only when it reads as a flag name (a key), not a value.
+		if name := strings.TrimPrefix(msg, "flag provided but not defined: "); flagNameRe.MatchString(name) {
+			return "unknown flag " + name
+		}
 		return "unknown flag"
 	}
 	return flagValueRe.ReplaceAllString(msg, "$1 $2")
