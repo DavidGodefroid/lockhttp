@@ -493,7 +493,7 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 			return
 		}
 		g.grants.GrantConnect(src.Container, hostport, grant)
-		rec.Base.Approval = "hub"
+		rec.Base.Approval = ApprovalHubRun
 	}
 	// FREE (or approved): open the tunnel.
 	if _, err := io.WriteString(c, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {

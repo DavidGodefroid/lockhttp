@@ -32,12 +32,12 @@ func (e env) configPath(flagVal string) (string, error) {
 // runConsole is `lockhttp console`: the policy console, in the console
 // account's own session (`lox up` runs it). It serves the approved policy
 // to the gate and asks its human about every loosening; the gate asks
-// lockhub, never this console, about held requests.
+// lockhub, never this console, about held requests. It is lockkit's
+// policy-only console: it takes no hub flags (lox up passes none) and
+// approves no request.
 func runConsole(e env, args []string) int {
-	const usage = "lockhttp console --hub URL --hub-key-file FILE --instance NAME [--profile P] [--config FILE]"
+	const usage = "lockhttp console [--profile P] [--config FILE]"
 	fs := flag.NewFlagSet("console", flag.ContinueOnError)
-	var hub console.HubOptions
-	hub.Register(fs)
 	profile := fs.String("profile", "default", "profile to serve")
 	cfgFlag := fs.String("config", "", "policy file (default: ~/.config/lockhttp/config.toml)")
 	if !parse(e, fs, "console", usage, args) {
@@ -61,9 +61,13 @@ func runConsole(e env, args []string) int {
 	p := product.P
 	p.Version = strings.TrimPrefix(version, "v")
 	be := httpconsole.New(httpconsole.Options{Profile: *profile, Config: path})
-	err = console.Run(ctx, p, be, console.Options{
+	runFn := console.Run
+	if e.consoleRun != nil {
+		runFn = e.consoleRun
+	}
+	err = runFn(ctx, p, be, console.Options{
 		Profile: *profile, IO: term, TTY: os.Stdin,
-		Sanitizer: httpconsole.Sanitizer(), Hub: hub,
+		Sanitizer: httpconsole.Sanitizer(), PolicyOnly: true,
 	})
 	if err != nil {
 		fmt.Fprintln(e.stderr, "lockhttp console:", err)

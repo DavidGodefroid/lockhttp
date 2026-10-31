@@ -97,7 +97,7 @@ lockhttp init`).
 ## `lockhttp console`
 
 ```
-lockhttp console --hub URL --hub-key-file FILE --instance NAME [--profile P] [--config FILE]
+lockhttp console [--profile P] [--config FILE]
 ```
 
 The policy console: lockkit's console, serving `policy.get` to the gate.
@@ -107,13 +107,13 @@ a paired phone). It must run in a terminal (exit 3 otherwise), as the
 console account. Under `lox up` it runs in its own compose service, with
 the policy copied from `<workspace>/.lockhttp/` (`lox attach <instance>`
 attaches its terminal); the launcher runs it in the container
-`lockhttp-console`, the only one that mounts `lockhttp-home`. Without its
-hub flags (`lox up` gives them) it exits 3: "the console is launched by
-`lox up` only".
+`lockhttp-console`, the only one that mounts `lockhttp-home`. It is
+lockkit's policy-only console: it takes no hub flags (`lox up` passes
+none to it, only to the gate) and approves no request; one that reached
+it would be refused. The gate, not the console, needs the hub flags.
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--hub URL`, `--hub-key-file FILE`, `--instance NAME` | (required) | The hub, its pinned key and the lock instance name, as `lox up` writes them; also lockkit's optional `--hub-plain-http`, `--devices-file`, `--facade-keys-file`, `--require-device`, `--seal-clear`. |
 | `--profile P` | `default` | Profile to serve. Its socket is `user-P.sock` in the socket directory. |
 | `--config FILE` | `~/.config/lockhttp/config.toml` | The policy file. |
 
@@ -248,8 +248,10 @@ the single-use authorisation (10 minutes) or, for a `CONNECT`, the connect
 grant; its nonce is consumed once. A denial answers `E_DENIED` to a waiting
 request. The risk class is `write` (any part of a held request can carry data
 the agent chose), `prod-write` under a production policy. The console serves
-the policy; it is never asked about a request. Hub decisions are audited (`approved`/`denied`,
-`approval` `hub`, `ticket`). An unreachable hub leaves the ask pending:
+the policy; it is never asked about a request. Hub decisions are audited once (`approved`/`denied`,
+`approval` `hub`, `ticket`, approver, facade, `hub_sig`); the request run
+after an approval within the hold is audited `approved` with `approval`
+`hub-run`, not as a second decision. An unreachable hub leaves the ask pending:
 nothing falls back to another approver.
 
 The `E_PENDING` answer names the ticket (`X-LockHTTP-Ticket`

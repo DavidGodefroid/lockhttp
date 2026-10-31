@@ -539,3 +539,51 @@ func TestHubWithdrawOnStop(t *testing.T) {
 		t.Fatal("the ticket of a stopped ask was not withdrawn")
 	}
 }
+
+// An ask the hub approves within the hold: the request goes through at
+// once. The audit holds one hub decision for the ticket (approval "hub",
+// signed, with the ticket), and the run of the request as approval
+// "hub-run": as lockhub's `lox audit verify --lock` reads a lock's log
+// (every approved or denied record with approval "hub" is a hub decision,
+// which must carry the hub's signature and be the ticket's only approval),
+// the log verifies.
+func TestHubApprovedWithinHoldAuditsOneDecision(t *testing.T) {
+	e, fh := hubEnv(t, hubTestPolicy, nil)
+	e.backend("example.com", true, http.HandlerFunc(ok))
+	e.remap("example.com", "443")
+	c := e.client("dev-5", true)
+	got := make(chan *http.Response, 1)
+	go func() { got <- e.post(c, `{"to":"jean.dupont@example.org"}`) }()
+	tk := fh.waitTickets(1)[0]
+	fh.decide(tk, ticket.Approved, "", nil, "")
+	if r := <-got; r.StatusCode != 200 {
+		t.Fatalf("approved within the hold: %s %v", r.Status, r.Header)
+	}
+	e.waitIdle()
+	audit := e.auditText()
+	if !hasRecord(audit, map[string]string{"event": "approved", "approval": ApprovalHubRun, "method": "POST"}) {
+		t.Fatalf("no run record:\n%s", audit)
+	}
+	approvals := map[string]int{}
+	for _, line := range strings.Split(audit, "\n") {
+		var m map[string]any
+		if json.Unmarshal([]byte(line), &m) != nil {
+			continue
+		}
+		ev, _ := m["event"].(string)
+		sig, _ := m["hub_sig"].(string)
+		if !(sig != "" || m["approval"] == "hub" && (ev == "approved" || ev == "denied")) {
+			continue
+		}
+		tid, _ := m["ticket"].(string)
+		if sig == "" || tid != tk.ID {
+			t.Errorf("a hub decision without the hub's signature or the ticket: %s", line)
+		}
+		if ev == "approved" {
+			approvals[tid]++
+		}
+	}
+	if approvals[tk.ID] != 1 {
+		t.Fatalf("hub approvals of %s: %d, want 1\n%s", tk.ID, approvals[tk.ID], audit)
+	}
+}
