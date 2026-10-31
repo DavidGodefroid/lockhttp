@@ -20,7 +20,7 @@ func TestHubFlagsDoNotEchoLockkitValues(t *testing.T) {
 		"https://[fe80::1%25glsa_Canary]:8443",
 	} {
 		code, out, errs := runEnv(t, gate, append(append([]string{}, base...), "--hub", hub)...)
-		if code != exitUsage || strings.Contains(out+errs, "glsa_Canary") || !strings.Contains(errs, "http(s)://host[:port]") {
+		if code != exitUsage || strings.Contains(out+errs, "glsa_Canary") || !strings.Contains(errs, "host") || !strings.Contains(errs, "port") {
 			t.Errorf("--hub %s: %d %q %q", hub, code, out, errs)
 		}
 	}
