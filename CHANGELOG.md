@@ -6,6 +6,18 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Builds on lockkit v0.8.1. `--hub` takes `http(s)://host[:port]` only: a
+  user, password, path, query, fragment, IPv6 zone, non-DNS host or bad
+  port is refused (lockkit's hub client). lockkit's errors no longer repeat
+  the value given (hub URL, transport errors, instance names,
+  `--require-device` risk classes, `hub-key`). The body preview and the
+  personal-data heuristic read a `\n`, `\r`, `\t` or `&`-style escape
+  as the blank or delimiter it stands for (lockkit v0.8.0), so an email,
+  phone, IBAN or card number right after one in a JSON body is masked
+  too. lockkit's console product hooks (v0.7.0) change nothing here.
+
 ## [0.5.0] - 2026-10-30
 
 Hub mode on lockkit v0.6.0: expired tickets are approved again, reveal from a local
