@@ -128,7 +128,7 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 			writeRefusalTicket(w, id, out.Code, out.Reason, out.Ticket, false)
 			return true
 		}
-		rec.Base.Approval = "hub"
+		rec.Base.Approval = ApprovalHubRun
 	}
 	// Forward.
 	out := req.Clone(ctx)
