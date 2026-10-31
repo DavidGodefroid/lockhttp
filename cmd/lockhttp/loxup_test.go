@@ -30,6 +30,10 @@ import (
 // "console" and, when the lock names a profile, "--profile P". No hub
 // flag. Keep this in step with lockhub: if it changes, this test says
 // whether lockhttp's console still starts under lox up.
+//
+// This is a copy: it does not detect a change in lockhub's compose.go.
+// That side is guarded by lockhub's internal/family/contract_test.go,
+// which asserts the argv lox up gives the lockhttp console service.
 func loxUpConsoleArgv(profile string) []string {
 	cmd := []string{"console"}
 	if profile != "" {
