@@ -6,17 +6,26 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- lockkit v0.8.1: lockkit's errors no longer repeat the value given (the
+  hub URL, transport errors, instance names, `--require-device` risk
+  classes, `hub-key`), and `--hub` takes `http(s)://host[:port]` only: a
+  user, password, path, query, fragment, IPv6 zone, non-DNS host or bad
+  port is refused (lockkit's hub client). lockhttp's own messages that
+  still quote a value are addressed separately.
+
 ### Changed
 
-- Builds on lockkit v0.8.1. `--hub` takes `http(s)://host[:port]` only: a
-  user, password, path, query, fragment, IPv6 zone, non-DNS host or bad
-  port is refused (lockkit's hub client). lockkit's errors no longer repeat
-  the value given (hub URL, transport errors, instance names,
-  `--require-device` risk classes, `hub-key`). The body preview and the
-  personal-data heuristic read a `\n`, `\r`, `\t` or `&`-style escape
-  as the blank or delimiter it stands for (lockkit v0.8.0), so an email,
-  phone, IBAN or card number right after one in a JSON body is masked
-  too. lockkit's console product hooks (v0.7.0) change nothing here.
+- Builds on lockkit v0.8.1. The body preview and the personal-data
+  heuristic read a `\n`, `\r`, `\t` or `\u0026`-style escape as the
+  blank or delimiter it stands for (lockkit v0.8.0), so a phone number,
+  IBAN or card number right after one in a JSON body is masked too.
+- `lockhttp console` (lockkit v0.7.0, v0.7.1): a policy tightening that
+  cannot be saved is applied anyway (audited, told on the console) instead
+  of leaving the looser policy in force, and a change that ends the
+  session no longer prints a "policy tightened" or "policy change not
+  applied" line after it.
 
 ## [0.5.0] - 2026-10-30
 
