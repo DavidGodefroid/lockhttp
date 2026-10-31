@@ -30,7 +30,7 @@ func (f *fakeEnv) Approve(ctx context.Context, id int64, s console.Screen) conso
 		f.records = append(f.records, s.Record(audit.Base{Event: "approved"}))
 	}
 	if !s.NeverAuto {
-		return console.Approval{Approved: true, Auto: true}
+		return console.Approval{Approved: true}
 	}
 	if f.answer {
 		return console.Approval{Approved: true}
