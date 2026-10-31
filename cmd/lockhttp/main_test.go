@@ -28,7 +28,7 @@ func TestVersion(t *testing.T) {
 
 func TestUnknownCommand(t *testing.T) {
 	code, _, errs := runArgs(t, "nope")
-	if code != exitUsage || !strings.Contains(errs, `unknown command "nope"`) {
+	if code != exitUsage || !strings.Contains(errs, "unknown command") {
 		t.Fatalf("unknown: %d %q", code, errs)
 	}
 }
@@ -257,5 +257,70 @@ func TestGateHubPlainHTTP(t *testing.T) {
 		if code != exitUsage || !strings.Contains(errs, c.want) {
 			t.Errorf("%s plain=%v: %d %s", c.url, c.plain, code, errs)
 		}
+	}
+}
+
+// A flag value may be a secret (a URL with userinfo, a pasted token): the
+// usage errors name the flag, never the value given.
+func TestFlagErrorsDoNotEchoValues(t *testing.T) {
+	const (
+		canary    = "glsa_CanarySecretToken123"
+		canaryURL = "https://user:glsa_Canary@h"
+	)
+	home := t.TempDir()
+	key := filepath.Join(t.TempDir(), "hub.pub")
+	if err := os.WriteFile(key, []byte("11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gate := env{euid: func() int { return 1000 }}
+	hub := func(url string, more ...string) []string {
+		return append([]string{"gate", "--listen", "127.0.0.1:0", "--hub", url, "--hub-key-file", key, "--instance", "egress", "--home", home}, more...)
+	}
+	for _, c := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"--hub not a URL", hub("http://user:" + canary + "@"), "--hub"},
+		{"--hub not a URL (raw)", hub(canaryURL + ":x:y"), "--hub"},
+		{"--hub http to a public host", hub("http://hub.example.com:8443/"+canary, "--hub-net", "10.89.0.0/24"), "(--hub)"},
+		{"--hub plain http to a public host", hub("http://hub.example.com:8443/"+canary, "--hub-net", "10.89.0.0/24", "--hub-plain-http"), "(--hub)"},
+		{"--hub does not resolve", hub("https://no-such-hub.invalid:8443/" + canary), "--hub host"},
+		{"--instance", []string{"gate", "--listen", "127.0.0.1:0", "--hub", "https://hub.example.com", "--hub-key-file", key, "--instance", canary}, "--instance"},
+		{"--hub-net", []string{"gate", "--hub-net", canaryURL}, "-hub-net"},
+		{"--hub-net token", []string{"gate", "--hub-net", canary}, "-hub-net"},
+		{"--allow-uid", []string{"signer", "--allow-uid", canary}, "-allow-uid"},
+		{"bool flag value", []string{"gate", "--check=" + canary}, "-check"},
+		{"positional argument", []string{"gate", "--hub-plain-http", canaryURL}, "unexpected argument"},
+		{"--hub with userinfo", hub(`http://user:`+canary+`@hub.example.com:8443/a"b\c`, "--hub-net", "10.89.0.0/24"), "--hub must not carry"},
+		{"--hub quoted by lockkit", hub(`http://hub.example.com:8443/a"b\c/`+canary, "--hub-net", "10.89.0.0/24"), "(--hub)"},
+		{"--require-device", hub("https://hub.example.com", "--hub-net", "10.89.0.0/24", "--devices-file", key, "--require-device", canary), "--require-device: risk classes"},
+		{"--hub with a query", hub("https://hub.example.com:8443/?token="+canary, "--hub-net", "10.89.0.0/24"), "--hub must not carry"},
+		{"policy subcommand", []string{"policy", canaryURL}, "unknown subcommand"},
+		{"hub-key --instance", []string{"hub-key", "--home", t.TempDir(), "--instance", canaryURL}, "--instance"},
+		{"hub-key flag value", []string{"hub-key", "--home", t.TempDir(), "--instance=" + canary, canaryURL}, "unexpected argument"},
+		{"unknown command", []string{canaryURL}, "unknown command"},
+		{"unknown flag", []string{"gate", "-" + canary}, "unknown flag"},
+		{"unknown flag URL", []string{"gate", "--" + canaryURL}, "unknown flag"},
+		{"--upstream", []string{"gate", "--upstream", canaryURL}, "--upstream"},
+		{"ca subcommand", []string{"ca", canaryURL}, "unknown subcommand"},
+		{"bad flag syntax", []string{"gate", "---hub=" + canaryURL}, "bad flag syntax"},
+		{"--listen", []string{"gate", "--listen", canary}, "--listen"},
+		{"--listen URL", []string{"gate", "--listen", canaryURL}, "--listen"},
+		{"--check", []string{"gate", "--check", "--listen", canary + ":1"}, "--listen"},
+		{"init --trusted", []string{"init", "--config", filepath.Join(t.TempDir(), "c.toml"), "--trusted", "go.dev " + canary}, "--trusted entry 2"},
+		{"doctor --gate", []string{"doctor", "--config", filepath.Join(t.TempDir(), "none.toml"), "--gate", canary + ":1"}, "--gate"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			code, out, errs := runEnv(t, gate, c.args...)
+			for _, leak := range []string{canary, "glsa_Canary", "user:"} {
+				if strings.Contains(errs+out, leak) {
+					t.Fatalf("the error repeats the value (%s): %s", leak, errs)
+				}
+			}
+			if code == exitOK || !strings.Contains(errs+out, c.want) {
+				t.Fatalf("%d, want %q: %s", code, c.want, errs)
+			}
+		})
 	}
 }

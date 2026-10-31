@@ -237,3 +237,106 @@ func TestDefaultParses(t *testing.T) {
 		t.Fatalf("imports not trusted: %v", q.Trusted)
 	}
 }
+
+// Canaries: a pasted token, and a URL carrying one in its userinfo.
+const (
+	canary    = "glsa_CanarySecretToken123"
+	canaryURL = "https://user:glsa_Canary@h"
+)
+
+// An error names the key (or the entry's place in the file) and never
+// repeats the value given: a value may be a pasted secret.
+func TestErrorsDoNotEchoValues(t *testing.T) {
+	const prof = "[profiles.default]\n"
+	rule := func(fields string) string {
+		return prof + "[[profiles.default.rules]]\n" + fields
+	}
+	ih := func(fields string) string {
+		return prof + "[[profiles.default.internal_hosts]]\n" + fields
+	}
+	// The URL canary trips lockkit's embedded-password check first for most
+	// keys; the token canary reaches lockhttp's own messages.
+	cases := []struct {
+		name, src, key string
+	}{
+		{"mode", prof + `mode = "C"`, "mode"},
+		{"heuristics", prof + `heuristics = "C"`, "heuristics"},
+		{"buffer_limit", prof + `buffer_limit = "C"`, "buffer_limit"},
+		{"hold", prof + `hold = "C"`, "hold"},
+		{"connect_grant", prof + `connect_grant = "C"`, "connect_grant"},
+		{"idle_timeout", prof + `idle_timeout = "C"`, "idle_timeout"},
+		{"max_session", prof + `max_session = "C"`, "max_session"},
+		{"trusted", prof + `trusted = ["go.dev", "C"]`, "trusted entry 2"},
+		{"trusted single label", prof + `trusted = ["glsa-canarysecrettoken123"]`, "trusted entry 1"},
+		{"trusted ip literal", prof + `trusted = ["fe80::1%C"]`, "trusted entry 1"},
+		{"splice", prof + `splice = ["C"]`, "splice entry 1"},
+		{"deny", prof + `deny = ["C"]`, "deny entry 1"},
+		{"redirect_cdn no >", prof + `redirect_cdn = ["C"]`, "redirect_cdn entry 1"},
+		{"redirect_cdn origin", prof + `redirect_cdn = ["C>cdn.example.com"]`, "redirect_cdn entry 1 origin"},
+		{"redirect_cdn cdn", prof + `redirect_cdn = ["a.example.com>C"]`, "redirect_cdn entry 1 cdn"},
+		{"internal host", ih("host = \"C\"\nports = [443]"), "internal_hosts entry 1 host"},
+		{"internal pattern", ih("host = \"*.glsa-canarysecrettoken123.example\"\nports = [443]"), "internal_hosts entry 1"},
+		{"internal no ports", ih(`host = "glsa-canarysecrettoken123"`), "internal_hosts entry 1"},
+		{"internal bad port", ih("host = \"glsa-canarysecrettoken123\"\nports = [70000]"), "internal_hosts entry 1"},
+		// The token alone is a valid id or container: only the URL fails.
+		{"rule id", rule("id = \"C\"\nhost = \"a.com\"\nverdict = \"ask\""), "rules entry 1"},
+		{"rule id, other error", rule("id = \"glsa_CanarySecretToken123\"\nhost = \"a.com\"\nverdict = \"C\""), "rules entry 1"},
+		{"rule id twice", rule("id = \"glsa_CanarySecretToken123\"\nhost = \"a.com\"\nverdict = \"ask\"\n") +
+			"[[profiles.default.rules]]\nid = \"glsa_CanarySecretToken123\"\nhost = \"b.com\"\nverdict = \"ask\"", "rules entry 2"},
+		{"rule agent", rule("id = \"glsa_CanarySecretToken123\"\nhost = \"a.com\"\nagent = \"C\"\nverdict = \"ask\""), "rules entry 1"},
+		{"rule container", rule("id = \"x\"\ncontainer = \"C\"\nhost = \"a.com\"\nverdict = \"ask\""), "rules entry 1"},
+		{"rule host", rule("id = \"x\"\nhost = \"C\"\nverdict = \"ask\""), "rules entry 1 host"},
+		{"rule verdict", rule("id = \"x\"\nhost = \"a.com\"\nverdict = \"C\""), "rules entry 1"},
+		{"rule method", rule("id = \"x\"\nhost = \"a.com\"\nmethods = [\"C\"]\nverdict = \"ask\""), "rules entry 1"},
+		{"rule path", rule("id = \"x\"\nhost = \"a.com\"\npath = \"C\"\nverdict = \"ask\""), "rules entry 1"},
+		{"rule path control", rule("id = \"x\"\nhost = \"a.com\"\npath = \"/C\u202e\"\nverdict = \"ask\""), "rules entry 1 path"},
+		{"rule note control", rule("id = \"x\"\nhost = \"a.com\"\nnote = \"C\u202e\"\nverdict = \"ask\""), "rules entry 1 note"},
+		{"rule expires", rule("id = \"x\"\nhost = \"a.com\"\nexpires = \"C\"\nverdict = \"ask\""), "rules entry 1"},
+		{"rule max_body", rule("id = \"x\"\nhost = \"a.com\"\nmax_body = \"C\"\nverdict = \"ask\""), "rules entry 1: max_body"},
+		{"rule auto forbidden", rule("id = \"glsa_CanarySecretToken123\"\nhost = \"*\"\nverdict = \"auto\""), "rules entry 1"},
+		// lockkit's decoder: the key, not the value.
+		{"ports type", ih("host = \"ci\"\nports = [\"C\"]"), "internal_hosts.ports"},
+	}
+	for _, c := range cases {
+		for _, secret := range []string{canary, canaryURL} {
+			t.Run(c.name+"/"+secret, func(t *testing.T) {
+				src := strings.ReplaceAll(c.src, `"C`, `"`+secret)
+				_, err := Parse([]byte(src+"\n"), "config.toml", "default")
+				if err == nil && secret == canary && (c.name == "rule id" || c.name == "rule container") {
+					return
+				}
+				if err == nil {
+					t.Fatalf("accepted:\n%s", src)
+				}
+				msg := err.Error()
+				for _, leak := range []string{canary, "glsa_Canary", "glsa-canarysecrettoken123", "user:"} {
+					if strings.Contains(msg, leak) {
+						t.Fatalf("the error repeats the value (%s): %s", leak, msg)
+					}
+				}
+				if !strings.Contains(msg, c.key) {
+					t.Fatalf("the error does not name %q: %s", c.key, msg)
+				}
+			})
+		}
+	}
+}
+
+// CheckHostPattern (the signer checks the hosts it signs with it) names
+// the key, not the host.
+func TestCheckHostPatternDoesNotEcho(t *testing.T) {
+	for _, h := range []string{canary, canaryURL, "glsa-canarysecrettoken123", "fe80::1%" + canary, "*.glsa-canarysecrettoken123"} {
+		_, err := CheckHostPattern("host", h, false)
+		if err == nil || strings.Contains(err.Error(), "anary") || (!strings.HasPrefix(err.Error(), "host ") && !strings.HasPrefix(err.Error(), "host: ")) {
+			t.Errorf("%s: %v", h, err)
+		}
+	}
+}
+
+// A missing profile: --profile is a value given on the command line.
+func TestNoProfileDoesNotEcho(t *testing.T) {
+	_, err := Parse([]byte("[profiles.default]\n"), "config.toml", canary)
+	if err == nil || strings.Contains(err.Error(), canary) || !strings.Contains(err.Error(), "--profile") {
+		t.Fatalf("%v", err)
+	}
+}

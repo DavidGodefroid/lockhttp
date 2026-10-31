@@ -80,7 +80,7 @@ func runDoctor(e env, args []string) int {
 	if *gateAddr != "" {
 		c, err := net.DialTimeout("tcp", *gateAddr, 3*time.Second)
 		if err != nil {
-			fail("gate %s: %v", *gateAddr, err)
+			fail("--gate: no gate answers (%s)", netErrKind(err))
 		} else {
 			c.Close()
 			okf("gate answers on %s", *gateAddr)

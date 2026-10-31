@@ -6,11 +6,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 
@@ -120,7 +122,8 @@ func run(e env, args []string) int {
 	case "hub-key":
 		return runHubKey(e, args[1:])
 	default:
-		fmt.Fprintf(e.stderr, "lockhttp: unknown command %q\n\n%s", cmd, usageText)
+		// Not the argument itself: it may be a pasted value.
+		fmt.Fprintf(e.stderr, "lockhttp: unknown command\n\n%s", usageText)
 		return exitUsage
 	}
 }
@@ -135,14 +138,39 @@ func usageFail(e env, cmd, usage, msg string) int {
 func parse(e env, fs *flag.FlagSet, cmd, usage string, args []string) bool {
 	fs.SetOutput(io.Discard)
 	if err := fs.Parse(args); err != nil {
-		usageFail(e, cmd, usage, err.Error())
+		usageFail(e, cmd, usage, flagError(err))
 		return false
 	}
 	if fs.NArg() > 0 {
-		usageFail(e, cmd, usage, "unexpected argument "+fs.Arg(0))
+		// Not the argument itself: a stray value may be a secret (a URL
+		// with a password after a boolean flag).
+		usageFail(e, cmd, usage, "unexpected argument after the flags (a boolean flag takes --flag=value)")
 		return false
 	}
 	return true
+}
+
+// flagValueRe matches the value the flag package quotes in its errors
+// ("invalid value \"...\" for flag -x: ...").
+var flagValueRe = regexp.MustCompile(`^(invalid (?:boolean )?value) ".*" (for (?:flag )?-[A-Za-z0-9_-]+: )`)
+
+var flagNameRe = regexp.MustCompile(`^-{1,2}[a-z][a-z-]{0,30}$`)
+
+// flagError is a flag parse error without the value given: a flag value
+// may be a secret (a URL with userinfo).
+func flagError(err error) string {
+	msg := err.Error()
+	switch {
+	case strings.HasPrefix(msg, "bad flag syntax: "):
+		return "bad flag syntax (-flag, --flag or --flag=value)"
+	case strings.HasPrefix(msg, "flag provided but not defined: "):
+		// Named only when it reads as a flag name (a key), not a value.
+		if name := strings.TrimPrefix(msg, "flag provided but not defined: "); flagNameRe.MatchString(name) {
+			return "unknown flag " + name
+		}
+		return "unknown flag"
+	}
+	return flagValueRe.ReplaceAllString(msg, "$1 $2")
 }
 
 func signalContext() (context.Context, context.CancelFunc) {
@@ -164,7 +192,7 @@ func (l *intList) String() string { return fmt.Sprint(*l) }
 func (l *intList) Set(s string) error {
 	var n int
 	if _, err := fmt.Sscan(s, &n); err != nil || n < 0 {
-		return fmt.Errorf("invalid uid %q", s)
+		return errors.New("want a uid (a number, 0 or more)")
 	}
 	*l = append(*l, n)
 	return nil

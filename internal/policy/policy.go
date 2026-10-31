@@ -157,7 +157,7 @@ func Parse(data []byte, name, profile string) (Policy, error) {
 	}
 	r, ok := f.Profiles[profile]
 	if !ok {
-		return Policy{}, fmt.Errorf("%s: no profile %q", name, profile)
+		return Policy{}, fmt.Errorf("%s: no profile of that name (--profile)", name)
 	}
 	p, err := fromRaw(profile, r)
 	if err != nil {
@@ -224,64 +224,69 @@ func fromRaw(name string, r raw) (Policy, error) {
 		in  []string
 		to  *[]string
 	}{{"trusted", r.Trusted, &p.Trusted}, {"splice", r.Splice, &p.Splice}, {"deny", r.Deny, &p.Deny}} {
-		for _, h := range l.in {
-			c, err := CheckHostPattern(l.key, h, false)
+		for i, h := range l.in {
+			c, err := CheckHostPattern(entry(l.key, i), h, false)
 			if err != nil {
 				return Policy{}, err
 			}
 			*l.to = append(*l.to, c)
 		}
 	}
-	for _, e := range r.RedirectCDN {
+	for i, e := range r.RedirectCDN {
+		key := entry("redirect_cdn", i)
 		from, to, ok := strings.Cut(e, ">")
 		if !ok {
-			return Policy{}, errors.New(`redirect_cdn entries are "origin>cdn"`)
+			return Policy{}, fmt.Errorf(`%s: entries are "origin>cdn"`, key)
 		}
-		f, err := CheckHostPattern("redirect_cdn", strings.TrimSpace(from), false)
+		f, err := CheckHostPattern(key+" origin", strings.TrimSpace(from), false)
 		if err != nil {
 			return Policy{}, err
 		}
-		t, err := CheckHostPattern("redirect_cdn", strings.TrimSpace(to), false)
+		t, err := CheckHostPattern(key+" cdn", strings.TrimSpace(to), false)
 		if err != nil {
 			return Policy{}, err
 		}
 		p.RedirectCDN = append(p.RedirectCDN, f+">"+t)
 	}
-	for _, ih := range r.Internal {
-		h, err := CheckHostPattern("internal_hosts", ih.Host, true)
+	for i, ih := range r.Internal {
+		key := entry("internal_hosts", i)
+		h, err := CheckHostPattern(key+" host", ih.Host, true)
 		if err != nil {
 			return Policy{}, err
 		}
 		if strings.HasPrefix(h, "*.") {
-			return Policy{}, fmt.Errorf("internal host %s: name an exact host, not a pattern", h)
+			return Policy{}, fmt.Errorf("%s: name an exact host, not a pattern", key)
 		}
 		if len(ih.Ports) == 0 {
-			return Policy{}, fmt.Errorf("internal host %s: list its ports", h)
+			return Policy{}, fmt.Errorf("%s: list its ports", key)
 		}
 		for _, port := range ih.Ports {
 			if port < 1 || port > 65535 {
-				return Policy{}, fmt.Errorf("internal host %s: invalid port %d", h, port)
+				return Policy{}, fmt.Errorf("%s: ports are 1 to 65535", key)
 			}
 		}
 		p.Internal = append(p.Internal, InternalHost{Host: h, Ports: ih.Ports, Read: ih.Read})
 	}
-	seen := map[string]bool{}
-	for _, rr := range r.Rules {
-		rule, err := ruleFromRaw(rr)
+	// Errors name a rule by its place in the file, never by its id: an id
+	// is a value the human typed (a pasted secret must not come back).
+	seen := map[string]int{}
+	for i, rr := range r.Rules {
+		key := entry("rules", i)
+		rule, err := ruleFromRaw(key, rr)
 		if err != nil {
 			return Policy{}, err
 		}
-		if seen[rule.ID] {
-			return Policy{}, fmt.Errorf("rule id %q is used twice", rule.ID)
+		if j, dup := seen[rule.ID]; dup {
+			return Policy{}, fmt.Errorf("%s: id is already used by %s", key, entry("rules", j))
 		}
-		seen[rule.ID] = true
+		seen[rule.ID] = i
 		p.Rules = append(p.Rules, rule)
 	}
 	p = Canonical(p)
 	for _, rule := range p.Rules {
 		if rule.Verdict == VerdictAuto {
 			if why := p.AutoForbidden(rule); why != "" {
-				return Policy{}, fmt.Errorf("rule %s: verdict auto is not allowed: %s", rule.ID, why)
+				return Policy{}, fmt.Errorf("%s: verdict auto is not allowed: %s", entry("rules", seen[rule.ID]), why)
 			}
 		}
 	}
@@ -295,21 +300,27 @@ var (
 	dateRe      = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 )
 
-func ruleFromRaw(rr rawRule) (Rule, error) {
+// entry names the i-th (0-based) entry of a list key for an error: by its
+// place in the file, 1-based, never by its value.
+func entry(key string, i int) string { return fmt.Sprintf("%s entry %d", key, i+1) }
+
+// ruleFromRaw checks one rule; its errors start with key (the rule's
+// place in the file) and never repeat a value of the rule.
+func ruleFromRaw(key string, rr rawRule) (Rule, error) {
 	if !ruleIDRe.MatchString(rr.ID) {
-		return Rule{}, fmt.Errorf("rule id %q: use letters, digits, '_', '-' or '.'", rr.ID)
+		return Rule{}, fmt.Errorf("%s: id: use 1 to 64 letters, digits, '_', '-' or '.', starting with a letter or digit", key)
 	}
 	if rr.Agent != "" {
-		return Rule{}, fmt.Errorf("rule %s: rules apply to a container or to all, never to an agent (an agent name is declarative)", rr.ID)
+		return Rule{}, fmt.Errorf("%s: rules apply to a container or to all, never to an agent (an agent name is declarative)", key)
 	}
 	r := Rule{ID: rr.ID, Container: rr.Container, Path: rr.Path, Verdict: rr.Verdict, Expires: rr.Expires, Note: rr.Note}
 	if r.Container != "" && !containerRe.MatchString(r.Container) {
-		return Rule{}, fmt.Errorf("rule %s: invalid container", rr.ID)
+		return Rule{}, fmt.Errorf("%s: invalid container", key)
 	}
 	if strings.TrimSpace(rr.Host) == "*" {
 		r.Host = "*"
 	} else {
-		h, err := CheckHostPattern("rule "+rr.ID+" host", rr.Host, false)
+		h, err := CheckHostPattern(key+" host", rr.Host, false)
 		if err != nil {
 			return Rule{}, err
 		}
@@ -318,35 +329,35 @@ func ruleFromRaw(rr rawRule) (Rule, error) {
 	switch r.Verdict {
 	case VerdictDeny, VerdictAsk, VerdictAuto, VerdictFree:
 	default:
-		return Rule{}, fmt.Errorf("rule %s: verdict must be deny, ask, auto or free", rr.ID)
+		return Rule{}, fmt.Errorf("%s: verdict must be deny, ask, auto or free", key)
 	}
 	for _, m := range rr.Methods {
 		m = strings.ToUpper(strings.TrimSpace(m))
 		if !methodRe.MatchString(m) {
-			return Rule{}, fmt.Errorf("rule %s: invalid method", rr.ID)
+			return Rule{}, fmt.Errorf("%s: invalid method", key)
 		}
 		r.Methods = append(r.Methods, m)
 	}
 	if r.Path != "" && !strings.HasPrefix(r.Path, "/") {
-		return Rule{}, fmt.Errorf("rule %s: path must start with /", rr.ID)
+		return Rule{}, fmt.Errorf("%s: path must start with /", key)
 	}
 	for k, v := range map[string]string{"path": r.Path, "note": r.Note} {
-		if err := kconfig.CheckValue(product.P, "rule "+rr.ID+" "+k, v); err != nil {
+		if err := kconfig.CheckValue(product.P, key+" "+k, v); err != nil {
 			return Rule{}, err
 		}
 	}
 	if r.Expires != "" {
 		if !dateRe.MatchString(r.Expires) {
-			return Rule{}, fmt.Errorf("rule %s: expires must be YYYY-MM-DD", rr.ID)
+			return Rule{}, fmt.Errorf("%s: expires must be YYYY-MM-DD", key)
 		}
 		if _, err := time.Parse(time.DateOnly, r.Expires); err != nil {
-			return Rule{}, fmt.Errorf("rule %s: expires must be YYYY-MM-DD", rr.ID)
+			return Rule{}, fmt.Errorf("%s: expires must be YYYY-MM-DD", key)
 		}
 	}
 	if rr.MaxBody != "" {
 		n, err := ParseSize(rr.MaxBody)
 		if err != nil {
-			return Rule{}, fmt.Errorf("rule %s: max_body: %w", rr.ID, err)
+			return Rule{}, fmt.Errorf("%s: max_body: %w", key, err)
 		}
 		r.MaxBody = n
 	}
@@ -501,23 +512,24 @@ var labelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // CheckHostPattern validates and normalises a host or "*.domain" pattern.
 // A single-label host is accepted only when single is set (internal
-// hosts); IP literals never are.
+// hosts); IP literals never are. Its errors name key, never h: a host is
+// a value the human typed.
 func CheckHostPattern(key, h string, single bool) (string, error) {
 	h = normHost(strings.TrimSpace(h))
 	if err := kconfig.CheckValue(product.P, key, h); err != nil {
 		return "", err
 	}
 	if _, err := netip.ParseAddr(strings.Trim(h, "[]")); err == nil {
-		return "", fmt.Errorf("%s: %q is an IP literal: name hosts", key, h)
+		return "", fmt.Errorf("%s: an IP literal: name hosts", key)
 	}
 	name := strings.TrimPrefix(h, "*.")
 	labels := strings.Split(name, ".")
 	if len(labels) < 2 && (!single || strings.HasPrefix(h, "*.")) {
-		return "", fmt.Errorf("%s: %q is not a full host name", key, h)
+		return "", fmt.Errorf("%s: not a full host name (two labels or more)", key)
 	}
 	for _, l := range labels {
 		if !labelRe.MatchString(l) {
-			return "", fmt.Errorf("%s: %q is not a valid host name", key, h)
+			return "", fmt.Errorf("%s: not a valid host name (DNS labels of letters, digits and '-', or \"*.domain\")", key)
 		}
 	}
 	return h, nil

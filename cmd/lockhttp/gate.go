@@ -6,11 +6,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,7 +56,8 @@ func runGate(e env, args []string) int {
 	if *check {
 		c, err := net.DialTimeout("tcp", *listen, 3*time.Second)
 		if err != nil {
-			fmt.Fprintln(e.stderr, "lockhttp gate: no gate on", *listen+":", err)
+			// Not the address nor the net error that repeats it.
+			fmt.Fprintln(e.stderr, "lockhttp gate: no gate answers on --listen")
 			return exitFail
 		}
 		c.Close()
@@ -129,7 +132,7 @@ func runGate(e env, args []string) int {
 	cfg.UpstreamTLS = &tls.Config{MinVersion: tls.VersionTLS12}
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
-		fmt.Fprintln(e.stderr, "lockhttp gate:", err)
+		fmt.Fprintln(e.stderr, "lockhttp gate: cannot listen on --listen (host:port, free, and allowed):", netErrKind(err))
 		return exitFail
 	}
 	ctx, stop := signalContext()
@@ -142,7 +145,7 @@ func runGate(e env, args []string) int {
 		mode = "decrypting (signer " + *signerSock + ")"
 	}
 	if cfg.Hub != nil {
-		mode += ", asks on hub " + *hubURL + " as " + *instance
+		mode += ", asks on hub " + cfg.Hub.Hosts[0] + " as " + *instance
 	}
 	fmt.Fprintf(e.stderr, "lockhttp gate %s: listening on %s, profile %s, %s\n", version, ln.Addr(), *profile, mode)
 	err = g.Serve(ctx, ln)
@@ -201,7 +204,7 @@ func runSigner(e env, args []string) int {
 	}
 	ln, err := signer.Listen(*listen)
 	if err != nil {
-		fmt.Fprintln(e.stderr, "lockhttp signer:", err)
+		fmt.Fprintln(e.stderr, "lockhttp signer: cannot listen on --listen:", netErrKind(err))
 		return exitFail
 	}
 	ctx, stop := signalContext()
@@ -252,11 +255,16 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 	case rawURL == "" || keyFile == "" || instance == "":
 		return nil, errors.New("--hub, --hub-key-file and --instance go together")
 	case !hubclient.ValidInstance(instance):
-		return nil, fmt.Errorf("invalid instance name %q", instance)
+		return nil, errInstance
 	}
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Hostname() == "" {
-		return nil, fmt.Errorf("--hub must be a URL: %q", rawURL)
+		return nil, errors.New("--hub must be a URL with a host (https://host:port)")
+	}
+	if u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		// The hub authenticates the instance key, never a password or a
+		// token in the URL.
+		return nil, errors.New("--hub must not carry a user, password, query or fragment (https://host:port)")
 	}
 	hubKey, err := hubclient.ReadHubKey(keyFile)
 	if err != nil {
@@ -289,13 +297,13 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 	c, err := hubclient.New(hubclient.Config{URL: rawURL, Instance: instance, Key: key, HubKey: hubKey, PlainHTTP: plainHTTP,
 		StateFile: filepath.Join(dir, "state.json"), Devices: devices, RequireDevice: require, SealClear: devs.SealClear, Facades: facades})
 	if err != nil {
-		return nil, err
+		return nil, redactHubURL(err, rawURL)
 	}
 	nets = append(nets, hubAddrs(u.Hostname())...)
 	if len(nets) == 0 {
 		// Fail closed: without one address of the hub, the gate could not
 		// refuse a name that leads there.
-		return nil, fmt.Errorf("the hub host %s does not resolve: give its network with --hub-net", u.Hostname())
+		return nil, errors.New("the --hub host does not resolve: give its network with --hub-net")
 	}
 	// Last: an open store holds its directory for this process.
 	st, err := plans.Open(filepath.Join(dir, "plans"))
@@ -303,6 +311,52 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 		return nil, err
 	}
 	return &gate.Hub{Client: c, Plans: st, Hosts: []string{u.Hostname()}, Nets: nets}, nil
+}
+
+var errInstance = errors.New("--instance: use 1 to 63 lower-case letters, digits or '-', starting with a letter or digit")
+
+// redactHubURL keeps the --hub URL out of an error of lockkit's hubclient,
+// which quotes it: a URL may carry userinfo (a password or a token).
+func redactHubURL(err error, rawURL string) error {
+	if rawURL == "" {
+		return err
+	}
+	// lockkit quotes with %q (strconv.Quote), which escapes some runes:
+	// replace the quoted form first, then any raw copy.
+	msg := err.Error()
+	red := strings.ReplaceAll(strings.ReplaceAll(msg, strconv.Quote(rawURL), "(--hub)"), rawURL, "(--hub)")
+	if red == msg {
+		return err
+	}
+	return errors.New(red)
+}
+
+// netErrKind is a net error without the address it repeats.
+func netErrKind(err error) string {
+	var oe *net.OpError
+	if errors.As(err, &oe) && oe.Err != nil {
+		var ae *net.AddrError
+		if errors.As(oe.Err, &ae) {
+			return ae.Err
+		}
+		var de *net.DNSError
+		if errors.As(oe.Err, &de) {
+			return de.Err
+		}
+		if _, ok := oe.Err.(*net.ParseError); ok {
+			return "not an address"
+		}
+		return oe.Err.Error()
+	}
+	var ae *net.AddrError
+	if errors.As(err, &ae) {
+		return ae.Err
+	}
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Op + ": " + pe.Err.Error()
+	}
+	return "failed"
 }
 
 // withdrawStandalone withdraws the pending plans of every hub instance in
@@ -340,7 +394,12 @@ func (d hubDevices) read() ([]ticket.Device, []ticket.Risk, error) {
 	}
 	require, err := hubclient.ParseRisks(d.Require)
 	if err != nil {
-		return nil, nil, fmt.Errorf("--require-device: %w", err)
+		// Not lockkit's error, which quotes the value given.
+		names := make([]string, len(ticket.Risks))
+		for i, r := range ticket.Risks {
+			names[i] = string(r)
+		}
+		return nil, nil, fmt.Errorf("--require-device: risk classes, comma-separated, among %s", strings.Join(names, ", "))
 	}
 	if d.File == "" {
 		return nil, nil, nil
@@ -379,7 +438,7 @@ func (l *prefixList) String() string { return fmt.Sprint(*l) }
 func (l *prefixList) Set(s string) error {
 	p, err := netip.ParsePrefix(s)
 	if err != nil {
-		return fmt.Errorf("invalid network %q", s)
+		return errors.New("want a network in CIDR form (10.89.0.0/24)")
 	}
 	*l = append(*l, p.Masked())
 	return nil
@@ -409,7 +468,17 @@ func runHubKey(e env, args []string) int {
 			return exitFail
 		}
 	}
-	if err := hubclient.HubKeyCommand(e.stdout, home, rest); err != nil {
+	// The flags are checked here: lockkit's errors quote the value given.
+	const usage = "lockhttp hub-key --instance NAME [--home DIR]"
+	fs := flag.NewFlagSet("hub-key", flag.ContinueOnError)
+	instance := fs.String("instance", "", "the lock instance name")
+	if !parse(e, fs, "hub-key", usage, rest) {
+		return exitUsage
+	}
+	if !hubclient.ValidInstance(*instance) {
+		return usageFail(e, "hub-key", usage, errInstance.Error())
+	}
+	if err := hubclient.HubKeyCommand(e.stdout, home, []string{"--instance", *instance}); err != nil {
 		fmt.Fprintln(e.stderr, "lockhttp hub-key:", err)
 		return exitUsage
 	}
