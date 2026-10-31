@@ -290,6 +290,7 @@ gate run by hand with `--hub` works with the hub image of the last column.
 
 | lockhttp | lockkit | Under `lock up` (lea's gate) | Hub image, gate run by hand |
 |---|---|---|---|
+| v0.5.1 | v0.8.1 | lockhub v0.2.2 + lea v0.3.0 or later: hub mode, reveals (`reveal: true`), renewals, `devices: true` | v0.2.0 or later |
 | v0.5.0 | v0.6.0 | lockhub v0.2.2 + lea v0.3.0 or later: hub mode, reveals (`reveal: true`), renewals, `devices: true` | v0.2.0 or later |
 | v0.4.0 | v0.4.0 | lockhub v0.2.2 + lea v0.3.0 or later: hub mode, `devices: true`; no reveals, no renewals | v0.1.1 or later; device-signed decisions from v0.2.0 (its mobile facade) |
 | v0.3.0 | v0.3.1 | lockhub v0.2.2 + lea v0.3.0 or later: hub mode only | v0.1.1 or later |
