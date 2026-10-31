@@ -23,8 +23,16 @@ The gate runs hub-attached only (lockkit#110): one mode, `lox up`'s.
 
 ### Changed
 
-- An approved request's gate audit record says `"approval": "hub"` (was
-  `"console"`).
+- `lockhttp console` is lockkit's policy-only console
+  (`console.Options.PolicyOnly`, lockkit v0.9.1): it takes no hub flags,
+  as `lox up` starts it, opens no hub client and approves no request.
+  Only the gate is hub-attached.
+- The hub's decision on a held request is audited once, by the gate,
+  with `"approval": "hub"`, the ticket, the approver and the hub's
+  signature. The record of a request run after the hub approved it within
+  the hold says `"approval": "hub-run"` (was `"console"`), so that
+  lockhub's `lox audit verify --lock` does not read it as a second,
+  unsigned hub decision.
 - The agent's hints name `lox up` for `E_NO_CONSOLE` and lockhub for an
   approval.
 - Docs: the quick start goes through `lox add` and `lox up`; the

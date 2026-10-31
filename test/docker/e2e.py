@@ -3,9 +3,10 @@
 docs/docker.md.
 
 The console runs in a pseudo-terminal this script answers (y to every
-prompt). The console and the gate are hub-attached only: without their
-hub flags the launcher's console and gate refuse to start ("launched by
-`lox up` only"). A request
+prompt). The console is lockkit's policy-only console: it starts without
+hub flags, as `lox up` runs it (`console`, or `console --profile P`), and
+refuses them. The gate is hub-attached only: without its hub flags the
+launcher's gate refuses to start ("launched by `lox up` only"). A request
 through a gate that asks a hub is tested end to end by lockhub's e2e,
 which runs the lockhttp lock under `lox up`. Needs docker. Uses the
 launcher's real names (lockhttp-console, lockhttp-gate, volumes
@@ -60,13 +61,13 @@ def cleanup():
 class Console:
     """The console in a pseudo-terminal, approving every prompt."""
 
-    def __init__(self):
+    def __init__(self, *args):
         self.out = b""
         self.lock = threading.Lock()
         self.answered = 0
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
-            os.execvp("sh", ["sh", LAUNCHER, "console"])
+            os.execvp("sh", ["sh", LAUNCHER, "console", *args])
         threading.Thread(target=self.pump, daemon=True).start()
 
     def pump(self):
@@ -123,10 +124,20 @@ def main():
         r = launcher("doctor", check_=False)
         check(r.returncode == 0 and "separated setup" in r.stdout, "doctor passes as the console account", r.stdout + r.stderr)
 
-        # The console does not start without the hub either: lox up gives
-        # its flags.
-        console = Console()
-        check(console.wait_for("launched by `lox up` only"), "the console needs the hub", console.text())
+        # The console starts without hub flags, as lox up runs it (lockhub
+        # internal/family/compose.go gives a gate kind's console `console`,
+        # plus `--profile P` when the lock names one): it approves its first
+        # policy, listens, and asks no hub.
+        for args in ([], ["--profile", "default"]):
+            console = Console(*args)
+            check(console.wait_for("Listening on"), f"the console listens without hub flags ({' '.join(['console', *args])})", console.text())
+            check(console.wait_for("Policy only"), "the console is policy-only", console.text())
+            check("lockhub at" not in console.text(), "the console asks no hub", console.text())
+            sh("docker", "rm", "-f", "lockhttp-console", check_=False)
+
+        # The hub flags lox up gives the other locks' consoles are refused.
+        r = launcher("console", "--hub", "http://lockhub:8443", "--hub-plain-http", "--hub-key-file", "/run/lockfamily/hub.pub", "--instance", "web", check_=False)
+        check(r.returncode != 0 and "-hub" in r.stderr, "the console takes no hub flags", r.stdout + r.stderr)
 
         # The gate does not start without the hub: lox up gives its flags.
         r = launcher("gate", check_=False)

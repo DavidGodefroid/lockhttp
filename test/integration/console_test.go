@@ -3,7 +3,8 @@
 // Package integration runs the gate against a real lockkit console in the
 // same process (the console's same-user mode, which only a test build may
 // turn on: lockkit IsolationEnv.AllowSameUser, on a private socket) and
-// lockkit's test hub: the console serves the policy, the hub decides the
+// lockkit's test hub: the console serves the policy (lockkit's policy-only
+// console, without a hub, as lox up starts it), the gate's hub decides the
 // held requests.
 package integration
 
@@ -11,7 +12,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/base64"
 	"io"
 	"net"
 	"net/http"
@@ -80,13 +80,12 @@ func startConsole(t *testing.T, h *human) context.CancelFunc {
 	if err := os.WriteFile(cfg, []byte(policyText), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	hubOpts := consoleHub(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	ready := make(chan string, 1)
 	done := make(chan error, 1)
 	go func() {
 		done <- console.Run(ctx, product.P, httpconsole.New(httpconsole.Options{Profile: "default", Config: cfg}), console.Options{
-			Profile: "default", IO: h, StateDir: filepath.Join(dir, "state"), Quantum: -1, Hub: hubOpts,
+			Profile: "default", IO: h, StateDir: filepath.Join(dir, "state"), Quantum: -1, PolicyOnly: true,
 			Harden: func() error { return nil },
 			Isolation: &console.IsolationEnv{
 				AllowSameUser: true,
@@ -114,24 +113,6 @@ func startConsole(t *testing.T, h *human) context.CancelFunc {
 			t.Error("the console did not stop")
 		}
 	}
-}
-
-// consoleHub is the console's own test hub (the console is hub-attached
-// only): apart from the gate's, so that its decisions poll never takes one
-// meant for the gate.
-func consoleHub(t *testing.T) console.HubOptions {
-	t.Helper()
-	home := t.TempDir()
-	key, err := hubclient.InstanceKey(home, "egress-console")
-	if err != nil {
-		t.Fatal(err)
-	}
-	hub := hubtest.New(t, "egress-console", key.Public().(ed25519.PublicKey))
-	keyFile := filepath.Join(t.TempDir(), "hub.pub")
-	if err := os.WriteFile(keyFile, []byte(base64.StdEncoding.EncodeToString(hub.Pub)+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return console.HubOptions{URL: hub.URL(), KeyFile: keyFile, Instance: "egress-console", Home: home}
 }
 
 // startGate starts a gate on the console's policy, asking a test hub.

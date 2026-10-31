@@ -2,6 +2,8 @@ github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/DavidGodefroid/lockkit v0.9.0 h1:Ed4F1nZ7Pb/a7LuyvXq+MWHUHCgJJU75CwUUeOxOJFU=
 github.com/DavidGodefroid/lockkit v0.9.0/go.mod h1:E4k9vDNBj9yEE3a9AQarl3PI8J6V4NtKxt28TZ/vB/A=
+github.com/DavidGodefroid/lockkit v0.9.1-0.20261031185947-6c0db3c20251 h1:/OBAUC+9vht1u8Uq+2m0Avz5PIM0TY6sJxtOStHrioI=
+github.com/DavidGodefroid/lockkit v0.9.1-0.20261031185947-6c0db3c20251/go.mod h1:E4k9vDNBj9yEE3a9AQarl3PI8J6V4NtKxt28TZ/vB/A=
 github.com/danieljoos/wincred v1.2.3 h1:v7dZC2x32Ut3nEfRH+vhoZGvN72+dQ/snVXo/vMFLdQ=
 github.com/danieljoos/wincred v1.2.3/go.mod h1:6qqX0WNrS4RzPZ1tnroDzq9kY3fu1KwE7MRLQK4X0bs=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=

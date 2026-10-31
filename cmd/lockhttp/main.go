@@ -15,6 +15,9 @@ import (
 	"syscall"
 
 	"golang.org/x/term"
+
+	"github.com/DavidGodefroid/lockkit/console"
+	"github.com/DavidGodefroid/lockkit/kit"
 )
 
 // version is set at build time (-X main.version=...).
@@ -41,6 +44,8 @@ type env struct {
 	editor func(path string) error
 	// userConfig is the console's config file; "" is the real one.
 	userConfig string
+	// consoleRun replaces console.Run (tests); nil is console.Run.
+	consoleRun func(ctx context.Context, p kit.Product, b console.Backend, o console.Options) error
 }
 
 const usageText = `usage: lockhttp <command> [arguments]
@@ -53,7 +58,7 @@ Human commands (console account)
                                    write the policy file
   policy   show | edit | path [--config FILE]
                                    print, edit or locate the policy file
-  console  --hub URL --hub-key-file FILE --instance NAME [--profile P] [--config FILE]
+  console  [--profile P] [--config FILE]
                                    run the policy console (lox up runs it)
   doctor   [--profile P] [--config FILE] [--ca-cert FILE] [--gate ADDR]
                                    check the setup
