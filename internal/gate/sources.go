@@ -84,8 +84,8 @@ func parseSources(b []byte) (*sourceMap, error) {
 	return m, nil
 }
 
-// Sources resolves who sent a connection. With no file it runs in
-// standalone mode: every connection is container "local".
+// Sources resolves who sent a connection, from the sources.json lea
+// writes. With no file, every connection is container "local".
 type Sources struct {
 	path string
 
@@ -96,7 +96,7 @@ type Sources struct {
 	size    int64
 }
 
-// NewSources loads path ("" for standalone mode).
+// NewSources loads path ("" for none: every connection is "local").
 func NewSources(path string) *Sources {
 	s := &Sources{path: path}
 	s.Reload()

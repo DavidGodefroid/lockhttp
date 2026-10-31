@@ -124,7 +124,8 @@ func TestGateRefusesRoot(t *testing.T) {
 	if code != exitUsage || !strings.Contains(errs, "refused as root") {
 		t.Fatalf("root gate: %d %s", code, errs)
 	}
-	if code, _, _ := runEnv(t, env{euid: func() int { return 1000 }}, "gate", "--ca-cert", "x"); code != exitUsage {
+	hub := []string{"--hub", "http://127.0.0.1:8443", "--hub-key-file", writeHubPub(t), "--instance", "egress", "--home", t.TempDir()}
+	if code, _, errs := runEnv(t, env{euid: func() int { return 1000 }}, append([]string{"gate", "--ca-cert", "x"}, hub...)...); code != exitUsage || !strings.Contains(errs, "go together") {
 		t.Fatal("--ca-cert without --signer accepted")
 	}
 	if code, _, _ := runEnv(t, env{}, "gate", "--check", "--listen", "127.0.0.1:1"); code != exitFail {
@@ -152,6 +153,18 @@ func TestCAInitAndSignerKeyMode(t *testing.T) {
 func TestConsoleNeedsTTY(t *testing.T) {
 	if code, _, errs := runEnv(t, env{}, "console"); code != exitUsage || !strings.Contains(errs, "terminal") {
 		t.Fatalf("console without tty: %d %s", code, errs)
+	}
+}
+
+// The gate runs hub-attached only: without its hub flags it does not
+// start, and it says that `lox up` (through lea) gives them.
+func TestGateHubOnly(t *testing.T) {
+	gate := env{euid: func() int { return 1000 }}
+	for _, args := range [][]string{nil, {"--upstream", "http://127.0.0.1:3128"}, {"--sources", "s.json", "--profile", "p"}} {
+		code, out, errs := runEnv(t, gate, append([]string{"gate", "--listen", "127.0.0.1:0"}, args...)...)
+		if code != exitUsage || out != "" || !strings.Contains(errs, "launched by `lox up` only") || !strings.Contains(errs, "--hub") {
+			t.Errorf("%v: %d %q %s", args, code, out, errs)
+		}
 	}
 }
 

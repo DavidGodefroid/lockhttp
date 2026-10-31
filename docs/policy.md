@@ -115,7 +115,7 @@ a `CONNECT` to it is decided at the domain. With `read = true`, a
 | Key | Required | Meaning |
 |---|---|---|
 | `id` | yes | Unique in the profile. 1-64 characters: letters, digits, `_`, `-`, `.`, starting with a letter or digit. |
-| `container` | no | The container it applies to (lea's container name, `local` in standalone mode); empty: every container. |
+| `container` | no | The container it applies to (lea's container name, `local` without a `sources.json`); empty: every container. |
 | `agent` | | **Refused.** An agent name is declarative; rules apply to a container or to all. |
 | `host` | yes | A host pattern, or `*`. |
 | `methods` | no | HTTP methods (upper-cased); empty: every method. |
@@ -128,7 +128,7 @@ a `CONNECT` to it is decided at the domain. With `read = true`, a
 | Verdict | Effect when the rule decides |
 |---|---|
 | `free` | FREE. |
-| `auto` | ASK, and the console's auto mode may answer it (see below). |
+| `auto` | ASK. The gate asks lockhub, which has no auto mode for its asks: an `auto` rule asks like `ask` (see below). |
 | `ask` | ASK, `NeverAuto`. |
 | `deny` | DENY, `E_RULE`. |
 
@@ -142,15 +142,10 @@ webhooks), the rule's methods can publish to a package or image registry
 contains `git-receive-pack`, or the rule allows a write to any path of
 `github.com`, `gitlab.com`, `bitbucket.org` or `codeberg.org`.
 
-At run time, an `auto` rule still gives a `NeverAuto` screen when the
-request is an upload, a message, a publish, a git push, a WebSocket or a
-`CONNECT`, when the screen is red (a heuristic hit, a Claude API parameter),
-or when its body exceeds `max_body`. The console then re-checks, against its
-own approved policy, that the rule exists, is active, says `auto`, may be
-`auto`, and matches the request's host, method, path, container and body
-size; anything else stays `NeverAuto`, whatever the gate claimed. Auto mode
-answers only when you turned it on in the console (Shift+Tab, or
-`lockhttp console --auto`).
+The gate runs hub-attached only, and every hub ticket it makes is
+`NeverAuto`: the hub cannot check an `auto` rule against the console's
+policy, so a human answers every held request, `auto` rule or not. The
+verdict stays valid in a policy file (and keeps the checks above).
 
 ## Evaluation order
 
@@ -388,7 +383,7 @@ trusted = ["docs.rs", "readthedocs.io", "*.readthedocs.io"]
 ```
 
 A container-scoped rule auto mode may answer (container names come from
-lea's `sources.json`; `local` in standalone mode):
+lea's `sources.json`):
 
 ```toml
 [[profiles.default.rules]]

@@ -1,15 +1,21 @@
 //go:build integration && linux
 
 // Package integration runs the gate against a real lockkit console in the
-// same process: the console's same-user mode, which only a test build may
-// turn on (lockkit IsolationEnv.AllowSameUser), on a private socket.
+// same process (the console's same-user mode, which only a test build may
+// turn on: lockkit IsolationEnv.AllowSameUser, on a private socket) and
+// lockkit's test hub: the console serves the policy, the hub decides the
+// held requests.
 package integration
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -19,7 +25,11 @@ import (
 	"time"
 
 	"github.com/DavidGodefroid/lockkit/console"
+	"github.com/DavidGodefroid/lockkit/hubclient"
+	"github.com/DavidGodefroid/lockkit/hubclient/hubtest"
+	"github.com/DavidGodefroid/lockkit/plans"
 	"github.com/DavidGodefroid/lockkit/sysconf"
+	"github.com/DavidGodefroid/lockkit/ticket"
 
 	"github.com/DavidGodefroid/lockhttp/internal/gate"
 	"github.com/DavidGodefroid/lockhttp/internal/httpconsole"
@@ -60,15 +70,9 @@ const policyText = `
 [profiles.default]
 hold = "5s"
 trusted = ["trusted.test"]
-
-[[profiles.default.rules]]
-id = "hooks"
-host = "hooks.test"
-methods = ["POST"]
-verdict = "auto"
 `
 
-func startConsole(t *testing.T, h *human, auto bool) context.CancelFunc {
+func startConsole(t *testing.T, h *human) context.CancelFunc {
 	t.Helper()
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "config.toml")
@@ -80,7 +84,7 @@ func startConsole(t *testing.T, h *human, auto bool) context.CancelFunc {
 	done := make(chan error, 1)
 	go func() {
 		done <- console.Run(ctx, product.P, httpconsole.New(httpconsole.Options{Profile: "default", Config: cfg}), console.Options{
-			Profile: "default", IO: h, StateDir: filepath.Join(dir, "state"), Auto: auto, Quantum: -1,
+			Profile: "default", IO: h, StateDir: filepath.Join(dir, "state"), Quantum: -1,
 			Harden: func() error { return nil },
 			Isolation: &console.IsolationEnv{
 				AllowSameUser: true,
@@ -110,10 +114,38 @@ func startConsole(t *testing.T, h *human, auto bool) context.CancelFunc {
 	}
 }
 
-func startGate(t *testing.T, backend string) (string, *gate.Gate) {
+// startGate starts a gate on the console's policy, asking a test hub.
+func startGate(t *testing.T, backend string) (string, string, *hubtest.Hub) {
 	t.Helper()
+	pub, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub := hubtest.New(t, "egress", pub)
+	// hubtest answers the decisions poll at once: slow it down, as a long
+	// poll would, so that the client's watch does not spin.
+	target, _ := url.Parse(hub.URL())
+	rp := httputil.NewSingleHostReverseProxy(target)
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/decisions" {
+			time.Sleep(20 * time.Millisecond)
+		}
+		rp.ServeHTTP(w, r)
+	}))
+	t.Cleanup(slow.Close)
+	dir := t.TempDir()
+	st, err := plans.Open(filepath.Join(dir, "plans"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cl, err := hubclient.New(hubclient.Config{URL: slow.URL, Instance: "egress", Key: key, HubKey: hub.Pub, StateFile: filepath.Join(dir, "state.json")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &gate.Hub{Client: cl, Plans: st, Poll: 20 * time.Millisecond}
 	g := gate.New(gate.Config{
 		Profile: "default", Console: &gate.LockkitConsole{Profile: "default"}, PolicyPoll: 100 * time.Millisecond,
+		Hub: h, StatusFile: filepath.Join(dir, "status.json"),
 		Upstream: nil,
 		Resolve:  func(context.Context, string) ([]netipAddr, error) { return []netipAddr{publicTestAddr}, nil },
 		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
@@ -126,18 +158,44 @@ func startGate(t *testing.T, backend string) (string, *gate.Gate) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(func() { cancel(); ln.Close() })
+	t.Cleanup(func() {
+		cancel()
+		ln.Close()
+		select {
+		case <-g.Stopped():
+		case <-time.After(10 * time.Second):
+			t.Error("the gate did not stop")
+		}
+		_ = h.Close()
+	})
 	go g.Run(ctx)
 	go func() { _ = g.Serve(ctx, ln) }()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if p, _ := g.Policy(); p != nil {
-			return ln.Addr().String(), g
+			return ln.Addr().String(), filepath.Join(dir, "status.json"), hub
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("the gate never received the console's policy")
-	return "", nil
+	return "", "", nil
+}
+
+// decideNext decides the next ticket the hub gets (none of seen) o.
+func decideNext(t *testing.T, hub *hubtest.Hub, seen map[string]bool, o ticket.Outcome, reason string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, id := range hub.Tickets() {
+			if !seen[id] {
+				seen[id] = true
+				hub.Decide(id, o, reason)
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Error("no new ticket on the hub")
 }
 
 func client(addr string) *http.Client {
@@ -188,62 +246,64 @@ func get(t *testing.T, c *http.Client, method, u, body string) (*http.Response, 
 func TestGateWithRealConsole(t *testing.T) {
 	setRuntime(t)
 	h := &human{answers: make(chan string, 8)}
-	stop := startConsole(t, h, false)
+	stop := startConsole(t, h)
 	defer stop()
-	addr, _ := startGate(t, backend(t))
+	addr, _, hub := startGate(t, backend(t))
 	c := client(addr)
+	prompts := strings.Count(h.text(), "PROMPT")
 
-	// Trusted read: free, the console is not asked.
+	// Trusted read: free, the hub is not asked.
 	if resp, body := get(t, c, "GET", "http://trusted.test/a", ""); resp.StatusCode != 200 || body != "ok GET trusted.test/a " {
 		t.Fatalf("trusted: %s %q", resp.Status, body)
 	}
-	// A write asks the human; y approves it.
-	h.answers <- "y"
-	if resp, body := get(t, c, "POST", "http://unknown.test/w", `{"a":1}`); resp.StatusCode != 200 || !strings.Contains(body, `{"a":1}`) {
-		t.Fatalf("approved write: %s %q\n%s", resp.Status, body, h.text())
+	if n := len(hub.Tickets()); n != 0 {
+		t.Fatalf("a trusted read made %d tickets", n)
 	}
-	screen := h.text()
-	for _, want := range []string{"POST unknown.test", "container local", "agent dev-5 (declared", "preview (masked)"} {
-		if !strings.Contains(screen, want) {
-			t.Fatalf("screen lacks %q:\n%s", want, screen)
+	// A write is a ticket on the hub; approved there, it goes through.
+	seen := map[string]bool{}
+	go decideNext(t, hub, seen, ticket.Approved, "")
+	if resp, body := get(t, c, "POST", "http://unknown.test/w", `{"a":1}`); resp.StatusCode != 200 || !strings.Contains(body, `{"a":1}`) {
+		t.Fatalf("approved write: %s %q", resp.Status, body)
+	}
+	ids := hub.Tickets()
+	if len(ids) != 1 {
+		t.Fatalf("tickets %v", ids)
+	}
+	tk := string(hub.Ticket(ids[0]))
+	for _, want := range []string{"unknown.test", "dev-5"} {
+		if !strings.Contains(tk, want) {
+			t.Fatalf("ticket lacks %q:\n%s", want, tk)
 		}
 	}
-	// n <reason> denies, and the reason reaches the agent.
-	h.answers <- "n not now"
+	// Denied on the hub, with the reason the agent gets.
+	time.Sleep(50 * time.Millisecond)
+	go decideNext(t, hub, seen, ticket.Denied, "not now")
 	resp, body := get(t, c, "POST", "http://unknown.test/w", `{"a":2}`)
 	if resp.StatusCode != 403 || resp.Header.Get("X-LockHTTP-Code") != "E_DENIED" || !strings.Contains(body, "not now") {
 		t.Fatalf("denied write: %s %v %q", resp.Status, resp.Header, body)
 	}
-}
-
-func TestAutoModeOnlyForAutoRules(t *testing.T) {
-	setRuntime(t)
-	h := &human{answers: make(chan string, 8)}
-	stop := startConsole(t, h, true)
-	defer stop()
-	addr, _ := startGate(t, backend(t))
-	c := client(addr)
-	// A rule with verdict auto: auto mode approves it without a prompt.
-	if resp, _ := get(t, c, "POST", "http://hooks.test/x", `{}`); resp.StatusCode != 200 {
-		t.Fatalf("auto rule: %s\n%s", resp.Status, h.text())
-	}
-	if !strings.Contains(h.text(), "auto-approved") {
-		t.Fatalf("not auto-approved:\n%s", h.text())
-	}
-	// Any other write is NeverAuto: the human is asked even in auto mode.
-	h.answers <- "n"
-	if resp, _ := get(t, c, "POST", "http://other.test/x", `{}`); resp.StatusCode != 403 {
-		t.Fatalf("NeverAuto write passed in auto mode: %s", resp.Status)
+	// The console's terminal never asked about a request.
+	if n := strings.Count(h.text(), "PROMPT"); n != prompts {
+		t.Fatalf("the console asked its human about a request:\n%s", h.text())
 	}
 }
 
 func TestNoConsoleFailsClosed(t *testing.T) {
 	setRuntime(t)
 	h := &human{answers: make(chan string, 8)}
-	stop := startConsole(t, h, false)
-	addr, g := startGate(t, backend(t))
+	stop := startConsole(t, h)
+	addr, status, _ := startGate(t, backend(t))
 	stop()
+	// The gate sees the console leave (its status file says down); its
+	// next ask is refused at once.
 	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if b, _ := os.ReadFile(status); strings.Contains(string(b), `"console":"down"`) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	deadline = time.Now().Add(5 * time.Second)
 	c := client(addr)
 	for time.Now().Before(deadline) {
 		resp, _ := get(t, c, "POST", "http://unknown.test/w", `{}`)
@@ -252,7 +312,6 @@ func TestNoConsoleFailsClosed(t *testing.T) {
 			if resp, _ := get(t, c, "GET", "http://trusted.test/a", ""); resp.StatusCode != 200 {
 				t.Fatalf("FREE without console: %s", resp.Status)
 			}
-			_ = g
 			return
 		}
 		time.Sleep(100 * time.Millisecond)

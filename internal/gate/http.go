@@ -81,10 +81,7 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 	fp := RequestFingerprint(src.Container, req.Method, target, req.Header, bodyFP)
 	var d decide.Decision
 	hard, isHard := decide.Hard(pol, r)
-	wd, withdrawn := g.withdrawnRefusal(fp)
 	switch {
-	case withdrawn:
-		d = wd
 	case isHard:
 		d = hard
 	case g.grants.UseOnce(fp):
@@ -131,10 +128,7 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 			writeRefusalTicket(w, id, out.Code, out.Reason, out.Ticket, false)
 			return true
 		}
-		rec.Base.Approval = "console"
-		if out.Auto {
-			rec.Base.Approval = "auto"
-		}
+		rec.Base.Approval = "hub"
 	}
 	// Forward.
 	out := req.Clone(ctx)

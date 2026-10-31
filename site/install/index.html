@@ -85,9 +85,9 @@ lockhttp version</code></pre>
   <tbody>
   <tr><th scope="row"><code>lockhttp init</code></th><td>container, as <code>lockhttp</code></td><td>Writes the policy (<code>~/.config/lockhttp/config.toml</code> in the volume <code>lockhttp-home</code>). <code>--trusted</code> imports lea’s <code>LEA_EGRESS_ALLOW</code> as trusted read-only hosts.</td></tr>
   <tr><th scope="row"><code>lockhttp policy show|edit|path</code></th><td>container, as <code>lockhttp</code></td><td>Prints, edits or locates the policy.</td></tr>
-  <tr><th scope="row"><code>lockhttp console</code></th><td>container <code>lockhttp-console</code>, as <code>lockhttp</code></td><td>The approval console: approvals, policy review, auto mode, audit.</td></tr>
+  <tr><th scope="row"><code>lockhttp console</code></th><td>container <code>lockhttp-console</code>, as <code>lockhttp</code></td><td>The policy console: it serves the approved policy to the gate and asks you about every loosening. Under <code>lox up</code> it runs in a service of its own.</td></tr>
   <tr><th scope="row"><code>lockhttp doctor</code></th><td>container, as <code>lockhttp</code></td><td>Checks the setup.</td></tr>
-  <tr><th scope="row"><code>lockhttp gate</code></th><td>its own container, as <code>gate</code></td><td>The HTTP(S) proxy. lea starts it beside its proxy container; <code>lockhttp gate</code> runs one on <code>127.0.0.1:3130</code> for standalone use.</td></tr>
+  <tr><th scope="row"><code>lockhttp gate</code></th><td>its own container, as <code>gate</code></td><td>The HTTP(S) proxy, hub-attached only: lea starts it beside its proxy container with the hub flags <code>lox up</code> gives it.</td></tr>
   <tr><th scope="row"><code>lockhttp signer</code>, <code>lockhttp ca init</code></th><td>sidecar containers / your machine (launcher)</td><td>Phase 2 (TLS decryption): the local CA and the process that holds its key.</td></tr>
   <tr><th scope="row"><code>lockhttp version</code>, <code>help</code></th><td>anywhere</td><td>Exit codes: 0 ok · 1 failed · 3 usage/config error.</td></tr>
   </tbody>
@@ -99,9 +99,8 @@ lockhttp version</code></pre>
   <h2 id="setup">Setup with lea</h2>
   <ol class="steps prose">
     <li><strong>Install the launcher.</strong> <code>scripts/install.sh</code>, as above. There is no host account or group to create: they are in the image.</li>
-    <li><strong>Write the policy.</strong> <code>lockhttp init</code>, optionally <code>--trusted "&lt;LEA_EGRESS_ALLOW&gt;"</code>. It runs as the console account and writes into its volume. lea never writes this file, and an agent cannot reach it.</li>
-    <li><strong>Start the console.</strong> In a terminal you keep in view: <code>lockhttp console</code>. It runs as <code>lockhttp</code> in the container <code>lockhttp-console</code>, the only one with the policy volume.</li>
-    <li><strong>Turn it on in lea.</strong> <code>LEA_LOCKHTTP=1</code>. lea starts the gate from the same image beside its proxy container, puts squid on loopback behind it, routes keyproxy through it and switches off the SSH git forwarders.</li>
+    <li><strong>Add the lock and start the hub.</strong> In your projects directory: <code>lox add lockhttp web</code> (its policy in <code>.lockhttp/config.toml</code>), then <code>lox up</code>, which runs the hub and the lockhttp console (<code>lox attach web</code> for its terminal). lea never writes the policy.</li>
+    <li><strong>Turn it on in lea.</strong> <code>LEA_LOCKHTTP=1</code>. lea starts the gate from the same image beside its proxy container, asking the hub of <code>lox up</code>, puts squid on loopback behind it, routes keyproxy through it and switches off the SSH git forwarders.</li>
     <li><strong>Check.</strong> <code>lockhttp doctor</code>, and lea’s own doctor: from an agent, <code>curl --noproxy '*' https://example.com</code> must fail.</li>
   </ol>
   <p class="prose">Every file, mount and flag lea uses is in the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">lea integration contract</a>.</p>

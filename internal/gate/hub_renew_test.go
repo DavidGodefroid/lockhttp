@@ -6,7 +6,6 @@
 package gate
 
 import (
-	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
@@ -28,9 +27,6 @@ import (
 	"github.com/DavidGodefroid/lockkit/hubclient/hubtest"
 	"github.com/DavidGodefroid/lockkit/plans"
 	"github.com/DavidGodefroid/lockkit/ticket"
-
-	"github.com/DavidGodefroid/lockhttp/internal/policy"
-	"github.com/DavidGodefroid/lockhttp/internal/wire"
 )
 
 // clock is a test clock shared by the gate, its plans and its hub client.
@@ -92,23 +88,13 @@ func newLockhubEnv(t *testing.T, mod func(*hubclient.Config)) *lockhubEnv {
 		t.Fatal(err)
 	}
 	h := &Hub{Client: cl, Plans: st, Poll: 20 * time.Millisecond}
-	var g *Gate
-	t.Cleanup(func() {
-		select {
-		case <-g.Stopped():
-		case <-time.After(10 * time.Second):
-			t.Error("the gate did not stop")
-		}
-		if err := h.Close(); err != nil {
-			t.Error(err)
-		}
+	// The gate's Hub is h (newEnvHub closes it once the gate stopped).
+	e := newEnvHub(t, hubTestPolicy, true, nil, nil, func(cfg *Config) {
+		_ = cfg.Hub.Close() // the fake hub's, unused
+		cfg.Hub = h
+		cfg.Log = testLog{t}
+		cfg.Now = c.now
 	})
-	e := newEnv(t, hubTestPolicy, true, func(cfg *Config) { cfg.Hub = h; cfg.Log = testLog{t}; cfg.Now = c.now })
-	g = e.gate
-	e.console.answer = func(p wire.ApproveParams) (wire.ApproveResult, error) {
-		t.Errorf("the console was asked about %s %s", p.Method, p.Host)
-		return wire.ApproveResult{}, &Refusal{Code: "E_DENIED"}
-	}
 	return &lockhubEnv{env: e, hub: hub, clock: c, h: h, lockPub: pub, dir: dir}
 }
 
@@ -407,102 +393,6 @@ func waitAnswer(t *testing.T, h *hubtest.Hub, q string) []byte {
 	}
 	t.Fatalf("hub request %s not answered", q)
 	return nil
-}
-
-// D.5: a gate started without its hub withdraws the plans its hub mode
-// left pending, refuses their request explicitly, without asking the
-// console or running it, and the next start in hub mode tells the hub.
-func TestHubWithdrawnStandalone(t *testing.T) {
-	pub, key, _ := ed25519.GenerateKey(rand.Reader)
-	hub := hubtest.New(t, "egress", pub)
-	home := t.TempDir()
-	dir := filepath.Join(home, "hub", "egress")
-	newClient := func() *hubclient.Client {
-		cl, err := hubclient.New(hubclient.Config{URL: hub.URL(), Instance: "egress", Key: key, HubKey: hub.Pub, StateFile: filepath.Join(dir, "state.json")})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return cl
-	}
-	// The request as the gate fingerprints it, from a gate in hub mode.
-	he := newLockhubEnv(t, nil)
-	he.backend("example.com", true, http.HandlerFunc(ok))
-	he.remap("example.com", "443")
-	held, err := he.h.Plans.ByTicket(pending(t, he.send(he.client("dev-5", true), "https://example.com/up", `{"a":3}`)), plans.Caller{UID: os.Getuid()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var b0 hubPlan
-	if err := json.Unmarshal(held.Body, &b0); err != nil {
-		t.Fatal(err)
-	}
-	fp, p := b0.Fingerprint, b0.Params
-	_, polFP := he.gate.Policy()
-	// Hub mode in the gate's volume: the request is a pending ticket; the
-	// gate dies before it is decided (nothing withdraws it).
-	st, err := plans.Open(filepath.Join(dir, "plans"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	hg := New(Config{Hub: &Hub{Client: newClient(), Plans: st}})
-	id, _, err := hg.hubSubmit(context.Background(), fp, p, &policy.Policy{}, polFP, plans.Caller{UID: os.Getuid()})
-	if err != nil || hub.Ticket(id) == nil {
-		t.Fatalf("hub mode ticket %q: %v", id, err)
-	}
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
-	// Standalone start.
-	w, err := WithdrawStandalone(filepath.Join(home, "hub"))
-	if err != nil || len(w.Tickets()) != 1 || w.Tickets()[0] != id {
-		t.Fatalf("withdrawn %v: %v", w.Tickets(), err)
-	}
-	var hits atomic.Int32
-	e := newEnv(t, testPolicy, true, func(cfg *Config) { cfg.Withdrawn = w })
-	e.backend("example.com", true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1); ok(w, r) }))
-	e.remap("example.com", "443")
-	var asked atomic.Int32
-	e.console.answer = func(wire.ApproveParams) (wire.ApproveResult, error) {
-		asked.Add(1)
-		return wire.ApproveResult{Approved: true}, nil
-	}
-	c := e.client("dev-5", true)
-	req, _ := http.NewRequest("POST", "https://example.com/up", strings.NewReader(`{"a":3}`))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var b strings.Builder
-	_, _ = io.Copy(&b, resp.Body)
-	if resp.StatusCode != 403 || resp.Header.Get("X-LockHTTP-Code") != "E_WITHDRAWN" || !strings.Contains(b.String(), "withdrawn: the gate runs without its hub") ||
-		!strings.Contains(b.String(), id) {
-		t.Fatalf("withdrawn ticket's request: %s %v\n%s", resp.Status, resp.Header, b.String())
-	}
-	if hits.Load() != 0 || asked.Load() != 0 {
-		t.Fatalf("the withdrawn request ran %d times, the console was asked %d times", hits.Load(), asked.Load())
-	}
-	if !hasRecord(e.auditText(), map[string]string{"event": "refused", "code": "E_WITHDRAWN", "rule": "hub:withdrawn"}) {
-		t.Errorf("audit lacks the refusal:\n%s", e.auditText())
-	}
-	// Sent again, it is a new request for the console.
-	req, _ = http.NewRequest("POST", "https://example.com/up", strings.NewReader(`{"a":3}`))
-	req.Header.Set("Content-Type", "application/json")
-	if resp, err := c.Do(req); err != nil || resp.StatusCode != 200 || asked.Load() != 1 {
-		t.Fatalf("sent again: %v %v, console asked %d", resp, err, asked.Load())
-	}
-	// The next start in hub mode tells the hub.
-	st, err = plans.Open(filepath.Join(dir, "plans"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	if err := newClient().Sync(context.Background(), st); err != nil {
-		t.Fatal(err)
-	}
-	if reason, ok := hub.Withdrawn(id); !ok || reason != StandaloneReason {
-		t.Fatalf("hub withdrawal %q %v", reason, ok)
-	}
 }
 
 // In hub mode an E_TIMEOUT names its expired ticket, and its hint says

@@ -113,8 +113,9 @@ jobs:
         run: go test -tags integration -count=1 -timeout 15m ./test/integration/...
 
   # The image of docs/docker.md, driven through the launcher as a user
-  # would: the console in a pseudo-terminal, the gate in its own container,
-  # requests through the gate's published port (test/docker/e2e.py).
+  # would: the console in a pseudo-terminal, the gate refused without its
+  # hub flags (test/docker/e2e.py). Requests through a hub-attached gate
+  # are lockhub's e2e.
   docker:
     name: docker image (launcher e2e)
     runs-on: ubuntu-latest

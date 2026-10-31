@@ -40,6 +40,9 @@ type fakeHub struct {
 	consumed  map[string]bool
 	withdraws map[string]bool
 	logs      []string // what the gate logged
+	// answer, when set, is the decision filed on every new ticket.
+	answer ticket.Outcome
+	reason string
 }
 
 func (h *fakeHub) withdrawn(id string) bool { h.mu.Lock(); defer h.mu.Unlock(); return h.withdraws[id] }
@@ -71,7 +74,11 @@ func (h *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.mu.Lock()
 		h.tickets = append(h.tickets, t)
 		h.raw[t.ID] = b
+		o, reason := h.answer, h.reason
 		h.mu.Unlock()
+		if o != "" {
+			h.decide(t, o, reason, nil, "")
+		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"ticket": t.ID})
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/decisions":
 		since, _ := strconv.Atoi(r.URL.Query().Get("since"))
@@ -168,7 +175,8 @@ func (h *fakeHub) file(id string, d *ticket.Decision) {
 	h.mu.Unlock()
 }
 
-// hubEnv is a gate in hub mode, its fake hub and its plan store.
+// hubEnv is a gate, its fake hub (which answers nothing by itself) and
+// its plan store.
 func hubEnv(t *testing.T, conf string, mutate func(*Hub)) (*env, *fakeHub) {
 	t.Helper()
 	return hubEnvWith(t, conf, nil, mutate)
@@ -177,6 +185,14 @@ func hubEnv(t *testing.T, conf string, mutate func(*Hub)) (*env, *fakeHub) {
 // hubEnvWith is hubEnv with the hub client's configuration changed by
 // config (pinned devices).
 func hubEnvWith(t *testing.T, conf string, config func(*hubclient.Config), mutate func(*Hub)) (*env, *fakeHub) {
+	t.Helper()
+	e := newEnvHub(t, conf, true, config, mutate, nil)
+	return e, e.hub
+}
+
+// newTestHub is a fake hub and the gate's Hub on it: its client (with
+// config applied), a plan store, mutate applied.
+func newTestHub(t *testing.T, config func(*hubclient.Config), mutate func(*Hub)) (*fakeHub, *Hub) {
 	t.Helper()
 	pub, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -201,29 +217,15 @@ func hubEnvWith(t *testing.T, conf string, config func(*hubclient.Config), mutat
 	if mutate != nil {
 		mutate(h)
 	}
-	// Runs after newEnv's cleanup stopped the gate, before the hub and the
-	// plans directory go: the stopped asks withdraw their tickets first.
-	var g *Gate
-	t.Cleanup(func() {
-		select {
-		case <-g.Stopped():
-		case <-time.After(10 * time.Second):
-			t.Error("the gate did not stop")
-		}
-		// Before the plans directory goes (Windows refuses to remove a
-		// locked file).
-		if err := h.Close(); err != nil {
-			t.Error(err)
-		}
-	})
-	e := newEnv(t, conf, true, func(cfg *Config) { cfg.Hub = h; cfg.Log = hubLog{t, fh} })
-	g = e.gate
-	// The console is never asked in hub mode.
-	e.console.answer = func(p wire.ApproveParams) (wire.ApproveResult, error) {
-		t.Errorf("the console was asked about %s %s", p.Method, p.Host)
-		return wire.ApproveResult{}, &Refusal{Code: "E_DENIED"}
-	}
-	return e, fh
+	return fh, h
+}
+
+// answerAll makes the hub decide every new ticket o, with reason; an
+// empty o leaves the tickets to the test.
+func (h *fakeHub) answerAll(o ticket.Outcome, reason string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.answer, h.reason = o, reason
 }
 
 func (e *env) waitIdle() {

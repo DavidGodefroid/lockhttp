@@ -9,13 +9,9 @@ import (
 	"github.com/DavidGodefroid/lockhttp/internal/policy"
 )
 
-// Methods the console serves to the gate.
-const (
-	// MethodApprove asks the human about one held request.
-	MethodApprove = "http.approve"
-	// MethodPolicy returns the approved policy in force.
-	MethodPolicy = "policy.get"
-)
+// MethodPolicy is the method the console serves to the gate: the approved
+// policy in force.
+const MethodPolicy = "policy.get"
 
 // Limits on what the gate may send (the console refuses more).
 const (
@@ -90,11 +86,10 @@ type ApproveParams struct {
 	Grant int64 `json:"grant,omitempty"`
 }
 
-// ApproveResult is the console's answer when the human (or auto mode)
-// approved. A denial, a timeout or a gone client is an RPC error.
+// ApproveResult is the answer to an ask when the human approved it on the
+// hub. A denial or a timeout is a *gate.Refusal.
 type ApproveResult struct {
 	Approved bool `json:"approved"`
-	Auto     bool `json:"auto,omitempty"`
 }
 
 // PolicyResult is the approved policy in force and its fingerprint.

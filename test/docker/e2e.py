@@ -3,12 +3,13 @@
 docs/docker.md.
 
 The console runs in a pseudo-terminal this script answers (y to every
-prompt); the gate runs in its own container, sharing only the socket
-volume with the console; curl on the runner sends requests through the
-gate's published port. Needs docker, curl and network access to
-example.com. Uses the launcher's real names (lockhttp-console,
-lockhttp-gate, volumes lockhttp-run and lockhttp-home) and removes them:
-run it on a CI runner, not on a machine with a lockhttp setup.
+prompt). The gate is hub-attached only: without its hub flags the
+launcher's gate refuses to start ("launched by `lox up` only"). A request
+through a gate that asks a hub is tested end to end by lockhub's e2e,
+which runs the lockhttp lock under `lox up`. Needs docker. Uses the
+launcher's real names (lockhttp-console, lockhttp-gate, volumes
+lockhttp-run and lockhttp-home) and removes them: run it on a CI runner,
+not on a machine with a lockhttp setup.
 
     LOCKHTTP_IMAGE=lockhttp python3 test/docker/e2e.py
 
@@ -25,7 +26,6 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LAUNCHER = os.path.join(ROOT, "scripts", "lockhttp")
-PROXY = "http://127.0.0.1:3130"
 
 failures = []
 
@@ -99,16 +99,6 @@ class Console:
         return False
 
 
-def curl(*args):
-    r = subprocess.run(["curl", "-sS", "-o", "/dev/null", "-D", "-", "-x", PROXY, "--max-time", "90", *args],
-                       capture_output=True, text=True)
-    return r.returncode, r.stdout + r.stderr
-
-
-def gate_logs():
-    return sh("docker", "logs", "lockhttp-gate", check_=False).stderr
-
-
 def main():
     image = os.environ.get("LOCKHTTP_IMAGE", "lockhttp")
     cleanup()
@@ -132,33 +122,13 @@ def main():
         r = launcher("doctor", check_=False)
         check(r.returncode == 0 and "separated setup" in r.stdout, "doctor passes as the console account", r.stdout + r.stderr)
 
-        # The console approves its first policy, then the gate connects.
+        # The console approves its first policy and serves it.
         console = Console()
         check(console.wait_for("Listening on"), "the console listens", console.text())
-        sh("sh", LAUNCHER, "gate", env=dict(os.environ, LOCKHTTP_DOCKER_ARGS="-d"), stdin=subprocess.DEVNULL)
-        deadline = time.time() + 60
-        while time.time() < deadline and "console up" not in gate_logs():
-            time.sleep(0.5)
-        check("console up" in gate_logs(), "the gate reaches the console through the socket volume", gate_logs())
 
-        code, head = curl("http://example.com/")
-        check(code == 0 and " 200 " in head.split("\n")[0] and "X-Lockhttp-Request" in head.title(), "a trusted read is free", head)
-        code, head = curl("https://example.com/")
-        check(code == 0 and "200" in head, "a trusted CONNECT is free", head)
-        code, head = curl("-X", "POST", "-H", "Content-Type: application/json", "-d", '{"e2e":1}', "http://example.com/")
-        check(code == 0 and "X-Lockhttp-Code" not in head.title() and console.wait_for("POST example.com"),
-              "a write asks the console and goes through once approved", head + console.text()[-2000:])
-        check("container local" in console.text(), "the screen names the source", console.text()[-2000:])
-
-        # Without a console, asks are refused at once; trusted reads go on.
-        sh("docker", "rm", "-f", "lockhttp-console", check_=False)
-        deadline = time.time() + 30
-        while time.time() < deadline and "console lost" not in gate_logs():
-            time.sleep(0.5)
-        code, head = curl("-X", "POST", "-d", "x", "http://example.com/")
-        check("E_NO_CONSOLE" in head, "no console: E_NO_CONSOLE", head)
-        code, head = curl("http://example.com/")
-        check(" 200 " in head.split("\n")[0], "no console: trusted reads go on", head)
+        # The gate does not start without the hub: lox up gives its flags.
+        r = launcher("gate", check_=False)
+        check(r.returncode != 0 and "launched by `lox up` only" in r.stderr, "the gate needs the hub", r.stdout + r.stderr)
     finally:
         cleanup()
     if failures:

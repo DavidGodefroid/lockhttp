@@ -15,29 +15,25 @@ import (
 // ErrNoConsole means no console answers.
 var ErrNoConsole = errors.New("no lockhttp console is running")
 
-// Console is the gate's view of the console: the approved policy and the
-// human's answers.
+// Console is the gate's view of the console: the approved policy. The
+// human's answers come from the hub (Hub).
 type Console interface {
 	Policy(ctx context.Context) (wire.PolicyResult, error)
-	// Approve returns nil when approved; a *Refusal when the human (or the
-	// timeout) refused; ErrNoConsole when no console answers.
-	Approve(ctx context.Context, p wire.ApproveParams) (wire.ApproveResult, error)
 }
 
-// Refusal is a console's refusal of an approval.
+// Refusal is the refusal of an approval (by the hub, or a request the
+// gate cannot ask about).
 type Refusal struct {
 	Code   string
 	Reason string
-	// Ticket is the hub ticket the refusal is about (hub mode), "" for
-	// none.
+	// Ticket is the hub ticket the refusal is about, "" for none.
 	Ticket string
 }
 
 func (r *Refusal) Error() string { return r.Reason }
 
-// LockkitConsole dials the console with lockkit's client: one connection
-// for the policy poll, one for approvals (the console is serial: a poll
-// queued behind an approval simply waits).
+// LockkitConsole dials the console with lockkit's client, for the policy
+// poll.
 type LockkitConsole struct {
 	Profile string
 	// Cwd is where the client looks for a project (none: "/").
@@ -104,26 +100,5 @@ func (c *LockkitConsole) call(ctx context.Context, slot, method string, params, 
 func (c *LockkitConsole) Policy(ctx context.Context) (wire.PolicyResult, error) {
 	var r wire.PolicyResult
 	err := c.call(ctx, "policy", wire.MethodPolicy, nil, &r)
-	return r, err
-}
-
-// Approve implements Console.
-func (c *LockkitConsole) Approve(ctx context.Context, p wire.ApproveParams) (wire.ApproveResult, error) {
-	var r wire.ApproveResult
-	err := c.call(ctx, "approve", wire.MethodApprove, p, &r)
-	var rpc *ipc.RPCError
-	if errors.As(err, &rpc) {
-		switch rpc.Code {
-		case ipc.CodeDenied:
-			return r, &Refusal{Code: string(product.CodeDenied), Reason: rpc.Message}
-		case ipc.CodeTimeout:
-			return r, &Refusal{Code: string(product.CodeTimeout), Reason: rpc.Message}
-		default:
-			return r, &Refusal{Code: string(product.CodeDenied), Reason: "the console refused: " + rpc.Message}
-		}
-	}
-	if err == nil && !r.Approved {
-		return r, &Refusal{Code: string(product.CodeDenied), Reason: "not approved"}
-	}
 	return r, err
 }

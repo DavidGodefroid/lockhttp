@@ -66,8 +66,9 @@ GOOS=windows go test -exec /bin/true ./...
 
 ### Integration tests
 
-Integration tests start the gate, the console and test upstream servers
-in-process, on `127.0.0.1`; they need no Docker and no network access.
+Integration tests start the gate, the console, lockkit's test hub and test
+upstream servers in-process, on `127.0.0.1`; they need no Docker and no
+network access.
 
 ```sh
 go test -tags integration ./test/integration/...
@@ -94,9 +95,9 @@ When you change what a subcommand runs, change the table in
 
 `test/docker/e2e.py` builds nothing itself: it drives an image through the
 launcher as a user would. The console runs in a pseudo-terminal the script
-answers, the gate in its own container, and `curl` sends requests through
-the gate's published port. It needs Docker, `curl`, Python 3 (standard
-library only) and network access to `example.com`:
+answers; the gate, hub-attached only, must refuse to start without its hub
+flags. Requests through a gate that asks a hub are tested by lockhub's e2e,
+under `lox up`. It needs Docker and Python 3 (standard library only):
 
 ```sh
 docker build -t lockhttp .
