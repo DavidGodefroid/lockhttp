@@ -72,7 +72,7 @@ refused.
 | `console` | `lockhttp` (10021) | `--name lockhttp-console --log-driver none --user lockhttp -v lockhttp-run:/run/lockhttp -v lockhttp-home:/home/lockhttp` | the only container with `lockhttp-home`; no log driver, so `docker logs` keeps no approval screen; a stopped container named `lockhttp-console` is removed first |
 | `init`, `policy` | `lockhttp` | `--user lockhttp -v lockhttp-home:/home/lockhttp` | they write or read the policy in the console account's home |
 | `doctor` | `lockhttp` | `--user lockhttp -v lockhttp-home:/home/lockhttp` | it checks the policy, which only the console account can read |
-| `gate` | `gate` (10003) | `--name lockhttp-gate --user gate -v lockhttp-run:/run/lockhttp -p ${LOCKHTTP_PUBLISH:-127.0.0.1:3130}:3130`, and `--listen 0.0.0.0:3130` unless you pass `--listen` | standalone use on one machine; lea starts its own gate ([lea.md](lea.md)) |
+| `gate` | `gate` (10003) | `--name lockhttp-gate --user gate -v lockhttp-run:/run/lockhttp -p ${LOCKHTTP_PUBLISH:-127.0.0.1:3130}:3130`, and `--listen 0.0.0.0:3130` unless you pass `--listen` | it needs the hub flags, and refuses to start without them; lea starts its own gate ([lea.md](lea.md)) |
 | `signer` | `signer` (10004) | `--user signer -v lockhttp-signer:/run/lockhttp-signer` | the socket directory (`signer:lockhttp-clients`, 2750, from the image) the gate shares; lea runs its own signer ([lea.md](lea.md#3-mitm-phase-2-optional)) |
 | `ca` | you (`id -u`:`id -g`) | `--user UID:GID -v DIR:DIR`, with `--dir DIR` made absolute (created 0700) and `--name $(uname -n)` unless you pass `--name`; under rootless Podman also `--userns keep-id`, so that the files are yours on the host | the CA files are yours; lea reads `ca.pem` and gives `ca-key.pem` to the signer alone |
 | `version` | `gate` | | prints `lockhttp launcher X (image I)`, then runs `I version` |
@@ -170,62 +170,19 @@ and `update` the newest entry of the releases feed.
 
 amd64 and arm64 only.
 
-## Standalone quick start (one machine)
+## Quick start (hub-attached)
 
-Without lea, the gate runs in its own container on your machine, publishes
-`127.0.0.1:3130`, and attributes every connection to the container `local`:
-standalone mode is the gate without `--sources`.
+lockhttp runs hub-attached only: there is no standalone gate. lockhub's
+`lox up` runs the console (in a compose service of its own, with the
+policy it reviewed from `<workspace>/.lockhttp/`) and the hub, and lea runs
+the gate beside its proxy with the hub flags `lox up` writes in
+`.lockfamily/up.json` ([README](../README.md#quick-start-with-lea),
+[lea.md](lea.md)). `lockhttp gate` without `--hub`, `--hub-key-file` and
+`--instance` exits with a usage error ("launched by `lox up` only").
 
-```sh
-# The policy, in the console account's volume
-lockhttp init
-
-# In a terminal you keep in view: the console
-lockhttp console
-
-# In another terminal: the gate
-lockhttp gate
-
-# Then point a local agent at it
-HTTPS_PROXY=http://127.0.0.1:3130 HTTP_PROXY=http://127.0.0.1:3130 your-agent
-```
-
-At its first start the console shows the whole policy for approval
-(`Apply these changes? [y/N]`). The gate logs `console up` once it reaches
-the console through `lockhttp-run`. Without `--audit-dir` it writes its audit
-on stderr, which `docker logs lockhttp-gate` shows; `LOCKHTTP_DOCKER_ARGS=-d
-lockhttp gate` runs it in the background.
-
-Here the proxy variables are the only thing that sends the agent through the
-gate: an agent that ignores them goes straight out. Standalone mode is for
-trying the policy and the console; it is a boundary only when the agent's
-sole route to the network is the gate.
-
-Standalone, the gate decides at the domain only (CONNECT + SNI): the
-launcher's `lockhttp gate` gets no `--ca-cert`/`--signer`, and the signer's
-key and socket volume are wired only by lea ([lea.md](lea.md#3-mitm-phase-2-optional)).
-Decryption, and with it the Claude API allowlist, comes with the lea
-integration; wiring a signer by hand means reproducing that section with
-`LOCKHTTP_DOCKER_ARGS`.
-
-To edit the policy afterwards:
-
-```sh
-lockhttp policy edit   # $EDITOR in the image (vi), then a parse check
-lockhttp policy show
-lockhttp policy path   # /home/lockhttp/.config/lockhttp/config.toml
-```
-
-The running console picks the change up within 2 s and holds any loosening
-until you confirm it with `:review`.
-
-`lockhttp doctor` runs as the console account in its own container, where
-`127.0.0.1` is that container: to check the gate, join the gate's network
-namespace:
-
-```sh
-LOCKHTTP_DOCKER_ARGS="--network container:lockhttp-gate" lockhttp doctor --gate 127.0.0.1:3130
-```
+The launcher's own `console`, `init`, `policy` and `doctor` still run the
+image as the console account with the volume `lockhttp-home`: to write or
+check a policy file by hand before you copy it to `<workspace>/.lockhttp/`.
 
 ## Build the image yourself
 

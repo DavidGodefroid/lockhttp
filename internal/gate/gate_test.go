@@ -21,17 +21,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DavidGodefroid/lockkit/hubclient"
+	"github.com/DavidGodefroid/lockkit/ticket"
+
 	"github.com/DavidGodefroid/lockhttp/internal/ca"
 	"github.com/DavidGodefroid/lockhttp/internal/policy"
 	"github.com/DavidGodefroid/lockhttp/internal/wire"
 )
 
+// fakeConsole serves the policy, as lockhttp's console does; the gate asks
+// the hub (fakeHub) about held requests.
 type fakeConsole struct {
-	mu     sync.Mutex
-	calls  []wire.ApproveParams
-	answer func(wire.ApproveParams) (wire.ApproveResult, error)
-	pol    *policy.Policy
-	down   atomic.Bool
+	pol  *policy.Policy
+	down atomic.Bool
 }
 
 func (f *fakeConsole) Policy(context.Context) (wire.PolicyResult, error) {
@@ -39,27 +41,6 @@ func (f *fakeConsole) Policy(context.Context) (wire.PolicyResult, error) {
 		return wire.PolicyResult{}, ErrNoConsole
 	}
 	return wire.PolicyResult{Policy: *f.pol, Fingerprint: f.pol.Fingerprint()}, nil
-}
-
-func (f *fakeConsole) Approve(_ context.Context, p wire.ApproveParams) (wire.ApproveResult, error) {
-	f.mu.Lock()
-	f.calls = append(f.calls, p)
-	ans := f.answer
-	f.mu.Unlock()
-	if ans == nil {
-		return wire.ApproveResult{}, &Refusal{Code: "E_DENIED", Reason: "denied by the human: no"}
-	}
-	return ans(p)
-}
-
-func (f *fakeConsole) Calls() []wire.ApproveParams {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]wire.ApproveParams(nil), f.calls...)
-}
-
-func approveAll(wire.ApproveParams) (wire.ApproveResult, error) {
-	return wire.ApproveResult{Approved: true}, nil
 }
 
 const testPolicy = `
@@ -76,6 +57,9 @@ type env struct {
 	t        *testing.T
 	gate     *Gate
 	console  *fakeConsole
+	hub      *fakeHub
+	callsMu  sync.Mutex
+	calls    []wire.ApproveParams // what the gate asked the hub about
 	addr     string
 	backends map[string]string // host -> listener address
 	roots    *x509.CertPool
@@ -96,20 +80,32 @@ func (l lockedBuf) Write(p []byte) (int, error) {
 }
 
 // newEnv starts a gate in direct mode whose resolver maps every name to a
-// public test address and whose dialer reaches the named test server.
+// public test address and whose dialer reaches the named test server. Its
+// fake hub denies every ticket ("no") unless the test answers otherwise
+// (e.hub.answerAll).
 func newEnv(t *testing.T, conf string, mitm bool, mutate func(*Config)) *env {
+	t.Helper()
+	e := newEnvHub(t, conf, mitm, nil, nil, mutate)
+	e.hub.answerAll(ticket.Denied, "no")
+	return e
+}
+
+// newEnvHub is newEnv with its fake hub's client configuration changed by
+// config and its Hub by hubMut, and a hub that answers nothing by itself.
+func newEnvHub(t *testing.T, conf string, mitm bool, config func(*hubclient.Config), hubMut func(*Hub), mutate func(*Config)) *env {
 	t.Helper()
 	p, err := policy.Parse([]byte(conf), "c", "default")
 	if err != nil {
 		t.Fatal(err)
 	}
 	fc := &fakeConsole{pol: &p}
-	e := &env{t: t, console: fc, backends: map[string]string{}, audit: &bytes.Buffer{}, auditMu: &sync.Mutex{}}
+	fh, h := newTestHub(t, config, hubMut)
+	e := &env{t: t, console: fc, hub: fh, backends: map[string]string{}, audit: &bytes.Buffer{}, auditMu: &sync.Mutex{}}
 	upstreamRoots := x509.NewCertPool()
 	e.roots = upstreamRoots
 	log, _ := NewAuditLog("", lockedBuf{e.auditMu, e.audit}, time.Now)
 	cfg := Config{
-		Profile: "default", Console: fc, Audit: log, PolicyPoll: 50 * time.Millisecond,
+		Profile: "default", Console: fc, Audit: log, PolicyPoll: 50 * time.Millisecond, Hub: h, Log: hubLog{t, fh},
 		UpstreamTLS: &tls.Config{RootCAs: upstreamRoots},
 		Resolve: func(_ context.Context, host string) ([]netip.Addr, error) {
 			if host == "private.test" {
@@ -138,6 +134,30 @@ func newEnv(t *testing.T, conf string, mitm bool, mutate func(*Config)) *env {
 		mutate(&cfg)
 	}
 	e.gate = New(cfg)
+	// Before the queue runs: record what the gate asks the hub about.
+	approve := e.gate.queue.approve
+	e.gate.queue.approve = func(ctx context.Context, fp string, p wire.ApproveParams) (wire.ApproveResult, error) {
+		e.callsMu.Lock()
+		e.calls = append(e.calls, p)
+		e.callsMu.Unlock()
+		return approve(ctx, fp, p)
+	}
+	g := e.gate
+	// Runs after the cleanup below stopped the gate, before the hub and
+	// the plans directory go: the stopped asks withdraw their tickets
+	// first.
+	t.Cleanup(func() {
+		select {
+		case <-g.Stopped():
+		case <-time.After(10 * time.Second):
+			t.Error("the gate did not stop")
+		}
+		// Before the plans directory goes (Windows refuses to remove a
+		// locked file).
+		if err := cfg.Hub.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	e.gate.cfg.Dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		// The resolver gave 203.0.113.10: reach the backend the test
 		// registered for the port.
@@ -161,6 +181,13 @@ func newEnv(t *testing.T, conf string, mitm bool, mutate func(*Config)) *env {
 	e.addr = ln.Addr().String()
 	e.waitPolicy()
 	return e
+}
+
+// Calls are the asks the gate sent to the hub, in order.
+func (e *env) Calls() []wire.ApproveParams {
+	e.callsMu.Lock()
+	defer e.callsMu.Unlock()
+	return append([]wire.ApproveParams(nil), e.calls...)
 }
 
 type localCerts struct{ c *ca.CA }
@@ -282,13 +309,13 @@ func TestConnectFreeAndAsk(t *testing.T) {
 	if !strings.Contains(e.auditText(), `"event":"free"`) || !strings.Contains(e.auditText(), `"host":"trusted.test"`) {
 		t.Fatalf("audit:\n%s", e.auditText())
 	}
-	if len(e.console.Calls()) != 0 {
+	if len(e.Calls()) != 0 {
 		t.Fatal("a trusted host asked the console")
 	}
 
 	// example.com is unknown: the console is asked; approved once, the
 	// grant covers the next connection.
-	e.console.answer = approveAll
+	e.hub.answerAll(ticket.Approved, "")
 	resp, err = c.Get("https://example.com/x")
 	if err != nil {
 		t.Fatalf("approved CONNECT: %v", err)
@@ -298,17 +325,17 @@ func TestConnectFreeAndAsk(t *testing.T) {
 	if string(b) != "ok GET /x 0" {
 		t.Fatalf("body %q", b)
 	}
-	calls := e.console.Calls()
+	calls := e.Calls()
 	if len(calls) != 1 || calls[0].Phase != "connect" || !calls[0].NeverAuto || calls[0].Agent != "dev-5" || calls[0].Grant != 600 {
 		t.Fatalf("approve params: %+v", calls)
 	}
-	e.console.answer = nil
+	e.hub.answerAll(ticket.Denied, "no")
 	resp, err = c.Get("https://example.com/y")
 	if err != nil {
 		t.Fatalf("connect grant not used: %v", err)
 	}
 	resp.Body.Close()
-	if len(e.console.Calls()) != 1 {
+	if len(e.Calls()) != 1 {
 		t.Fatal("the grant asked again")
 	}
 }
@@ -370,7 +397,7 @@ func TestPlainHTTPAndPrivate(t *testing.T) {
 		t.Fatalf("plain: %q %v", b, resp.Header)
 	}
 	// A name resolving to a private address is refused after approval.
-	e.console.answer = approveAll
+	e.hub.answerAll(ticket.Approved, "")
 	resp, err = e.client("", false).Get("http://private.test/a")
 	if err != nil {
 		t.Fatal(err)
@@ -400,12 +427,12 @@ func TestMITM(t *testing.T) {
 	if resp.StatusCode != 403 || resp.Header.Get("X-LockHTTP-Code") != "E_DENIED" {
 		t.Fatalf("unknown GET: %s %v", resp.Status, resp.Header)
 	}
-	calls := e.console.Calls()
+	calls := e.Calls()
 	if len(calls) != 1 || calls[0].Phase != "http" || calls[0].TLS != "mitm" || calls[0].Path != "/r" {
 		t.Fatalf("calls: %+v", calls)
 	}
 	// Approved POST goes through with its body.
-	e.console.answer = approveAll
+	e.hub.answerAll(ticket.Approved, "")
 	resp, err = c.Post("https://example.com/w", "application/json", strings.NewReader(`{"a":1}`))
 	if err != nil {
 		t.Fatal(err)
@@ -415,18 +442,18 @@ func TestMITM(t *testing.T) {
 	if string(b) != "ok POST /w 7" {
 		t.Fatalf("approved POST: %s %q", resp.Status, b)
 	}
-	last := e.console.Calls()[len(e.console.Calls())-1]
+	last := e.Calls()[len(e.Calls())-1]
 	if !strings.Contains(last.Preview, `"a":1`) || last.BodyFP == "" || last.ReqBytes != 7 {
 		t.Fatalf("POST params: %+v", last)
 	}
 	// A secret to another host is denied without asking.
-	n := len(e.console.Calls())
+	n := len(e.Calls())
 	resp, err = c.Post("https://example.com/w", "text/plain", strings.NewReader("ghp_"+strings.Repeat("a1B2", 9)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.Header.Get("X-LockHTTP-Code") != "E_SECRET_EGRESS" || len(e.console.Calls()) != n {
+	if resp.Header.Get("X-LockHTTP-Code") != "E_SECRET_EGRESS" || len(e.Calls()) != n {
 		t.Fatalf("secret: %s %v", resp.Status, resp.Header)
 	}
 }
@@ -455,52 +482,9 @@ func TestMITMClaudeAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	calls := e.console.Calls()
+	calls := e.Calls()
 	if resp.StatusCode != 403 || len(calls) != 1 || !calls[0].NeverAuto || !strings.Contains(strings.Join(calls[0].Warnings, " "), "mcp.example") {
 		t.Fatalf("mcp_servers: %s %+v", resp.Status, calls)
-	}
-}
-
-func TestPendingThenSingleUse(t *testing.T) {
-	e := newEnv(t, strings.Replace(testPolicy, `hold = "2s"`, `hold = "1s"`, 1), true, nil)
-	e.backend("example.com", true, http.HandlerFunc(ok))
-	e.remap("example.com", "443")
-	release := make(chan struct{})
-	e.console.answer = func(wire.ApproveParams) (wire.ApproveResult, error) {
-		<-release
-		return wire.ApproveResult{Approved: true}, nil
-	}
-	c := e.client("dev-5", true)
-	post := func(body string) *http.Response {
-		req, _ := http.NewRequest("POST", "https://example.com/up", strings.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := c.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-		return resp
-	}
-	if r := post(`{"x":1,"timestamp":1}`); r.Header.Get("X-LockHTTP-Code") != "E_PENDING" {
-		t.Fatalf("hold: %s %v", r.Status, r.Header)
-	}
-	close(release)
-	deadline := time.Now().Add(2 * time.Second)
-	for e.gate.queue.Pending() > 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	// The retry differs only by a volatile field: the single-use
-	// authorisation covers it once.
-	e.console.answer = nil
-	if r := post(`{"timestamp":2,"x":1}`); r.StatusCode != 200 {
-		t.Fatalf("single-use not honoured: %s %v", r.Status, r.Header)
-	}
-	if r := post(`{"timestamp":3,"x":1}`); r.StatusCode != 403 {
-		t.Fatalf("single-use used twice: %s", r.Status)
-	}
-	// Another body is a new item, not covered.
-	if r := post(`{"x":2}`); r.StatusCode != 403 {
-		t.Fatalf("different body passed: %s", r.Status)
 	}
 }
 
@@ -509,11 +493,7 @@ func TestIdenticalShareDistinctSeparate(t *testing.T) {
 	e.backend("example.com", true, http.HandlerFunc(ok))
 	e.remap("example.com", "443")
 	var mu sync.Mutex
-	release := make(chan struct{})
-	e.console.answer = func(wire.ApproveParams) (wire.ApproveResult, error) {
-		<-release
-		return wire.ApproveResult{Approved: true}, nil
-	}
+	e.hub.answerAll("", "") // the test decides
 	c := e.client("dev-5", true)
 	var wg sync.WaitGroup
 	codes := map[int]int{}
@@ -534,17 +514,20 @@ func TestIdenticalShareDistinctSeparate(t *testing.T) {
 	go send(`{"a":1}`)
 	time.Sleep(200 * time.Millisecond)
 	go send(`{"a":2}`)
-	time.Sleep(300 * time.Millisecond)
-	close(release)
+	for _, tk := range e.hub.waitTickets(2) {
+		e.hub.decide(tk, ticket.Approved, "", nil, "")
+	}
 	wg.Wait()
-	calls := e.console.Calls()
+	calls := e.Calls()
 	if len(calls) != 2 {
 		t.Fatalf("want 2 items (identical shared, distinct separate), got %d", len(calls))
 	}
 	if codes[200] != 3 {
 		t.Fatalf("codes %v", codes)
 	}
-	if calls[1].Pending != 1 && calls[0].Pending != 2 {
+	// The asks go to the hub at once: the second is sent while the first
+	// still waits under the same key.
+	if calls[0].Pending != 1 || calls[1].Pending != 2 {
 		t.Fatalf("pending count: %+v %+v", calls[0].Pending, calls[1].Pending)
 	}
 }
@@ -558,7 +541,7 @@ func TestShadowMode(t *testing.T) {
 		t.Fatalf("shadow: %v %v", err, resp)
 	}
 	resp.Body.Close()
-	if !strings.Contains(e.auditText(), `"shadow":"ask"`) || len(e.console.Calls()) != 0 {
+	if !strings.Contains(e.auditText(), `"shadow":"ask"`) || len(e.Calls()) != 0 {
 		t.Fatalf("shadow audit:\n%s", e.auditText())
 	}
 }

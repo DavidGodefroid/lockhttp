@@ -35,16 +35,15 @@ const (
 	CodeClaudeParam   refusal.Code = "E_CLAUDE_API_PARAM"
 	CodeSourceUnknown refusal.Code = "E_SOURCE_UNKNOWN"
 	CodeRule          refusal.Code = "E_RULE"
-	CodeWithdrawn     refusal.Code = "E_WITHDRAWN"
 )
 
 func init() {
 	refusal.Register(CodeDenied, refusal.RetryAskUser,
 		"the human denied the request", "do not retry the same request; ask the user what they want instead")
 	refusal.Register(CodeTimeout, refusal.RetryAskUser,
-		"nobody answered the approval in time", "ask the user to watch the lockhttp console, then retry")
+		"nobody answered the approval in time", "ask the user to watch the approvals on lockhub, then retry")
 	refusal.Register(CodeHostUnknown, refusal.RetryAskUser,
-		"the host is not trusted and needs a human", "ask the user to approve the host in the lockhttp console")
+		"the host is not trusted and needs a human", "ask the user to approve the request on lockhub")
 	refusal.Register(CodeFloor, refusal.RetryStop,
 		"the request hits the network floor (IP literal, DoH, private range, port, SNI mismatch, h2c)", "use a named public host on port 80 or 443")
 	refusal.Register(CodeMethod, refusal.RetryAskUser,
@@ -60,17 +59,11 @@ func init() {
 	refusal.Register(CodePending, refusal.RetryAskUser,
 		"the request waits for the human", "retry the same request in a moment: once approved it goes through")
 	refusal.Register(CodeNoConsole, refusal.RetryAskUser,
-		"no lockhttp console is running", "ask the user to run: lockhttp console")
+		"no lockhttp console is running", "ask the user to run: lox up")
 	refusal.Register(CodeClaudeParam, refusal.RetryAskUser,
-		"a Claude API parameter needs a human (mcp_servers, a server tool, files)", "ask the user to approve it in the lockhttp console")
+		"a Claude API parameter needs a human (mcp_servers, a server tool, files)", "ask the user to approve it on lockhub")
 	refusal.Register(CodeSourceUnknown, refusal.RetryStop,
 		"the gate cannot tell which container sent the request", "connect through the proxy address lea gave you")
-	// E_WITHDRAWN: ask_user, like E_PENDING, whose remedy is also to send
-	// the same request again. Nothing in it is to rewrite (rewrite would
-	// say so), and it is not final (stop): the human answers it on the
-	// console once the agent tells them the hub is off.
-	refusal.Register(CodeWithdrawn, refusal.RetryAskUser,
-		"the hub ticket of this request was withdrawn: the gate now runs without its hub", "tell the user, then send the same request again: the human answers it in the lockhttp console")
 	refusal.Register(CodeRule, refusal.RetryAskUser,
 		"a policy rule denies the request", "ask the user to change the rule")
 }

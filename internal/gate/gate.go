@@ -1,7 +1,7 @@
 // Package gate is lockhttp's data plane: the HTTP(S) proxy every request
 // of the agents goes through. It decides each request with the policy the
 // console approved (it never reads a policy file), holds what needs a
-// human, asks the console, and audits what it lets through or refuses.
+// human, asks lockhub, and audits what it lets through or refuses.
 package gate
 
 import (
@@ -61,13 +61,9 @@ type Config struct {
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 	// Resolve replaces the resolver of direct mode (tests).
 	Resolve func(ctx context.Context, host string) ([]netip.Addr, error)
-	// Hub, when set, sends the asks to lockhub (hub mode); the console
-	// still serves the policy.
+	// Hub sends the asks to lockhub (required: the gate is hub-attached
+	// only); the console serves the policy.
 	Hub *Hub
-	// Withdrawn, in standalone mode, are the hub tickets the gate's last
-	// hub mode left pending and this start withdrew (WithdrawStandalone):
-	// the request of one is refused once, explicitly (E_WITHDRAWN).
-	Withdrawn *Withdrawn
 	// PolicyPoll is how often the policy is fetched (2 s by default).
 	PolicyPoll time.Duration
 	Now        func() time.Time
@@ -110,16 +106,17 @@ func New(cfg Config) *Gate {
 	if cfg.Log == nil {
 		cfg.Log = io.Discard
 	}
-	g := &Gate{cfg: cfg, queue: NewQueue(cfg.Console), grants: NewGrants(cfg.Now)}
-	if cfg.Hub != nil {
-		// A hub decision may take hours: its asks wait side by side.
-		g.queue.approve, g.queue.concurrent = g.hubApprove, true
-		// A renewal (the hub's renew request, or Renew on a request sent
-		// again) checks the plan as the run's recheck does; reveals and
-		// renewals are audited.
-		cfg.Hub.Client.SetRecompute(g.recompute)
-		cfg.Hub.Client.OnRequest(g.hubRequest)
+	if cfg.Hub == nil {
+		panic("gate: Config.Hub is required (the gate is hub-attached only)")
 	}
+	g := &Gate{cfg: cfg, grants: NewGrants(cfg.Now)}
+	// A hub decision may take hours: its asks wait side by side.
+	g.queue = NewQueue(g.hubApprove)
+	// A renewal (the hub's renew request, or Renew on a request sent
+	// again) checks the plan as the run's recheck does; reveals and
+	// renewals are audited.
+	cfg.Hub.Client.SetRecompute(g.recompute)
+	cfg.Hub.Client.OnRequest(g.hubRequest)
 	g.pol.Store(&polState{})
 	g.status = Status{Version: ContractVersion, Console: "down", PendingByContainer: map[string]int{}}
 	g.queue.onChange = func(total int, by map[string]int) {
@@ -175,9 +172,8 @@ func (g *Gate) updateStatus(f func(*Status)) {
 // until ctx ends.
 func (g *Gate) Run(ctx context.Context) {
 	go g.queue.Run(ctx)
-	if h := g.cfg.Hub; h != nil {
-		go h.Client.Watch(ctx, h.Plans, func(err error) { fmt.Fprintln(g.cfg.Log, "lockhttp gate: hub:", err) })
-	}
+	h := g.cfg.Hub
+	go h.Client.Watch(ctx, h.Plans, func(err error) { fmt.Fprintln(g.cfg.Log, "lockhttp gate: hub:", err) })
 	t := time.NewTicker(g.cfg.PolicyPoll)
 	defer t.Stop()
 	for {
@@ -374,11 +370,9 @@ func writeRefusalTicket(w io.Writer, id, c, reason, tk string, connect bool) {
 func hintFor(code string) string {
 	switch code {
 	case "E_NO_CONSOLE":
-		return "No lockhttp console is running: ask the user to start it (lockhttp console)."
+		return "No lockhttp console is running: ask the user to start it (lox up)."
 	case "E_PENDING":
-		return "The request waits for the human in the lockhttp console: retry the same request in a moment."
-	case "E_WITHDRAWN":
-		return "The gate now runs without its hub: tell the user, then send the same request again; the human answers it in the lockhttp console."
+		return "The request waits for the human on lockhub: retry the same request in a moment."
 	case "E_DENIED", "E_TIMEOUT":
 		return "Do not retry the same request; ask the user."
 	case "E_HOST_UNKNOWN", "E_CLAUDE_API_PARAM", "E_EXFIL_SUSPECT", "E_RULE", "E_METHOD":
@@ -413,7 +407,7 @@ func (g *Gate) ask(p wire.ApproveParams, fp, key string, hold time.Duration, onA
 				return Outcome{Code: string(product.CodePending), Ticket: tk, Reason: "the request waits for a decision on the hub (ticket " + tk + ")"}
 			}
 		}
-		return Outcome{Code: string(product.CodePending), Reason: "the request waits for the human (kept on the console)"}
+		return Outcome{Code: string(product.CodePending), Reason: "the request waits for the human (kept on the hub)"}
 	}
 }
 
@@ -476,9 +470,7 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 	}
 	hostport := net.JoinHostPort(host, strconv.Itoa(port))
 	var d decide.Decision
-	if wd, ok := g.withdrawnRefusal("connect|" + src.Container + "|" + hostport); ok {
-		d = wd
-	} else if g.grants.Connect(src.Container, hostport) {
+	if g.grants.Connect(src.Container, hostport) {
 		d = decide.Decision{Verdict: decide.Free, Rule: "grant:connect", Class: "connect"}
 	} else {
 		d = decide.Evaluate(pol, r, g.cfg.Now(), g.cfg.Creds)
@@ -501,10 +493,7 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 			return
 		}
 		g.grants.GrantConnect(src.Container, hostport, grant)
-		rec.Base.Approval = "console"
-		if out.Auto {
-			rec.Base.Approval = "auto"
-		}
+		rec.Base.Approval = "hub"
 	}
 	// FREE (or approved): open the tunnel.
 	if _, err := io.WriteString(c, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {

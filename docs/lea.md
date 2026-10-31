@@ -5,6 +5,16 @@ path of its agents, and what LockHTTP guarantees in return. The lea side
 lives in the lea repository; this page is the contract both sides test
 against. Contract version: **1** (the `version` field of every file below).
 
+> **Hub-attached only (after v0.5.1).** The gate always asks lockhub: it
+> does not start without `--hub`, `--hub-key-file` and `--instance`
+> ("launched by `lox up` only"), and there is no standalone gate asking a
+> console of its own. lockhub's `lox up` runs the lockhttp console (it
+> serves the policy) and the hub, and writes in `<workspace>/.lockfamily/up.json`
+> what lea passes to the gate (lockhub's `docs/lox-up.md`). Without a
+> trusted `up.json` naming one lockhttp lock, lea does not start the gate
+> and says to run `lox up`. The console's socket volume is `lox up`'s
+> `<project>_<instance>-run`, no longer `lockhttp-run`.
+
 > **Changes since v0.1.0.** LockHTTP runs in Docker only
 > ([docker.md](docker.md)). There is no host install any more: no
 > `sudo lockhttp install`, no `lockhttp` account or `lockhttp-clients` group
@@ -27,9 +37,11 @@ against. Contract version: **1** (the `version` field of every file below).
    lockhttp gate :3130  (uid 10003 "gate", in lockhttp-clients)  ──▶ squid 127.0.0.1:3128
  <prefix>-lockhttp-signer container  (MITM only)
    lockhttp signer  (uid 10004 "signer") ◀─ leaf certificates ─ gate (socket volume)
-          │ volume lockhttp-run: /run/lockhttp/user-<profile>.sock
- lockhttp-console container  (started by the human: lockhttp console)
-   lockhttp console --profile <profile>  (uid 10021 "lockhttp", volume lockhttp-home)
+          │ volume <project>_<instance>-run: /run/lockhttp/user-<profile>.sock
+ console container  (lox up's service lock-<instance>)
+   lockhttp console --profile <profile>  (uid 10021 "lockhttp")
+          ·
+   the gate ──▶ lockhub (lox up's network <project>_lockhub; only <prefix>-proxy joins it)
 ```
 
 ## 1. Setup (once, by the human)
@@ -37,10 +49,10 @@ against. Contract version: **1** (the `version` field of every file below).
 | Step | Command | Notes |
 |---|---|---|
 | Install the launcher | `scripts/install.sh` ([docker.md](docker.md#install-and-update)) | `/usr/local/bin/lockhttp`, root-owned. It checks the cosign signatures and writes the verified image digest into itself (`image_digest=` line). |
-| Write the policy | `lockhttp init [--trusted "<LEA_EGRESS_ALLOW>"]` | Runs as the console account (uid 10021) and writes `~/.config/lockhttp/config.toml` (profile `default`) in the volume `lockhttp-home`. `--trusted` imports lea's allowlist as trusted read-only hosts (D-optin). lea never writes this file; `lockhttp policy edit` changes it. |
-| Start the console | `lockhttp console` (profile `default`) | In a terminal the human keeps in view: the container `lockhttp-console`, with the volumes `lockhttp-run` and `lockhttp-home` and no log driver. |
+| The lock and its policy | `lox add lockhttp <instance>`, the policy in `<workspace>/.lockhttp/config.toml` | lockhub's `lox`. lea never writes the policy. |
+| Start the hub and the console | `lox up` | Runs the hub and the lockhttp console (uid 10021, no log driver) in compose services, makes the gate's instance key in the gate's own volume (`<project>_<instance>-gate`) and registers it with the hub, and writes `up.json`. `lox attach <instance>` attaches the console's terminal (its first policy review). |
 
-lea never starts the console and never mounts `lockhttp-home`.
+lea never starts the console and never mounts the console's home.
 
 ## 2. The gate container
 
@@ -52,7 +64,9 @@ lea runs the gate as a sidecar of `<prefix>-proxy` when `LEA_LOCKHTTP=1`.
 docker run -d --name <prefix>-lockhttp-gate \
   --network container:<prefix>-proxy \
   --user gate \
-  -v lockhttp-run:/run/lockhttp \
+  -v <project>_<instance>-run:/run/lockhttp \
+  -v <project>_<instance>-gate:/lockhttp-home \
+  -v <state>/lockhttp/gate/hub:/run/lockfamily:ro \
   -v <state>/lockhttp/gate:/etc/lockhttp-gate:ro \
   -v <state>/lockhttp/audit:/var/log/lockhttp \
   -v <state>/lockhttp/status:/run/lockhttp-gate \
@@ -65,15 +79,24 @@ docker run -d --name <prefix>-lockhttp-gate \
     [--credentials /etc/lockhttp-gate/credentials.json] \
     --audit-dir /var/log/lockhttp \
     --status-file /run/lockhttp-gate/status.json \
-    [--ca-cert /etc/lockhttp-gate/ca.pem --signer /run/lockhttp-signer/signer.sock]
+    [--ca-cert /etc/lockhttp-gate/ca.pem --signer /run/lockhttp-signer/signer.sock] \
+    --hub http://lockhub:<port> --hub-plain-http --hub-key-file /run/lockfamily/hub.pub \
+    --instance <instance> --home /lockhttp-home --hub-net <hub network subnet> ... \
+    [--facade-keys-file /run/lockfamily/facades.json] \
+    [--devices-file /run/lockfamily/devices.json [--require-device RISKS] [--seal-clear]]
 ```
+
+The hub flags are required: `up.json` gives every value (lockhub's
+`docs/lox-up.md`, "Why lockhttp is different"), and the gate refuses to
+start without them.
 
 | Item | Value | Why |
 |---|---|---|
 | Image | `ghcr.io/davidgodefroid/lockhttp@sha256:<digest>` | The digest the launcher pins (its `image_digest=` line, `grep '^image_digest=' "$(command -v lockhttp)"`), or the one `cosign verify` prints ([SECURITY.md](../SECURITY.md#verifying-the-image)). Never a tag. The gate and the console should run the same release. |
 | Network | `--network container:<prefix>-proxy` | The gate shares the proxy container's network namespace: the `local_ip` mapping of `sources.json`, squid on `127.0.0.1:3128` and keyproxy's `127.0.0.1:3130` stay as they were. |
 | uid | `--user gate` (10003, **never 0**) | In the image, uid 10003 is in `lockhttp-clients`, the group the console accepts. Nothing to configure on the host: no `allowed_uids`, no subuid, no `--group-add`. The gate refuses to run as root. |
-| Socket | volume `lockhttp-run` → `/run/lockhttp` (**the gate's container only**, never an agent container) | The console's socket. The image's `/etc/lockhttp/system.toml` names `/run/lockhttp`; the console checks the gate's uid with `SO_PEERCRED`. The volume belongs to the Docker engine the human's launcher uses: lea must start the gate on that same engine. |
+| Socket | volume `<project>_<instance>-run` (`up.json`'s `socket_volume`) → `/run/lockhttp` (**the gate's container only**, never an agent container) | The console's socket. The image's `/etc/lockhttp/system.toml` names `/run/lockhttp`; the console checks the gate's uid with `SO_PEERCRED`. The volume belongs to the Docker engine `lox up` uses: lea must start the gate on that same engine. |
+| Hub | volume `<project>_<instance>-gate` → `--home`; lea's copies of the hub key, facade keys and devices, read-only | The gate's instance key, plans and hub state. Only the proxy container joins the hub's network; the gate refuses its addresses as targets. |
 | Files (read-only, written by lea on the host) | `<state>/lockhttp/gate/` → `/etc/lockhttp-gate`: `sources.json`, `credentials.json`, `ca.pem` | Readable by uid 10003. Reloaded when they change (2 s poll). An unreadable or invalid file is fail-closed (see §2.3). |
 | Writable | `--audit-dir` (`/var/log/lockhttp`, persisted on the host), the `--status-file` directory | Writable by uid 10003. JSONL audit of every decision (FREE, DENY, ask outcomes), daily files, 30 days kept. |
 | Liveness | `docker exec <prefix>-lockhttp-gate lockhttp gate --check --listen 127.0.0.1:3130` | Exits 0 when the gate answers. For lea's doctor. |
@@ -159,8 +182,8 @@ they are decided at the domain, as in phase 1.
 |---|---|
 | FREE | the upstream response; header `X-LockHTTP-Request: <id>` on decrypted or plain HTTP responses |
 | DENY | `403`, headers `X-LockHTTP-Code: E_*`, `X-LockHTTP-Request: <id>`, a text body: why, and what to ask of the human |
-| ASK pending past the hold time (60 s) | `403 E_PENDING`: the item stays on the console; once approved, the same request goes through (single-use authorisation, 10 min) |
-| No console | `403 E_NO_CONSOLE`, body: "No lockhttp console is running: ask the user to start it (lockhttp console)." |
+| ASK pending past the hold time (60 s) | `403 E_PENDING` naming the hub ticket (`X-LockHTTP-Ticket`): once approved on the hub, the same request goes through (single-use authorisation, 10 min) |
+| No console | `403 E_NO_CONSOLE`, body: "No lockhttp console is running: ask the user to start it (lox up)." |
 
 For a CONNECT, the refusal is the CONNECT's own `403` (clients show it as a
 proxy error).
@@ -170,10 +193,10 @@ proxy error).
 - **Status file** (`--status-file`, JSON, rewritten on change):
   `{"version":1, "console": "up|down", "pending": 2, "pending_by_container": {"lea-ab12cd34ef": 2}, "policy_fp": "sha256:…", "updated": "…"}`.
   The deck shows the counter and plays a sound on the first ASK (D6). It is
-  a notification only: approvals happen in the console, never in the deck.
+  a notification only: approvals happen on the hub's facades.
 - **Audit**: gate JSONL in `--audit-dir` (`gate-YYYY-MM-DD.jsonl`), console
   audit in the console account's `~/.local/state/lockhttp/audit.log`, in
-  the volume `lockhttp-home`, which lea does not mount; both carry
+  the console's home volume, which lea does not mount; the hub's audit; both carry
   `request_id`, `container`, `agent`, `attribution`, `via`.
 
 ## 6. Doctor checks for lea
@@ -181,7 +204,8 @@ proxy error).
 - gate answers (`docker exec <prefix>-lockhttp-gate lockhttp gate --check --listen 127.0.0.1:3130`),
   squid listens on loopback only;
 - the gate runs the pinned digest (`docker inspect`), as `gate`, with
-  `lockhttp-run` and never `lockhttp-home` or the Docker socket;
+  the console's socket volume on `/run/lockhttp` and never the console's
+  home or the Docker socket;
 - `LEA_GIT_SSH` empty;
 - from an agent: `curl --noproxy '*' https://example.com` fails;
   `curl -x http://lea-proxy:3128 https://example.com` fails;

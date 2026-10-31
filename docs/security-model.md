@@ -34,8 +34,7 @@ image, through the launcher.
   dependency it runs), and hostile web content that steers it.
 - **Out of scope:** a compromised host or console account, root, any
   account that may run `docker` on the host (see
-  [Docker](#what-docker-does-and-does-not-separate)), Anthropic itself, an attacker on the network upstream of the proxy container. A
-  standalone gate whose agent can reach the network directly.
+  [Docker](#what-docker-does-and-does-not-separate)), Anthropic itself, an attacker on the network upstream of the proxy container.
 
 ## Boundaries
 
@@ -53,7 +52,7 @@ image, through the launcher.
 
 | # | Threat | Parade | Residual |
 |---|---|---|---|
-| T1 | The agent goes out directly, around the gate. | lea's `--internal` networks; squid on loopback only; keyproxy chained through the gate; SSH git forwarders refused with LockHTTP on (lea side). Direct mode refuses non-public addresses except internal hosts. | Depends on lea's network setup (rootless Podman without an isolated gateway: lea's isolation test, decision D2). Standalone mode has no such boundary. |
+| T1 | The agent goes out directly, around the gate. | lea's `--internal` networks; squid on loopback only; keyproxy chained through the gate; SSH git forwarders refused with LockHTTP on (lea side). Direct mode refuses non-public addresses except internal hosts. | Depends on lea's network setup (rootless Podman without an isolated gateway: lea's isolation test, decision D2). |
 | T2 | Exfiltration through DNS (`<secret>.evil.com`). | The gate resolves a name only after the decision (direct mode), squid resolves after the gate; heuristics score long, deep and high-entropy labels. | The container's resolver is lea's (non-forwarding DNS is a lea requirement). Heuristics run in shadow by default. |
 | T3 | DNS over HTTPS, IP literals, metadata endpoints, odd ports, `h2c`, nested `CONNECT`, SNI and Host spoofing. | The floor, which no policy loosens and shadow mode does not lift; a full ClientHello naming the `CONNECT` host is required on 443; the `Host` sent upstream is the decided host. | DoH hosts not on the list and not named `doh.*`/`dns.*` are decided like any host (unknown: ASK). |
 | T4 | Exfiltration in reads to a trusted host (data in the URL or headers). | Decryption lets the gate see URLs and headers; secret formats are denied outside their hosts; the exfiltration score asks in `enforce`. | Without decryption the gate sees only the host. Low-bandwidth channels stay under the threshold. Heuristics are shadow by default. Spliced hosts are opaque. |
@@ -109,11 +108,9 @@ These do not change with the policy ([decisions.md](decisions.md)):
   exemption is FREE without the rule and heuristic checks (the floor, the
   deny list and the secret check still apply); both are bound to one exact
   request or URL, one container, and a short life.
-- **Serial approvals, one human.** The console answers one screen at a
-  time; the gate queues the rest.
+- **Approvals on the hub.** Each held request is a hub ticket a human
+  answers on a facade; the gate never falls back to another approver.
 - **The agent name is declarative**, for the audit only.
-- **Standalone mode** (no `--sources`) attributes every connection to
-  `local` and depends on the agent honouring the proxy variables.
 - **Docker is the separation**: see the next section.
 - **No external review** of LockHTTP has been done yet
   ([SECURITY.md](../SECURITY.md)).

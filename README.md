@@ -35,9 +35,9 @@
 
 LockHTTP is the proxy every outbound HTTP(S) request of an AI agent goes
 through. Reads of hosts you trust pass. Anything that sends data, triggers an
-action or reaches an unknown host waits for **your** approval, in a console
-that runs in its own container under its own account, where the agent
-cannot reach it. Every decision is traced to the container, the agent and the session
+action or reaches an unknown host waits for **your** approval, on
+[lockhub](https://github.com/DavidGodefroid/lockhub) (`lox approve`, the lea
+deck or a paired phone), where the agent cannot reach it. Every decision is traced to the container, the agent and the session
 that asked.
 
 > [!NOTE]
@@ -67,8 +67,11 @@ LockHTTP moves the decision out of the agent and onto the network path:
 
 ## How it works
 
-Three pieces, each in a container of its own. Only the console decides what
-needs a human, and only the human answers.
+Three pieces, each in a container of its own, and the hub. Only the
+policy the console serves decides what needs a human, and only the human
+answers, on the hub. LockHTTP runs hub-attached only: `lox up` runs its
+console and the hub, and lea runs the gate with the hub flags `lox up`
+hands it.
 
 ```
  agent container  (internal network only, no route out)
@@ -78,12 +81,15 @@ needs a human, and only the human answers.
  gate container   (shares the proxy container's network)
    lockhttp gate :3130   (uid 10003 "gate", never root)  ──▶  squid 127.0.0.1:3128  ──▶  Internet
    lockhttp signer       (its own container, uid 10004, holds the CA key; only with decryption)
-          │  volume lockhttp-run: /run/lockhttp/user-<profile>.sock
+          │  socket volume <project>_<lock>-run: /run/lockhttp/user-<profile>.sock
           │  (gate and console only; peer uid checked by the kernel)
           ▼
- console container  "lockhttp-console"   (lockhttp console, your terminal)
-   uid 10021 "lockhttp" · volume lockhttp-home: the policy, the approved policy, the audit
-   shows approval screens · serves the approved policy to the gate
+ console container  (lox up's service lock-<lock>, its terminal)
+   uid 10021 "lockhttp" · the policy, the approved policy, the audit
+   serves the approved policy to the gate · asks you about every loosening
+          ·
+ gate ──▶ lockhub (lox up's hub network; only lea's proxy joins it)
+   held requests become signed tickets · you approve on a facade (lox approve, lea's deck, a phone)
 ```
 
 1. The agent's HTTP client sends every request to the **gate**, a Go
@@ -94,7 +100,8 @@ needs a human, and only the human answers.
    (`policy.get`, polled every 2 s). It never reads a policy file.
 3. A request that is free goes out through squid, which keeps its own floor
    (DoH, IP literals, private ranges, ports). A request that needs a human
-   is held (60 s by default) while the console shows you an approval screen.
+   is held (60 s by default) as a signed ticket on the hub, where you
+   approve or deny it.
 4. With a local CA and the **signer**, the gate decrypts HTTPS and decides
    each request by method, path, headers and body. Without them, it decides
    a `CONNECT` at the domain only (see [Limits](#limits)).
@@ -104,7 +111,7 @@ needs a human, and only the human answers.
 | Verdict | What happens |
 |---|---|
 | **FREE** | The request goes out. The gate audits it (JSONL, one file per day). |
-| **ASK** | The gate holds the request and asks the console. You answer `y` or `n <reason>`. Only a rule with `verdict = "auto"` can let the console's auto mode answer; every other screen is `NeverAuto`. |
+| **ASK** | The gate holds the request and asks the hub: a ticket you approve or deny (with a reason) on a facade. Every ticket is `NeverAuto`: the hub has no auto mode for the gate's asks. |
 | **DENY** | `403` with an `X-LockHTTP-Code` header, at once. |
 
 What an ASK becomes depends on what the gate sees:
@@ -119,56 +126,47 @@ What an ASK becomes depends on what the gate sees:
 - **Durable openings** are policy rules, which you write and confirm in the
   console's `:review`.
 
-Requests are approved one at a time. Requests of identical fingerprint
+Requests of identical fingerprint
 (container, method, URL, media type, every end-to-end header,
 normalised body) share one screen and one decision; a request to
 the same URL with another body is a separate screen.
 
 ## Quick start with lea
 
-LockHTTP runs in Docker: nothing on your machine but Docker and the
-`lockhttp` launcher, which runs every command in the image
-`ghcr.io/davidgodefroid/lockhttp`, each as the account it needs.
-[lea](https://github.com/DavidGodefroid/lea) runs the gate beside its proxy
-container when `LEA_LOCKHTTP=1`. The contract between the two (files,
-mounts, uids, network rules) is in [docs/lea.md](docs/lea.md).
+LockHTTP runs in Docker and hub-attached only: [lockhub](https://github.com/DavidGodefroid/lockhub)'s
+`lox up` runs the hub and the lockhttp console for your projects directory,
+and [lea](https://github.com/DavidGodefroid/lea) runs the gate beside its
+proxy container when `LEA_LOCKHTTP=1`, with the hub flags `lox up` writes in
+`.lockfamily/up.json`. The contract between lockhttp and lea (files, mounts,
+uids, network rules) is in [docs/lea.md](docs/lea.md); the one between
+`lox up` and lea in lockhub's `docs/lox-up.md`.
 
 ```sh
-# 1. Install the launcher (see Install)
+# 1. Install the launcher (see Install): lea runs the gate from the image it pins
 V=vX.Y.Z
 curl -fsSLO "https://raw.githubusercontent.com/DavidGodefroid/lockhttp/$V/scripts/install.sh"
 less install.sh && LOCKHTTP_VERSION=$V sh install.sh
 
-# 2. The policy (lea's allowlist as trusted reads), then the console
-lockhttp init --trusted "<LEA_EGRESS_ALLOW>"
-lockhttp console                               # in a terminal you keep in view
+# 2. In your projects directory: a lockhttp lock, then the hub and its console
+cd ~/projects
+lox add lockhttp web          # the policy: .lockhttp/config.toml, which lox up reviews and copies
+lox up                        # runs the hub and the console, registers the gate's key
+lox attach web                # the console's terminal: approve its first policy (detach: Ctrl-P Ctrl-Q)
 
-# 3. In another terminal: start lea with LockHTTP on
+# 3. Start lea with LockHTTP on: its gate asks the hub
 export LEA_LOCKHTTP=1
+lea
+
+# 4. Approve the held requests on a facade of the hub
+lox approve
 ```
 
-The console runs as the `lockhttp` account (uid 10021) in the container
-`lockhttp-console`, the only one with the policy volume `lockhttp-home`.
-lea's gate runs as `gate` (uid 10003) in a container of its own and shares
-only the socket volume `lockhttp-run` with the console.
-
-## Quick start standalone (one host)
-
-Without lea, the gate runs in its own container and publishes
-`127.0.0.1:3130`. Every connection is attributed to the container `local`.
-
-```sh
-lockhttp init
-lockhttp console           # in a terminal you keep in view
-
-lockhttp gate              # in another terminal
-HTTPS_PROXY=http://127.0.0.1:3130 HTTP_PROXY=http://127.0.0.1:3130 your-agent
-```
-
-In this setup the proxy variables are the only thing that sends the agent
-through the gate: an agent that ignores them goes straight out. Standalone
-mode is useful to try the policy and the console; it is a boundary only if
-the agent's sole route to the network is the gate.
+The console runs as the `lockhttp` account (uid 10021) in `lox up`'s
+service; lea's gate runs as `gate` (uid 10003) in a container of its own
+and shares only the console's socket volume with it. Without a trusted
+`up.json` naming a lockhttp lock, lea does not start the gate: it says to
+run `lox up`. `lockhttp gate` refuses to start without its hub flags
+("launched by `lox up` only").
 
 ## Install
 
@@ -197,8 +195,8 @@ with Docker Desktop.
 |---|---|---|
 | `lockhttp init` | `lockhttp`, volume `lockhttp-home` | Writes the policy `~/.config/lockhttp/config.toml`, profile `default`. |
 | `lockhttp policy show\|edit\|path` | `lockhttp`, volume `lockhttp-home` | Prints, edits or locates the policy. |
-| `lockhttp console` | `lockhttp`, container `lockhttp-console` | The approval console. It must run in a terminal. |
-| `lockhttp gate` | `gate`, container `lockhttp-gate` | The proxy, for standalone use, published on `127.0.0.1:3130`. |
+| `lockhttp console` | `lockhttp`, container `lockhttp-console` | The policy console (under `lox up`, its own service runs it). It must run in a terminal. |
+| `lockhttp gate` | `gate`, container `lockhttp-gate` | The proxy. It needs the hub flags (`--hub`, `--hub-key-file`, `--instance`): lea passes them from `lox up`'s `up.json`. |
 | `lockhttp doctor [--gate ADDR] [--ca-cert FILE]` | `lockhttp` | Separated setup, policy, CA, gate. |
 | `lockhttp version`, `lockhttp update [vX.Y.Z]` | | The launcher's and the image's versions; a newer release's launcher, checked the same way, and its image. |
 
@@ -318,15 +316,14 @@ plain HTTP); a target the gate cannot reach is a `502`.
 | Code | Meaning | What the agent should do |
 |---|---|---|
 | `E_PENDING` | The request waits for the human past the hold time. | Retry the same request in a moment: once approved it goes through. |
-| `E_NO_CONSOLE` | No console is running: every ASK is refused at once. | Ask the user to run `lockhttp console`. |
+| `E_NO_CONSOLE` | No console is running: every ASK is refused at once. | Ask the user to run `lox up`. |
 | `E_DENIED` | The human denied it (the reason is in the body). | Do not retry; ask the user. |
-| `E_TIMEOUT` | Nobody answered the approval in time. | Ask the user to watch the console. |
+| `E_TIMEOUT` | The hub ticket expired before anyone answered it (the ticket is in `X-LockHTTP-Ticket`). | Send the same request again: it is asked again. |
 | `E_RULE` | A deny rule or the deny list refuses it. | Ask the user to change the rule. |
 | `E_FLOOR` | The network floor: IP literal, DoH, cloud metadata, port, single-label host, SNI or Host mismatch, `h2c`, nested `CONNECT`, a non-absolute URL. | Use a named public host on 80 or 443. |
 | `E_SECRET_EGRESS` | A known credential sent outside its own hosts, or a Claude credential that is not the container's. | Never send a credential to another host. |
 | `E_BODY_TOO_LARGE` | The body is over `buffer_limit` and cannot be held for a human. | Send less, or ask for a rule. |
 | `E_SOURCE_UNKNOWN` | The gate cannot tell which container sent the request. | Use the proxy address lea gave. |
-| `E_WITHDRAWN` | The request waited on a hub ticket, and the gate now runs without its hub: the ticket was withdrawn (once per ticket). | Tell the user, then send the same request again: the console asks the human. |
 
 `E_HOST_UNKNOWN`, `E_CLAUDE_API_PARAM`, `E_EXFIL_SUSPECT`, `E_METHOD` and
 `E_PINNED` are registered codes too; in v0.1.0 a refused ASK reaches the
@@ -358,31 +355,27 @@ Duplicate keys, and keys that differ from `mcp_servers`, `tools` or
 
 ## Security model
 
-The gate is the enforcement point on the network path; the console is the
-only place a human decision is made. In short:
+The gate is the enforcement point on the network path; the hub's facades
+are the only place a human decision about a request is made, and the
+console the only place a loosening of the policy is. In short:
 
 - **The console is in its own container, under its own account.**
-  `lockhttp console` runs as `lockhttp` (uid 10021) in the container
-  `lockhttp-console`, without a log driver, the only container with the
-  policy volume `lockhttp-home`. Its socket is reachable only by the
+  `lockhttp console` runs as `lockhttp` (uid 10021) in `lox up`'s service,
+  without a log driver. Its socket is reachable only by the
   `lockhttp-clients` group (the image's `gate` account), checked with the
-  kernel's peer credentials, and the socket volume `lockhttp-run` is mounted
-  in the gate's container only, never in an agent's. Anyone who can run
+  kernel's peer credentials, and its socket volume is mounted in the
+  gate's container only, never in an agent's. Anyone who can run
   `docker` on the host can reach the console's container and volumes: keep
   the agent away from the Docker socket.
-- **NeverAuto by default.** Every approval screen is `NeverAuto` unless the
-  request matched an active rule with `verdict = "auto"`. Such a rule names
-  a container or none, never an agent, and is refused on messaging hosts,
-  registry publishing, `git-receive-pack`, a write to any path of a git
-  forge, spliced hosts, every-host rules and production profiles. At run
-  time uploads, messaging, publishing, git pushes, WebSockets, `CONNECT`s,
-  red screens and heuristic hits stay `NeverAuto`; secrets are denied. The
-  console re-checks the gate's claim against its own approved policy (rule
-  id, active, `auto`, host, method, path, container, `max_body`) before auto
-  mode may answer.
+- **NeverAuto.** Every hub ticket of the gate is `NeverAuto`: the hub
+  cannot check a `verdict = "auto"` rule against the console's policy, so
+  nothing answers a held request but a human. Secrets are denied.
 - **A decision is shared only by identical requests.** Same container,
   method, URL, significant headers and normalised body; anything else is
   its own screen.
+- **Hub-attached only.** The gate does not start without its hub flags,
+  and nothing falls back to another approver when the hub is unreachable:
+  the ticket stays pending until the hub answers.
 - **Fail closed.** No console: every ASK is refused at once
   (`E_NO_CONSOLE`), while FREE goes on with the last policy the console
   served. Unknown source, unreadable source map: refused. An unreadable
@@ -415,14 +408,12 @@ Threats, parades and residual risks: [docs/security-model.md](docs/security-mode
   the frames that follow are not.
 - **Heuristics run in shadow by default.** The exfiltration score is logged,
   not enforced, until you set `heuristics = "enforce"`.
-- **One human per installation, one approval at a time.** The console is
-  serial; the gate queues its asks.
+- **Asks wait side by side.** Each held request is its own hub ticket;
+  identical requests share one.
 - **The agent name is declarative.** The container is read from the network
   the connection arrived on; the agent name comes from `Proxy-Authorization`
   and is for the audit only. Agents of one container share a uid, so rules
   scope to containers, never to agents.
-- **Standalone mode is not a boundary** unless the agent's only route out is
-  the gate.
 - No MCP server in v0.1.0: agents meet LockHTTP as a proxy, and its `403`
   pages tell them what to ask of the human.
 

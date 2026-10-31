@@ -6,6 +6,33 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+The gate runs hub-attached only (lockkit#110): one mode, `lox up`'s.
+
+### Removed
+
+- The standalone gate. `lockhttp gate` without `--hub`, `--hub-key-file`
+  and `--instance` exits with a usage error ("launched by `lox up` only");
+  lea passes them from `lox up`'s `up.json`. The gate never asks a console
+  about a held request any more: every ask is a hub ticket.
+- The rollback of hub mode (a gate started without its hub flags
+  withdrawing its pending hub tickets) and its refusal code `E_WITHDRAWN`.
+- `lockhttp console --auto`, auto mode, and the console's `http.approve`
+  method: the console serves the approved policy (`policy.get`) and asks
+  its human about loosenings only. A `verdict = "auto"` rule asks like
+  `ask` (hub tickets are `NeverAuto`).
+
+### Changed
+
+- An approved request's gate audit record says `"approval": "hub"` (was
+  `"console"`).
+- The agent's hints name `lox up` for `E_NO_CONSOLE` and lockhub for an
+  approval.
+- Docs: the quick start goes through `lox add` and `lox up`; the
+  standalone quick start is gone. The launcher's docker e2e checks that
+  the gate refuses to start without the hub; requests through a
+  hub-attached gate are covered by the integration tests (lockkit's test
+  hub) and lockhub's e2e.
+
 ## [0.5.1] - 2026-10-31
 
 lockkit v0.8.1: a hub URL is `http(s)://host[:port]` only, lockkit's errors

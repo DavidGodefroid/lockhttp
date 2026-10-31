@@ -9,8 +9,8 @@
 #   init, policy, doctor  as the console account, with its home volume (the
 #                         policy lives there)
 #   gate                  as gate (uid 10003), with the socket volume, its
-#                         port published on 127.0.0.1:3130 (standalone use;
-#                         lea starts its own gate, docs/lea.md)
+#                         port published on 127.0.0.1:3130 (it needs the hub
+#                         flags; lea starts its own gate, docs/lea.md)
 #   signer                as signer (uid 10004), with the volume
 #                         lockhttp-signer (its socket, reachable by the gate)
 #   ca                    as you, with the --dir directory mounted

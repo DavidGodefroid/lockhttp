@@ -53,20 +53,21 @@ Human commands (console account)
                                    write the policy file
   policy   show | edit | path [--config FILE]
                                    print, edit or locate the policy file
-  console  [--profile P] [--config FILE] [--auto]
-                                   run the approval console
+  console  --hub URL --hub-key-file FILE --instance NAME [--profile P] [--config FILE]
+                                   run the policy console (lox up runs it)
   doctor   [--profile P] [--config FILE] [--ca-cert FILE] [--gate ADDR]
                                    check the setup
   ca init  --dir DIR [--name NAME] [--force]
                                    create (or rotate) the local CA for decryption
 
 Gate and signer (lea runs them beside its proxy container)
-  gate     --listen ADDR [--upstream URL] [--profile P] [--sources FILE]
+  gate     --listen ADDR --hub URL --hub-key-file FILE --instance NAME
+           [--home DIR] [--hub-net CIDR ...] [--hub-plain-http]
+           [--upstream URL] [--profile P] [--sources FILE]
            [--credentials FILE] [--audit-dir DIR] [--status-file FILE]
-           [--ca-cert FILE --signer SOCKET] [--check]
-           [--hub URL --hub-key-file FILE --instance NAME [--home DIR]
-            [--hub-net CIDR ...] [--hub-plain-http]]
-                                   run the HTTP(S) proxy (--hub: ask lockhub)
+           [--ca-cert FILE --signer SOCKET] | --check
+                                   run the HTTP(S) proxy, asking lockhub
+                                   (launched by lox up only, through lea)
   signer   --ca-cert FILE --ca-key FILE --listen SOCKET [--allow-uid N ...]
                                    issue leaf certificates to the gate (holds the CA key)
   hub-key  --instance NAME [--home DIR]

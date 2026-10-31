@@ -11,7 +11,7 @@ first are not.
 | Requirement | Where it lives |
 |---|---|
 | The console runs **apart from the agent**, in its own account (`lockhttp`): since the Docker-only change (after v0.1.0) that account and its socket live in the image, the console in its own container (`lockhttp-console`), the agent's containers never get its socket or its home volume. lockkit's isolation checks run against the image's root-owned `system.toml`. | `Dockerfile`, `scripts/lockhttp`, `lockhttp console` (lockkit `console.Run`) |
-| **NeverAuto by default.** Every approval screen is `NeverAuto` unless the request matched a rule with `verdict = "auto"`; such a rule is valid only for a container (or all containers), never for an agent, and never for a forbidden class (uploads, messaging, registry publishing, `git-receive-pack`, a spliced host, a heuristic hit, a secret, a production profile). The console re-checks the rule against its own approved policy before it lets auto mode answer. | `internal/policy` (validation), `internal/httpconsole` (re-check) |
+| **NeverAuto by default.** Every approval screen is `NeverAuto` unless the request matched a rule with `verdict = "auto"`; such a rule is valid only for a container (or all containers), never for an agent, and never for a forbidden class (uploads, messaging, registry publishing, `git-receive-pack`, a spliced host, a heuristic hit, a secret, a production profile). Since the gate is hub-attached only, every hub ticket it makes is `NeverAuto`: no auto mode answers a held request. | `internal/policy` (validation), `internal/gate` (hub tickets) |
 | **A human decision is shared only by requests of identical fingerprint** (container, method, URL, significant headers, normalised body). Requests under the same key but with another fingerprint are separate items, each approved on its own. | `internal/gate` (ask queue) |
 | **Claude API path and body allowlist** once TLS is decrypted: `POST /v1/messages` and `/v1/messages/count_tokens` are free only without `mcp_servers` and with no server tool other than `web_search`; `/v1/files*` asks; a credential that is not one of the container's is denied; any other host or path under the Anthropic domains asks (`NeverAuto`). | `internal/decide/claude.go` |
 | **Fail closed.** No console: an ASK is refused at once (`E_NO_CONSOLE`). An error while deciding, an unknown source, an unreadable source map, a policy that does not decode: deny. The gate never reads a policy file; it only uses what the console serves. | `internal/gate` |
@@ -54,3 +54,14 @@ first are not.
   audit only.
 - **No MCP server in v0.1.0.** Agents never talk to the console: they meet
   LockHTTP as a proxy, and its 403 pages say what to ask of the human.
+
+## Hub-attached only (lockkit#110)
+
+The gate runs hub-attached only: `lockhttp gate` needs `--hub`,
+`--hub-key-file` and `--instance` (lea passes them from `lox up`'s
+`up.json`) and exits otherwise ("launched by `lox up` only"). The
+standalone gate, which asked a console of its own, and its rollback
+(`E_WITHDRAWN`) are gone. `lockhttp console` stays: under `lox up` it serves
+the approved policy to the gate and asks its human about every loosening;
+it serves no approvals (`http.approve` and `--auto` are gone). One mode
+keeps one path to test and to reason about (KISS).

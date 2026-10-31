@@ -29,19 +29,22 @@ func (e env) configPath(flagVal string) (string, error) {
 	return kconfig.UserConfigPath(product.P)
 }
 
-// runConsole is `lockhttp console`: the approval console, in the console
-// account's own session.
+// runConsole is `lockhttp console`: the policy console, in the console
+// account's own session (`lox up` runs it). It serves the approved policy
+// to the gate and asks its human about every loosening; the gate asks
+// lockhub, never this console, about held requests.
 func runConsole(e env, args []string) int {
-	const usage = "lockhttp console [--profile P] [--config FILE] [--auto]"
+	const usage = "lockhttp console --hub URL --hub-key-file FILE --instance NAME [--profile P] [--config FILE]"
 	fs := flag.NewFlagSet("console", flag.ContinueOnError)
+	var hub console.HubOptions
+	hub.Register(fs)
 	profile := fs.String("profile", "default", "profile to serve")
 	cfgFlag := fs.String("config", "", "policy file (default: ~/.config/lockhttp/config.toml)")
-	auto := fs.Bool("auto", false, "start in auto mode (only rules with verdict \"auto\" are ever auto-approved)")
 	if !parse(e, fs, "console", usage, args) {
 		return exitUsage
 	}
 	if !e.tty {
-		fmt.Fprintln(e.stderr, "lockhttp console: must run in a terminal: it asks the human for approvals")
+		fmt.Fprintln(e.stderr, "lockhttp console: must run in a terminal: it asks the human about policy changes")
 		return exitUsage
 	}
 	path, err := e.configPath(*cfgFlag)
@@ -59,8 +62,8 @@ func runConsole(e env, args []string) int {
 	p.Version = strings.TrimPrefix(version, "v")
 	be := httpconsole.New(httpconsole.Options{Profile: *profile, Config: path})
 	err = console.Run(ctx, p, be, console.Options{
-		Profile: *profile, IO: term, TTY: os.Stdin, Auto: *auto,
-		Sanitizer: httpconsole.Sanitizer(),
+		Profile: *profile, IO: term, TTY: os.Stdin,
+		Sanitizer: httpconsole.Sanitizer(), Hub: hub,
 	})
 	if err != nil {
 		fmt.Fprintln(e.stderr, "lockhttp console:", err)
