@@ -97,7 +97,7 @@ lockhttp init`).
 ## `lockhttp console`
 
 ```
-lockhttp console [--profile P] [--config FILE]
+lockhttp console --hub URL --hub-key-file FILE --instance NAME [--profile P] [--config FILE]
 ```
 
 The policy console: lockkit's console, serving `policy.get` to the gate.
@@ -107,10 +107,13 @@ a paired phone). It must run in a terminal (exit 3 otherwise), as the
 console account. Under `lox up` it runs in its own compose service, with
 the policy copied from `<workspace>/.lockhttp/` (`lox attach <instance>`
 attaches its terminal); the launcher runs it in the container
-`lockhttp-console`, the only one that mounts `lockhttp-home`.
+`lockhttp-console`, the only one that mounts `lockhttp-home`. Without its
+hub flags (`lox up` gives them) it exits 3: "the console is launched by
+`lox up` only".
 
 | Flag | Default | Meaning |
 |---|---|---|
+| `--hub URL`, `--hub-key-file FILE`, `--instance NAME` | (required) | The hub, its pinned key and the lock instance name, as `lox up` writes them; also lockkit's optional `--hub-plain-http`, `--devices-file`, `--facade-keys-file`, `--require-device`, `--seal-clear`. |
 | `--profile P` | `default` | Profile to serve. Its socket is `user-P.sock` in the socket directory. |
 | `--config FILE` | `~/.config/lockhttp/config.toml` | The policy file. |
 

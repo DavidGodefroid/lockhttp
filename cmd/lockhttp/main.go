@@ -53,7 +53,7 @@ Human commands (console account)
                                    write the policy file
   policy   show | edit | path [--config FILE]
                                    print, edit or locate the policy file
-  console  [--profile P] [--config FILE]
+  console  --hub URL --hub-key-file FILE --instance NAME [--profile P] [--config FILE]
                                    run the policy console (lox up runs it)
   doctor   [--profile P] [--config FILE] [--ca-cert FILE] [--gate ADDR]
                                    check the setup

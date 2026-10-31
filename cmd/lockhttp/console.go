@@ -34,8 +34,10 @@ func (e env) configPath(flagVal string) (string, error) {
 // to the gate and asks its human about every loosening; the gate asks
 // lockhub, never this console, about held requests.
 func runConsole(e env, args []string) int {
-	const usage = "lockhttp console [--profile P] [--config FILE]"
+	const usage = "lockhttp console --hub URL --hub-key-file FILE --instance NAME [--profile P] [--config FILE]"
 	fs := flag.NewFlagSet("console", flag.ContinueOnError)
+	var hub console.HubOptions
+	hub.Register(fs)
 	profile := fs.String("profile", "default", "profile to serve")
 	cfgFlag := fs.String("config", "", "policy file (default: ~/.config/lockhttp/config.toml)")
 	if !parse(e, fs, "console", usage, args) {
@@ -61,7 +63,7 @@ func runConsole(e env, args []string) int {
 	be := httpconsole.New(httpconsole.Options{Profile: *profile, Config: path})
 	err = console.Run(ctx, p, be, console.Options{
 		Profile: *profile, IO: term, TTY: os.Stdin,
-		Sanitizer: httpconsole.Sanitizer(),
+		Sanitizer: httpconsole.Sanitizer(), Hub: hub,
 	})
 	if err != nil {
 		fmt.Fprintln(e.stderr, "lockhttp console:", err)

@@ -3,8 +3,9 @@
 docs/docker.md.
 
 The console runs in a pseudo-terminal this script answers (y to every
-prompt). The gate is hub-attached only: without its hub flags the
-launcher's gate refuses to start ("launched by `lox up` only"). A request
+prompt). The console and the gate are hub-attached only: without their
+hub flags the launcher's console and gate refuse to start ("launched by
+`lox up` only"). A request
 through a gate that asks a hub is tested end to end by lockhub's e2e,
 which runs the lockhttp lock under `lox up`. Needs docker. Uses the
 launcher's real names (lockhttp-console, lockhttp-gate, volumes
@@ -122,9 +123,10 @@ def main():
         r = launcher("doctor", check_=False)
         check(r.returncode == 0 and "separated setup" in r.stdout, "doctor passes as the console account", r.stdout + r.stderr)
 
-        # The console approves its first policy and serves it.
+        # The console does not start without the hub either: lox up gives
+        # its flags.
         console = Console()
-        check(console.wait_for("Listening on"), "the console listens", console.text())
+        check(console.wait_for("launched by `lox up` only"), "the console needs the hub", console.text())
 
         # The gate does not start without the hub: lox up gives its flags.
         r = launcher("gate", check_=False)
