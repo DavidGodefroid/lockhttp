@@ -53,6 +53,11 @@ Profile names use letters, digits, `_`, `-` and `.`, starting with a letter
 or digit (at most 64 bytes); a production profile's name must be at least 2
 characters and not `y`, `yes`, `n`, `no` or `ok`.
 
+An error names the key, and for a list the entry's place in the file
+(`trusted entry 2`, `rules entry 3 host`), with the allowed values; it never
+repeats the value given, which may be a pasted secret. A rule is named by
+its place, not by its `id`.
+
 ## Profile keys
 
 | Key | Type | Default | Validation and meaning |

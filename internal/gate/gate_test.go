@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -699,5 +700,20 @@ func TestBodyHelpers(t *testing.T) {
 	pre := BodyFingerprint("multipart/form-data; boundary=AAA", []byte("LEAK\r\n--AAA\r\nContent-Disposition: form-data; name=\"f\"\r\n\r\nhello\r\n--AAA--\r\n"))
 	if pre == a {
 		t.Fatal("multipart preamble ignored")
+	}
+}
+
+// A bad networks entry of the sources file is named by its place, not by
+// its values.
+func TestSourcesErrorDoesNotEcho(t *testing.T) {
+	const canary = "glsa_CanarySecretToken123"
+	for _, n := range []string{
+		`{"local_ip":"` + canary + `","container":"c"}`,
+		`{"local_ip":"10.0.0.2","container":""},{"local_ip":"https://user:` + canary + `@h","container":"c"}`,
+	} {
+		_, err := parseSources([]byte(`{"version":` + strconv.Itoa(ContractVersion) + `,"networks":[` + n + `]}`))
+		if err == nil || strings.Contains(err.Error(), canary) || !strings.Contains(err.Error(), "networks entry 1") {
+			t.Errorf("%s: %v", n, err)
+		}
 	}
 }

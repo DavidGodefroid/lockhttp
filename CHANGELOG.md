@@ -6,6 +6,19 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- Configuration and usage errors no longer repeat the value given, which
+  may be a pasted secret or a URL with userinfo: policy errors name the key
+  and, for a list, the entry's place in the file (`trusted entry 2`,
+  `internal_hosts entry 1 host`, `rules entry 3`; a rule by its place, not
+  its `id`) with the allowed values; the sources file names a bad
+  `networks` entry by its place; `--hub`, `--instance`, `--hub-net` and
+  `--allow-uid` errors, flag parse errors and stray arguments omit the
+  value (lockkit's hub client errors have the `--hub` URL replaced). The
+  `mcp_servers` warning (shown and audited) names the server URL without
+  its userinfo, query or fragment.
+
 ## [0.5.0] - 2026-10-30
 
 Hub mode on lockkit v0.6.0: expired tickets are approved again, reveal from a local

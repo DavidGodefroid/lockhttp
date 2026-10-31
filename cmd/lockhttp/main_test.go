@@ -259,3 +259,50 @@ func TestGateHubPlainHTTP(t *testing.T) {
 		}
 	}
 }
+
+// A flag value may be a secret (a URL with userinfo, a pasted token): the
+// usage errors name the flag, never the value given.
+func TestFlagErrorsDoNotEchoValues(t *testing.T) {
+	const (
+		canary    = "glsa_CanarySecretToken123"
+		canaryURL = "https://user:glsa_Canary@h"
+	)
+	home := t.TempDir()
+	key := filepath.Join(t.TempDir(), "hub.pub")
+	if err := os.WriteFile(key, []byte("11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gate := env{euid: func() int { return 1000 }}
+	hub := func(url string, more ...string) []string {
+		return append([]string{"gate", "--listen", "127.0.0.1:0", "--hub", url, "--hub-key-file", key, "--instance", "egress", "--home", home}, more...)
+	}
+	for _, c := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"--hub not a URL", hub("http://user:" + canary + "@"), "--hub"},
+		{"--hub not a URL (raw)", hub(canaryURL + ":x:y"), "--hub"},
+		{"--hub http to a public host", hub("http://user:"+canary+"@hub.example.com:8443", "--hub-net", "10.89.0.0/24"), "(--hub)"},
+		{"--hub plain http to a public host", hub("http://user:"+canary+"@hub.example.com:8443", "--hub-net", "10.89.0.0/24", "--hub-plain-http"), "(--hub)"},
+		{"--hub does not resolve", hub("https://user:" + canary + "@no-such-hub.invalid:8443"), "--hub host"},
+		{"--instance", []string{"gate", "--listen", "127.0.0.1:0", "--hub", "https://hub.example.com", "--hub-key-file", key, "--instance", canary}, "--instance"},
+		{"--hub-net", []string{"gate", "--hub-net", canaryURL}, "-hub-net"},
+		{"--hub-net token", []string{"gate", "--hub-net", canary}, "-hub-net"},
+		{"--allow-uid", []string{"signer", "--allow-uid", canary}, "-allow-uid"},
+		{"bool flag value", []string{"gate", "--check=" + canary}, "-check"},
+		{"positional argument", []string{"gate", "--hub-plain-http", canaryURL}, "unexpected argument"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			code, out, errs := runEnv(t, gate, c.args...)
+			for _, leak := range []string{canary, "glsa_Canary", "user:"} {
+				if strings.Contains(errs+out, leak) {
+					t.Fatalf("the error repeats the value (%s): %s", leak, errs)
+				}
+			}
+			if code != exitUsage || !strings.Contains(errs, c.want) {
+				t.Fatalf("%d, want %q: %s", code, c.want, errs)
+			}
+		})
+	}
+}

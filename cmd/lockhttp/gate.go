@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -252,11 +253,11 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 	case rawURL == "" || keyFile == "" || instance == "":
 		return nil, errors.New("--hub, --hub-key-file and --instance go together")
 	case !hubclient.ValidInstance(instance):
-		return nil, fmt.Errorf("invalid instance name %q", instance)
+		return nil, errors.New("--instance: use 1 to 63 lower-case letters, digits or '-', starting with a letter or digit")
 	}
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Hostname() == "" {
-		return nil, fmt.Errorf("--hub must be a URL: %q", rawURL)
+		return nil, errors.New("--hub must be a URL with a host (https://host:port)")
 	}
 	hubKey, err := hubclient.ReadHubKey(keyFile)
 	if err != nil {
@@ -289,13 +290,13 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 	c, err := hubclient.New(hubclient.Config{URL: rawURL, Instance: instance, Key: key, HubKey: hubKey, PlainHTTP: plainHTTP,
 		StateFile: filepath.Join(dir, "state.json"), Devices: devices, RequireDevice: require, SealClear: devs.SealClear, Facades: facades})
 	if err != nil {
-		return nil, err
+		return nil, redactHubURL(err, rawURL)
 	}
 	nets = append(nets, hubAddrs(u.Hostname())...)
 	if len(nets) == 0 {
 		// Fail closed: without one address of the hub, the gate could not
 		// refuse a name that leads there.
-		return nil, fmt.Errorf("the hub host %s does not resolve: give its network with --hub-net", u.Hostname())
+		return nil, errors.New("the --hub host does not resolve: give its network with --hub-net")
 	}
 	// Last: an open store holds its directory for this process.
 	st, err := plans.Open(filepath.Join(dir, "plans"))
@@ -303,6 +304,17 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 		return nil, err
 	}
 	return &gate.Hub{Client: c, Plans: st, Hosts: []string{u.Hostname()}, Nets: nets}, nil
+}
+
+// redactHubURL keeps the --hub URL out of an error of lockkit's hubclient,
+// which quotes it: a URL may carry userinfo (a password or a token).
+func redactHubURL(err error, rawURL string) error {
+	msg := err.Error()
+	if rawURL == "" || !strings.Contains(msg, rawURL) {
+		return err
+	}
+	msg = strings.ReplaceAll(msg, strconv.Quote(rawURL), "(--hub)")
+	return errors.New(strings.ReplaceAll(msg, rawURL, "(--hub)"))
 }
 
 // withdrawStandalone withdraws the pending plans of every hub instance in
@@ -379,7 +391,7 @@ func (l *prefixList) String() string { return fmt.Sprint(*l) }
 func (l *prefixList) Set(s string) error {
 	p, err := netip.ParsePrefix(s)
 	if err != nil {
-		return fmt.Errorf("invalid network %q", s)
+		return errors.New("want a network in CIDR form (10.89.0.0/24)")
 	}
 	*l = append(*l, p.Masked())
 	return nil
