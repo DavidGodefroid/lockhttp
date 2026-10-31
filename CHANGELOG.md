@@ -13,17 +13,21 @@ uses [Semantic Versioning](https://semver.org/).
   and, for a list, the entry's place in the file (`trusted entry 2`,
   `internal_hosts entry 1 host`, `rules entry 3`; a rule by its place, not
   its `id`) with the allowed values; the sources file names a bad
-  `networks` entry by its place; `--hub`, `--instance`, `--hub-net`,
-  `--require-device`, `--allow-uid`, `--listen` (and `--check`), `doctor
-  --gate` and `init --trusted` errors, flag parse errors and stray
-  arguments omit the value (lockkit's hub client errors have the `--hub`
-  URL replaced). The `mcp_servers` warning (shown and audited) names the
+  `networks` entry by its place; `--hub`, `--instance` (`gate` and
+  `hub-key`), `--hub-net`, `--require-device`, `--allow-uid`, `--profile`,
+  `--listen` (gate, `--check`, signer), `doctor --gate` and `init
+  --trusted` errors, flag parse errors, unknown commands, subcommands and
+  flags, and stray arguments omit the value (lockkit's hub client errors
+  have the `--hub` URL replaced). File paths are still named. The `mcp_servers` warning (shown and audited) names the
   server URL without its userinfo, query or fragment.
 
 ### Changed
 
-- `--hub` refuses a URL with a user or password (the hub authenticates
-  the instance key), and the gate's start line names the hub host only.
+- `--hub` refuses a URL with a user, password, query or fragment (the hub
+  authenticates the instance key), and the gate's start line names the hub
+  host only.
+- The `mcp_servers` warning keeps the URL's host and path: a secret in the
+  path still shows.
 
 ## [0.5.0] - 2026-10-30
 

@@ -139,7 +139,7 @@ func runPolicy(e env, args []string) int {
 		}
 		fmt.Fprintln(e.stdout, "saved: the console shows any loosening for approval (:review)")
 	default:
-		return usageFail(e, "policy", usage, "unknown subcommand "+sub)
+		return usageFail(e, "policy", usage, "unknown subcommand (show, edit or path)")
 	}
 	return exitOK
 }

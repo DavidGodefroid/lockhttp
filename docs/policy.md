@@ -56,7 +56,8 @@ characters and not `y`, `yes`, `n`, `no` or `ok`.
 An error names the key, and for a list the entry's place in the file
 (`trusted entry 2`, `rules entry 3 host`), with the allowed values; it never
 repeats the value given, which may be a pasted secret. A rule is named by
-its place, not by its `id`.
+its place, not by its `id`. Profile names (table names) are keys and may
+be named.
 
 ## Profile keys
 

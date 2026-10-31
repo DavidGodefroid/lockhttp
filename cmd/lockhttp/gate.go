@@ -203,7 +203,7 @@ func runSigner(e env, args []string) int {
 	}
 	ln, err := signer.Listen(*listen)
 	if err != nil {
-		fmt.Fprintln(e.stderr, "lockhttp signer:", err)
+		fmt.Fprintln(e.stderr, "lockhttp signer: cannot listen on --listen:", netErrKind(err))
 		return exitFail
 	}
 	ctx, stop := signalContext()
@@ -254,15 +254,16 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 	case rawURL == "" || keyFile == "" || instance == "":
 		return nil, errors.New("--hub, --hub-key-file and --instance go together")
 	case !hubclient.ValidInstance(instance):
-		return nil, errors.New("--instance: use 1 to 63 lower-case letters, digits or '-', starting with a letter or digit")
+		return nil, errInstance
 	}
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Hostname() == "" {
 		return nil, errors.New("--hub must be a URL with a host (https://host:port)")
 	}
-	if u.User != nil {
-		// The hub authenticates the instance key, never a password.
-		return nil, errors.New("--hub must not carry a user or password (https://host:port)")
+	if u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		// The hub authenticates the instance key, never a password or a
+		// token in the URL.
+		return nil, errors.New("--hub must not carry a user, password, query or fragment (https://host:port)")
 	}
 	hubKey, err := hubclient.ReadHubKey(keyFile)
 	if err != nil {
@@ -310,6 +311,8 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 	}
 	return &gate.Hub{Client: c, Plans: st, Hosts: []string{u.Hostname()}, Nets: nets}, nil
 }
+
+var errInstance = errors.New("--instance: use 1 to 63 lower-case letters, digits or '-', starting with a letter or digit")
 
 // redactHubURL keeps the --hub URL out of an error of lockkit's hubclient,
 // which quotes it: a URL may carry userinfo (a password or a token).
@@ -460,7 +463,17 @@ func runHubKey(e env, args []string) int {
 			return exitFail
 		}
 	}
-	if err := hubclient.HubKeyCommand(e.stdout, home, rest); err != nil {
+	// The flags are checked here: lockkit's errors quote the value given.
+	const usage = "lockhttp hub-key --instance NAME [--home DIR]"
+	fs := flag.NewFlagSet("hub-key", flag.ContinueOnError)
+	instance := fs.String("instance", "", "the lock instance name")
+	if !parse(e, fs, "hub-key", usage, rest) {
+		return exitUsage
+	}
+	if !hubclient.ValidInstance(*instance) {
+		return usageFail(e, "hub-key", usage, errInstance.Error())
+	}
+	if err := hubclient.HubKeyCommand(e.stdout, home, []string{"--instance", *instance}); err != nil {
 		fmt.Fprintln(e.stderr, "lockhttp hub-key:", err)
 		return exitUsage
 	}

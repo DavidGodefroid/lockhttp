@@ -28,7 +28,7 @@ func TestVersion(t *testing.T) {
 
 func TestUnknownCommand(t *testing.T) {
 	code, _, errs := runArgs(t, "nope")
-	if code != exitUsage || !strings.Contains(errs, `unknown command "nope"`) {
+	if code != exitUsage || !strings.Contains(errs, "unknown command") {
 		t.Fatalf("unknown: %d %q", code, errs)
 	}
 }
@@ -295,6 +295,12 @@ func TestFlagErrorsDoNotEchoValues(t *testing.T) {
 		{"--hub with userinfo", hub(`http://user:`+canary+`@hub.example.com:8443/a"b\c`, "--hub-net", "10.89.0.0/24"), "--hub must not carry"},
 		{"--hub quoted by lockkit", hub(`http://hub.example.com:8443/a"b\c/`+canary, "--hub-net", "10.89.0.0/24"), "(--hub)"},
 		{"--require-device", hub("https://hub.example.com", "--hub-net", "10.89.0.0/24", "--devices-file", key, "--require-device", canary), "--require-device: risk classes"},
+		{"--hub with a query", hub("https://hub.example.com:8443/?token="+canary, "--hub-net", "10.89.0.0/24"), "--hub must not carry"},
+		{"policy subcommand", []string{"policy", canaryURL}, "unknown subcommand"},
+		{"hub-key --instance", []string{"hub-key", "--home", t.TempDir(), "--instance", canaryURL}, "--instance"},
+		{"hub-key flag value", []string{"hub-key", "--home", t.TempDir(), "--instance=" + canary, canaryURL}, "unexpected argument"},
+		{"unknown command", []string{canaryURL}, "unknown command"},
+		{"unknown flag", []string{"gate", "-" + canary}, "unknown flag"},
 		{"bad flag syntax", []string{"gate", "---hub=" + canaryURL}, "bad flag syntax"},
 		{"--listen", []string{"gate", "--listen", canary}, "--listen"},
 		{"--listen URL", []string{"gate", "--listen", canaryURL}, "--listen"},
@@ -304,7 +310,6 @@ func TestFlagErrorsDoNotEchoValues(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			code, out, errs := runEnv(t, gate, c.args...)
-			t.Log(errs, out)
 			for _, leak := range []string{canary, "glsa_Canary", "user:"} {
 				if strings.Contains(errs+out, leak) {
 					t.Fatalf("the error repeats the value (%s): %s", leak, errs)

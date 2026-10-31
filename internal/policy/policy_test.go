@@ -327,8 +327,16 @@ func TestErrorsDoNotEchoValues(t *testing.T) {
 func TestCheckHostPatternDoesNotEcho(t *testing.T) {
 	for _, h := range []string{canary, canaryURL, "glsa-canarysecrettoken123", "fe80::1%" + canary, "*.glsa-canarysecrettoken123"} {
 		_, err := CheckHostPattern("host", h, false)
-		if err == nil || strings.Contains(err.Error(), "anary") || !strings.HasPrefix(err.Error(), "host ") && !strings.HasPrefix(err.Error(), "host: ") {
+		if err == nil || strings.Contains(err.Error(), "anary") || (!strings.HasPrefix(err.Error(), "host ") && !strings.HasPrefix(err.Error(), "host: ")) {
 			t.Errorf("%s: %v", h, err)
 		}
+	}
+}
+
+// A missing profile: --profile is a value given on the command line.
+func TestNoProfileDoesNotEcho(t *testing.T) {
+	_, err := Parse([]byte("[profiles.default]\n"), "config.toml", canary)
+	if err == nil || strings.Contains(err.Error(), canary) || !strings.Contains(err.Error(), "--profile") {
+		t.Fatalf("%v", err)
 	}
 }

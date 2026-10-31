@@ -157,7 +157,7 @@ func Parse(data []byte, name, profile string) (Policy, error) {
 	}
 	r, ok := f.Profiles[profile]
 	if !ok {
-		return Policy{}, fmt.Errorf("%s: no profile %q", name, profile)
+		return Policy{}, fmt.Errorf("%s: no profile of that name (--profile)", name)
 	}
 	p, err := fromRaw(profile, r)
 	if err != nil {

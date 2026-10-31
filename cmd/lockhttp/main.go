@@ -122,7 +122,8 @@ func run(e env, args []string) int {
 	case "hub-key":
 		return runHubKey(e, args[1:])
 	default:
-		fmt.Fprintf(e.stderr, "lockhttp: unknown command %q\n\n%s", cmd, usageText)
+		// Not the argument itself: it may be a pasted value.
+		fmt.Fprintf(e.stderr, "lockhttp: unknown command\n\n%s", usageText)
 		return exitUsage
 	}
 }
@@ -143,7 +144,7 @@ func parse(e env, fs *flag.FlagSet, cmd, usage string, args []string) bool {
 	if fs.NArg() > 0 {
 		// Not the argument itself: a stray value may be a secret (a URL
 		// with a password after a boolean flag).
-		usageFail(e, cmd, usage, fmt.Sprintf("unexpected argument (%d after the flags)", fs.NArg()))
+		usageFail(e, cmd, usage, "unexpected argument after the flags (a boolean flag takes --flag=value)")
 		return false
 	}
 	return true
@@ -157,8 +158,11 @@ var flagValueRe = regexp.MustCompile(`^(invalid (?:boolean )?value) ".*" (for (?
 // may be a secret (a URL with userinfo).
 func flagError(err error) string {
 	msg := err.Error()
-	if strings.HasPrefix(msg, "bad flag syntax: ") {
+	switch {
+	case strings.HasPrefix(msg, "bad flag syntax: "):
 		return "bad flag syntax (-flag, --flag or --flag=value)"
+	case strings.HasPrefix(msg, "flag provided but not defined: "):
+		return "unknown flag"
 	}
 	return flagValueRe.ReplaceAllString(msg, "$1 $2")
 }
