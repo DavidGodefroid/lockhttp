@@ -55,7 +55,8 @@ func runGate(e env, args []string) int {
 	if *check {
 		c, err := net.DialTimeout("tcp", *listen, 3*time.Second)
 		if err != nil {
-			fmt.Fprintln(e.stderr, "lockhttp gate: no gate on", *listen+":", err)
+			// Not the address nor the net error that repeats it.
+			fmt.Fprintln(e.stderr, "lockhttp gate: no gate answers on --listen")
 			return exitFail
 		}
 		c.Close()
@@ -130,7 +131,7 @@ func runGate(e env, args []string) int {
 	cfg.UpstreamTLS = &tls.Config{MinVersion: tls.VersionTLS12}
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
-		fmt.Fprintln(e.stderr, "lockhttp gate:", err)
+		fmt.Fprintln(e.stderr, "lockhttp gate: cannot listen on --listen (host:port, free, and allowed):", netErrKind(err))
 		return exitFail
 	}
 	ctx, stop := signalContext()
@@ -143,7 +144,7 @@ func runGate(e env, args []string) int {
 		mode = "decrypting (signer " + *signerSock + ")"
 	}
 	if cfg.Hub != nil {
-		mode += ", asks on hub " + *hubURL + " as " + *instance
+		mode += ", asks on hub " + cfg.Hub.Hosts[0] + " as " + *instance
 	}
 	fmt.Fprintf(e.stderr, "lockhttp gate %s: listening on %s, profile %s, %s\n", version, ln.Addr(), *profile, mode)
 	err = g.Serve(ctx, ln)
@@ -259,6 +260,10 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 	if err != nil || u.Hostname() == "" {
 		return nil, errors.New("--hub must be a URL with a host (https://host:port)")
 	}
+	if u.User != nil {
+		// The hub authenticates the instance key, never a password.
+		return nil, errors.New("--hub must not carry a user or password (https://host:port)")
+	}
 	hubKey, err := hubclient.ReadHubKey(keyFile)
 	if err != nil {
 		return nil, err
@@ -309,12 +314,41 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 // redactHubURL keeps the --hub URL out of an error of lockkit's hubclient,
 // which quotes it: a URL may carry userinfo (a password or a token).
 func redactHubURL(err error, rawURL string) error {
-	msg := err.Error()
-	if rawURL == "" || !strings.Contains(msg, rawURL) {
+	if rawURL == "" {
 		return err
 	}
-	msg = strings.ReplaceAll(msg, strconv.Quote(rawURL), "(--hub)")
-	return errors.New(strings.ReplaceAll(msg, rawURL, "(--hub)"))
+	// lockkit quotes with %q (strconv.Quote), which escapes some runes:
+	// replace the quoted form first, then any raw copy.
+	msg := err.Error()
+	red := strings.ReplaceAll(strings.ReplaceAll(msg, strconv.Quote(rawURL), "(--hub)"), rawURL, "(--hub)")
+	if red == msg {
+		return err
+	}
+	return errors.New(red)
+}
+
+// netErrKind is a net error without the address it repeats.
+func netErrKind(err error) string {
+	var oe *net.OpError
+	if errors.As(err, &oe) && oe.Err != nil {
+		var ae *net.AddrError
+		if errors.As(oe.Err, &ae) {
+			return ae.Err
+		}
+		var de *net.DNSError
+		if errors.As(oe.Err, &de) {
+			return de.Err
+		}
+		if _, ok := oe.Err.(*net.ParseError); ok {
+			return "not an address"
+		}
+		return oe.Err.Error()
+	}
+	var ae *net.AddrError
+	if errors.As(err, &ae) {
+		return ae.Err
+	}
+	return "failed"
 }
 
 // withdrawStandalone withdraws the pending plans of every hub instance in
@@ -352,7 +386,12 @@ func (d hubDevices) read() ([]ticket.Device, []ticket.Risk, error) {
 	}
 	require, err := hubclient.ParseRisks(d.Require)
 	if err != nil {
-		return nil, nil, fmt.Errorf("--require-device: %w", err)
+		// Not lockkit's error, which quotes the value given.
+		names := make([]string, len(ticket.Risks))
+		for i, r := range ticket.Risks {
+			names[i] = string(r)
+		}
+		return nil, nil, fmt.Errorf("--require-device: risk classes, comma-separated, among %s", strings.Join(names, ", "))
 	}
 	if d.File == "" {
 		return nil, nil, nil

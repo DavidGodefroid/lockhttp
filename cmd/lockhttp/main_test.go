@@ -283,24 +283,34 @@ func TestFlagErrorsDoNotEchoValues(t *testing.T) {
 	}{
 		{"--hub not a URL", hub("http://user:" + canary + "@"), "--hub"},
 		{"--hub not a URL (raw)", hub(canaryURL + ":x:y"), "--hub"},
-		{"--hub http to a public host", hub("http://user:"+canary+"@hub.example.com:8443", "--hub-net", "10.89.0.0/24"), "(--hub)"},
-		{"--hub plain http to a public host", hub("http://user:"+canary+"@hub.example.com:8443", "--hub-net", "10.89.0.0/24", "--hub-plain-http"), "(--hub)"},
-		{"--hub does not resolve", hub("https://user:" + canary + "@no-such-hub.invalid:8443"), "--hub host"},
+		{"--hub http to a public host", hub("http://hub.example.com:8443/"+canary, "--hub-net", "10.89.0.0/24"), "(--hub)"},
+		{"--hub plain http to a public host", hub("http://hub.example.com:8443/"+canary, "--hub-net", "10.89.0.0/24", "--hub-plain-http"), "(--hub)"},
+		{"--hub does not resolve", hub("https://no-such-hub.invalid:8443/" + canary), "--hub host"},
 		{"--instance", []string{"gate", "--listen", "127.0.0.1:0", "--hub", "https://hub.example.com", "--hub-key-file", key, "--instance", canary}, "--instance"},
 		{"--hub-net", []string{"gate", "--hub-net", canaryURL}, "-hub-net"},
 		{"--hub-net token", []string{"gate", "--hub-net", canary}, "-hub-net"},
 		{"--allow-uid", []string{"signer", "--allow-uid", canary}, "-allow-uid"},
 		{"bool flag value", []string{"gate", "--check=" + canary}, "-check"},
 		{"positional argument", []string{"gate", "--hub-plain-http", canaryURL}, "unexpected argument"},
+		{"--hub with userinfo", hub(`http://user:`+canary+`@hub.example.com:8443/a"b\c`, "--hub-net", "10.89.0.0/24"), "--hub must not carry"},
+		{"--hub quoted by lockkit", hub(`http://hub.example.com:8443/a"b\c/`+canary, "--hub-net", "10.89.0.0/24"), "(--hub)"},
+		{"--require-device", hub("https://hub.example.com", "--hub-net", "10.89.0.0/24", "--devices-file", key, "--require-device", canary), "--require-device: risk classes"},
+		{"bad flag syntax", []string{"gate", "---hub=" + canaryURL}, "bad flag syntax"},
+		{"--listen", []string{"gate", "--listen", canary}, "--listen"},
+		{"--listen URL", []string{"gate", "--listen", canaryURL}, "--listen"},
+		{"--check", []string{"gate", "--check", "--listen", canary + ":1"}, "--listen"},
+		{"init --trusted", []string{"init", "--config", filepath.Join(t.TempDir(), "c.toml"), "--trusted", "go.dev " + canary}, "--trusted entry 2"},
+		{"doctor --gate", []string{"doctor", "--config", filepath.Join(t.TempDir(), "none.toml"), "--gate", canary + ":1"}, "--gate"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			code, out, errs := runEnv(t, gate, c.args...)
+			t.Log(errs, out)
 			for _, leak := range []string{canary, "glsa_Canary", "user:"} {
 				if strings.Contains(errs+out, leak) {
 					t.Fatalf("the error repeats the value (%s): %s", leak, errs)
 				}
 			}
-			if code != exitUsage || !strings.Contains(errs, c.want) {
+			if code == exitOK || !strings.Contains(errs+out, c.want) {
 				t.Fatalf("%d, want %q: %s", code, c.want, errs)
 			}
 		})

@@ -254,6 +254,8 @@ func TestErrorsDoNotEchoValues(t *testing.T) {
 	ih := func(fields string) string {
 		return prof + "[[profiles.default.internal_hosts]]\n" + fields
 	}
+	// The URL canary trips lockkit's embedded-password check first for most
+	// keys; the token canary reaches lockhttp's own messages.
 	cases := []struct {
 		name, src, key string
 	}{
@@ -292,7 +294,8 @@ func TestErrorsDoNotEchoValues(t *testing.T) {
 		{"rule expires", rule("id = \"x\"\nhost = \"a.com\"\nexpires = \"C\"\nverdict = \"ask\""), "rules entry 1"},
 		{"rule max_body", rule("id = \"x\"\nhost = \"a.com\"\nmax_body = \"C\"\nverdict = \"ask\""), "rules entry 1: max_body"},
 		{"rule auto forbidden", rule("id = \"glsa_CanarySecretToken123\"\nhost = \"*\"\nverdict = \"auto\""), "rules entry 1"},
-		{"ports type", ih("host = \"ci\"\nports = [\"C\"]"), ""},
+		// lockkit's decoder: the key, not the value.
+		{"ports type", ih("host = \"ci\"\nports = [\"C\"]"), "internal_hosts.ports"},
 	}
 	for _, c := range cases {
 		for _, secret := range []string{canary, canaryURL} {

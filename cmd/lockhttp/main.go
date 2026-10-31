@@ -156,7 +156,11 @@ var flagValueRe = regexp.MustCompile(`^(invalid (?:boolean )?value) ".*" (for (?
 // flagError is a flag parse error without the value given: a flag value
 // may be a secret (a URL with userinfo).
 func flagError(err error) string {
-	return flagValueRe.ReplaceAllString(err.Error(), "$1 $2")
+	msg := err.Error()
+	if strings.HasPrefix(msg, "bad flag syntax: ") {
+		return "bad flag syntax (-flag, --flag or --flag=value)"
+	}
+	return flagValueRe.ReplaceAllString(msg, "$1 $2")
 }
 
 func signalContext() (context.Context, context.CancelFunc) {

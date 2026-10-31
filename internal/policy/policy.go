@@ -262,7 +262,7 @@ func fromRaw(name string, r raw) (Policy, error) {
 		}
 		for _, port := range ih.Ports {
 			if port < 1 || port > 65535 {
-				return Policy{}, fmt.Errorf("%s: invalid port %d (1-65535)", key, port)
+				return Policy{}, fmt.Errorf("%s: ports are 1 to 65535", key)
 			}
 		}
 		p.Internal = append(p.Internal, InternalHost{Host: h, Ports: ih.Ports, Read: ih.Read})

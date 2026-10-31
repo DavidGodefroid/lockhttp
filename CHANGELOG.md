@@ -13,11 +13,17 @@ uses [Semantic Versioning](https://semver.org/).
   and, for a list, the entry's place in the file (`trusted entry 2`,
   `internal_hosts entry 1 host`, `rules entry 3`; a rule by its place, not
   its `id`) with the allowed values; the sources file names a bad
-  `networks` entry by its place; `--hub`, `--instance`, `--hub-net` and
-  `--allow-uid` errors, flag parse errors and stray arguments omit the
-  value (lockkit's hub client errors have the `--hub` URL replaced). The
-  `mcp_servers` warning (shown and audited) names the server URL without
-  its userinfo, query or fragment.
+  `networks` entry by its place; `--hub`, `--instance`, `--hub-net`,
+  `--require-device`, `--allow-uid`, `--listen` (and `--check`), `doctor
+  --gate` and `init --trusted` errors, flag parse errors and stray
+  arguments omit the value (lockkit's hub client errors have the `--hub`
+  URL replaced). The `mcp_servers` warning (shown and audited) names the
+  server URL without its userinfo, query or fragment.
+
+### Changed
+
+- `--hub` refuses a URL with a user or password (the hub authenticates
+  the instance key), and the gate's start line names the hub host only.
 
 ## [0.5.0] - 2026-10-30
 

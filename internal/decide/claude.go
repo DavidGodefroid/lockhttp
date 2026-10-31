@@ -238,6 +238,7 @@ func isClientTool(base string) bool {
 
 // mcpServerURL is an MCP server URL for the warnings (shown and audited):
 // without its userinfo, query or fragment, which may carry a credential.
+// The host and path stay: the human decides on the server they name.
 func mcpServerURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {

@@ -224,7 +224,7 @@ with the socket volume, publishes its port on `LOCKHTTP_PUBLISH`
 | `--status-file FILE` | `LOCKHTTP_STATUS_FILE` | none | Status file for lea, rewritten atomically on change: `version`, `console` (`up`/`down`), `pending`, `pending_by_container`, `policy_fp`, `updated`. |
 | `--ca-cert FILE` | `LOCKHTTP_CA_CERT` | none | CA certificate. Enables decryption, with `--signer`. |
 | `--signer SOCKET` | `LOCKHTTP_SIGNER` | none | The signer's Unix socket. `--ca-cert` and `--signer` go together. |
-| `--hub URL` | `LOCKHTTP_HUB` | none | Hub mode: ask lockhub at this URL instead of the console. `--hub`, `--hub-key-file` and `--instance` go together. |
+| `--hub URL` | `LOCKHTTP_HUB` | none | Hub mode: ask lockhub at this URL instead of the console (no user or password in the URL). `--hub`, `--hub-key-file` and `--instance` go together. |
 | `--hub-key-file FILE` | `LOCKHTTP_HUB_KEY_FILE` | none | The pinned public key of the hub (Ed25519, base64 on one line). Decisions verify under it only. |
 | `--instance NAME` | `LOCKHTTP_INSTANCE` | none | The lock instance name the hub knows the gate by. |
 | `--home DIR` | `LOCKHTTP_HOME` | the home directory | The gate's own volume (`0700`, the gate's uid only): the instance key (`hub/NAME.key`, made by `lockhttp hub-key`), the plans and the hub state (`hub/NAME/`). Never mount it in another container. |

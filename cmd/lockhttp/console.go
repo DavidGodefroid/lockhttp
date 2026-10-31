@@ -164,6 +164,13 @@ func runInit(e env, args []string) int {
 		return exitFail
 	}
 	imports := strings.FieldsFunc(*trusted, func(r rune) bool { return r == ' ' || r == ',' || r == '\n' })
+	// Checked here so an error names the --trusted entry, not its place in
+	// the generated file (and never the value).
+	for i, h := range imports {
+		if _, err := policy.CheckHostPattern(fmt.Sprintf("--trusted entry %d", i+1), strings.TrimPrefix(h, "."), false); err != nil {
+			return usageFail(e, "init", usage, err.Error())
+		}
+	}
 	text := policy.DefaultConfig(imports)
 	if *profile != "default" {
 		text = strings.ReplaceAll(text, "profiles.default", "profiles."+*profile)
