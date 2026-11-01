@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="site/assets/demo.svg" alt="Claude Code, in a lea container, fetches a page of pkg.go.dev, a trusted host: the lockhttp gate lets the GET through at once. It then POSTs a build report to hooks.example.net, an unknown host: the gate holds the request, and the lockhttp console, in its own account, shows the approval screen with the body preview masked (the email as j***(20), the token as &lt;secret&gt;). The human answers n token in body; the agent gets a 403 E_DENIED, and the gate's audit records both decisions." width="900">
+  <img src="site/assets/demo.svg" alt="Claude Code, in a lea container, fetches a page of pkg.go.dev, a trusted host: the lockhttp gate lets the GET through at once. It then POSTs a build report to hooks.example.net, an unknown host: the gate holds the request, and an approval screen in another account (drawn in the lockhttp console's frame; you answer it on the hub, with lox approve or lea's deck) shows it with the body preview masked (the email as j***(20), the token as &lt;secret&gt;). The human answers n token in body; the agent gets a 403 E_DENIED, and the gate's audit records both decisions." width="900">
 </p>
 
 <p align="center">
@@ -141,17 +141,23 @@ proxy container when `LEA_LOCKHTTP=1`, with the hub flags `lox up` writes in
 uids, network rules) is in [docs/lea.md](docs/lea.md); the one between
 `lox up` and lea in lockhub's `docs/lox-up.md`.
 
-```sh
-# 1. Install the launcher (see Install): lea runs the gate from the image it pins
-V=vX.Y.Z
-curl -fsSLO "https://raw.githubusercontent.com/DavidGodefroid/lockhttp/$V/scripts/install.sh"
-less install.sh && LOCKHTTP_VERSION=$V sh install.sh
+LockHTTP needs lea, and `lox init` sets it up in manual mode only
+(`lox init --manual`, then check lockhttp): see lockhub's
+[docs/lox-init.md](https://github.com/DavidGodefroid/lockhub/blob/main/docs/lox-init.md).
 
-# 2. In your projects directory: a lockhttp lock, then the hub and its console
-cd ~/projects
-lox add lockhttp web          # the policy: .lockhttp/config.toml, which lox up reviews and copies
-lox up                        # runs the hub and the console, registers the gate's key
-lox attach web                # the console's terminal: approve its first policy (detach: Ctrl-P Ctrl-Q)
+```sh
+# 1. Install the Lock Family (lox, lea and the launchers), or only this tool
+brew install davidgodefroid/tap/lockfamily   # or: brew install davidgodefroid/tap/lockhttp
+                                              # or the launcher alone: see Install
+
+# 2. In your project: a lockhttp lock, then the hub and its console
+cd ~/projects/shop
+lox init --manual             # check lockhttp: profile add, lox add, lox up, the console
+# or by hand:
+#   lockhttp profile add      # the policy: .lockhttp/config.toml, which lox up reviews and copies
+#   lox add lockhttp web
+#   lox up                    # runs the hub and the console, registers the gate's key
+#   lox attach web            # the console's terminal: approve its first policy (detach: Ctrl-P Ctrl-Q)
 
 # 3. Start lea with LockHTTP on: its gate asks the hub
 export LEA_LOCKHTTP=1
@@ -172,7 +178,9 @@ run `lox up`. `lockhttp gate` refuses to start without its hub flags
 
 LockHTTP runs in Docker. On the host, `scripts/install.sh` installs only the
 `lockhttp` launcher, a shell script that runs every command in the release's
-image (`ghcr.io/davidgodefroid/lockhttp:X.Y.Z`, amd64 and arm64). Download
+image (`ghcr.io/davidgodefroid/lockhttp:X.Y.Z`, amd64 and arm64). With
+Homebrew: `brew install davidgodefroid/tap/lockhttp` (or
+`davidgodefroid/tap/lockfamily` for the whole family). Otherwise, download
 the script from the release you install, read it, then run it:
 
 ```sh

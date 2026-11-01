@@ -50,10 +50,10 @@
   <main id="main" tabindex="-1">
     <div class="wrap">
 <section class="hero" aria-labelledby="hero-title">
-  <p class="eyebrow"><a href="install/"><span class="badge">v0.1</span> Pre-release out · open source, Apache 2.0</a></p>
+  <p class="eyebrow"><a href="install/"><span class="badge">v0.7</span> Pre-release out · open source, Apache 2.0</a></p>
   <h1 id="hero-title">Your AI browses. <br><span class="key">You hold the key.</span></h1>
   <p class="lead">Let your AI agents read the web without letting them post to it behind your back.</p>
-  <p class="intro">lockhttp is the proxy <strong>every outbound HTTP(S) request</strong> of an AI agent goes through. Reads of trusted hosts pass. Anything that sends data, triggers an action or reaches an unknown host <strong>waits for a human</strong>, in a console the agent cannot reach. Every decision is traced to the container, the agent and the session that asked.</p>
+  <p class="intro">lockhttp is the proxy <strong>every outbound HTTP(S) request</strong> of an AI agent goes through. Reads of trusted hosts pass. Anything that sends data, triggers an action or reaches an unknown host <strong>waits for a human</strong>, on a hub the agent cannot reach. Every decision is traced to the container, the agent and the session that asked.</p>
   <div class="actions">
     <a class="button primary" href="install/">Install</a>
     <a class="button" href="how-it-works/">How it works</a>
@@ -73,10 +73,10 @@
   <h2 id="demo" class="visually-hidden">See it run</h2>
   <figure class="demo">
     <div class="demo-frame" role="region" aria-label="Animated demo" tabindex="0">
-      <img src="assets/demo.svg" alt="Claude Code, in a lea container, fetches a page of pkg.go.dev, a trusted host: the lockhttp gate lets the GET through at once. It then POSTs a build report to hooks.example.net, an unknown host: the gate holds the request, and the lockhttp console, in its own account, shows the approval screen with the body preview masked (the email as j***(20), the token as &lt;secret&gt;). The human answers n token in body; the agent gets a 403 E_DENIED, and the gate's audit records both decisions." width="1200" height="600" aria-describedby="demo-caption">
+      <img src="assets/demo.svg" alt="Claude Code, in a lea container, fetches a page of pkg.go.dev, a trusted host: the lockhttp gate lets the GET through at once. It then POSTs a build report to hooks.example.net, an unknown host: the gate holds the request, and an approval screen in another account (drawn in the lockhttp console's frame; you answer it on the hub, with lox approve or lea's deck) shows it with the body preview masked (the email as j***(20), the token as &lt;secret&gt;). The human answers n token in body; the agent gets a 403 E_DENIED, and the gate's audit records both decisions." width="1200" height="600" aria-describedby="demo-caption">
     </div>
     <p class="demo-hint">Swipe sideways to see both terminals.</p>
-    <figcaption id="demo-caption">Claude Code (left, in a lea container) reads <code>pkg.go.dev</code> at once: a trusted host, a read. Its <code>POST</code> to an unknown host stops at the gate until you answer in the lockhttp console (right, account <code>lockhttp</code>), which shows the request decrypted, its body masked. You type <code>n token in body</code>: the agent gets a <code>403</code> <code>E_DENIED</code> with your reason, and the gate's audit keeps both decisions.</figcaption>
+    <figcaption id="demo-caption">Claude Code (left, in a lea container) reads <code>pkg.go.dev</code> at once: a trusted host, a read. Its <code>POST</code> to an unknown host stops at the gate until you answer its approval screen (right, drawn in the lockhttp console’s frame from before the hub; today you answer it on the hub, with <code>lox approve</code> or lea’s deck), which shows the request decrypted, its body masked. You type <code>n token in body</code>: the agent gets a <code>403</code> <code>E_DENIED</code> with your reason, and the gate's audit keeps both decisions.</figcaption>
   </figure>
 </section>
 
@@ -106,7 +106,7 @@
   <h2 id="verdicts">Three verdicts</h2>
   <ul class="cards">
     <li><span class="icon" aria-hidden="true">🟢</span><h3>FREE</h3><p><code>GET</code>, <code>HEAD</code> or <code>OPTIONS</code> without a body to a trusted host, or a request matching a <code>free</code> rule. It passes, and the gate logs it.</p></li>
-    <li><span class="icon" aria-hidden="true">✋</span><h3>ASK</h3><p>An unknown host, a <code>POST</code>/<code>PUT</code>/<code>PATCH</code>/<code>DELETE</code>, an upload, a message. The request is held (60 s) and shown in the console; you answer <code>y</code> or <code>n &lt;reason&gt;</code>.</p></li>
+    <li><span class="icon" aria-hidden="true">✋</span><h3>ASK</h3><p>An unknown host, a <code>POST</code>/<code>PUT</code>/<code>PATCH</code>/<code>DELETE</code>, an upload, a message. The request is held (60 s) and shown on the hub (<code>lox approve</code>, lea’s deck or a paired phone); you answer <code>y</code> or <code>n &lt;reason&gt;</code>.</p></li>
     <li><span class="icon" aria-hidden="true">⛔</span><h3>DENY</h3><p>The network floor (IP literals, DNS over HTTPS, private ranges, other ports), a secret leaving its host, a policy rule. The agent gets a <code>403</code> with a stable <code>E_*</code> code and what to ask of you.</p></li>
   </ul>
 </section>
@@ -128,22 +128,25 @@
 
 <section aria-labelledby="quick-start">
   <h2 id="quick-start">Quick start with lea</h2>
-  <p class="prose">lockhttp is built for <a href="https://github.com/DavidGodefroid/lea">lea</a>, which runs agents in containers whose only way out is its proxy container. The setup, from the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">lea integration contract</a>:</p>
-  <pre tabindex="0" class="term"><code># 1. Install the launcher: every lockhttp command runs in Docker
-V=vX.Y.Z
-curl -fsSLO "https://raw.githubusercontent.com/DavidGodefroid/lockhttp/$V/scripts/install.sh"
-less install.sh && LOCKHTTP_VERSION=$V sh install.sh
+  <p class="prose">lockhttp is built for <a href="https://github.com/DavidGodefroid/lea">lea</a>, which runs agents in containers whose only way out is its proxy container. It runs hub-attached only: <a href="https://github.com/DavidGodefroid/lockhub">lockhub</a>’s <code>lox up</code> runs the hub and the lockhttp console, and lea runs the gate. <code>lox init</code> sets it up in manual mode (<a href="https://github.com/DavidGodefroid/lockhub/blob/main/docs/lox-init.md">lox init</a>):</p>
+  <pre tabindex="0" class="term"><code># 1. Install the Lock Family (lox, lea and the launchers)
+brew install davidgodefroid/tap/lockfamily   # or: brew install davidgodefroid/tap/lockhttp
 
-# 2. Write the project's policy (trusted read-only hosts)
-lockhttp profile add
+# 2. In your project: the policy, the lock, the hub and the console
+cd ~/projects/shop
+lox init --manual        # check lockhttp (it needs lea)
+# or by hand:
+#   lockhttp profile add   # the project's policy (trusted read-only hosts)
+#   lox add lockhttp web
+#   lox up
 
-# 3. The hub and the console, which reviews the project's policy
-lox add lockhttp web
-lox up
+# 3. Turn lockhttp on in lea (opt-in): its gate asks the hub
+export LEA_LOCKHTTP=1
+lea
 
-# 4. In another terminal: turn lockhttp on in lea (opt-in)
-export LEA_LOCKHTTP=1</code></pre>
-  <p class="prose">lea then runs <code>lockhttp gate</code> in a container beside its proxy container, in front of squid. Ask your agent to read the docs of a trusted site: it goes through. Ask it to post somewhere: the request waits for your <code>y</code> in the console. <code>lockhttp doctor</code> checks the setup.</p>
+# 4. Approve the held requests on a facade of the hub
+lox approve</code></pre>
+  <p class="prose">lea runs <code>lockhttp gate</code> in a container beside its proxy container, in front of squid, with the hub flags <code>lox up</code> wrote; without them it starts no gate and says to run <code>lox up</code>. Ask your agent to read the docs of a trusted site: it goes through. Ask it to post somewhere: the request waits for your <code>y</code> on the hub (<code>lox approve</code>, the lea deck or a paired phone). <code>lockhttp doctor</code> checks the setup.</p>
   <p><a href="install/">Install and setup details</a></p>
 </section>
 
