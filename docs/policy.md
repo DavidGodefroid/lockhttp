@@ -1,8 +1,9 @@
 # LockHTTP policy reference
 
 The policy is the profile the human writes in the console account's config
-file, `~/.config/lockhttp/config.toml` (`lockhttp init` writes a first
-one). The console reads it, validates it, has you approve it, and serves
+file, `~/.config/lockhttp/config.toml`: `lockhttp profile add` writes a
+first one in the project's `.lockhttp/config.toml`, which `lox up` reviews
+and copies there. The console reads it, validates it, has you approve it, and serves
 the approved policy to the gate (`policy.get`) with its sha256 fingerprint.
 **The gate never reads a policy file**: it uses what the console serves,
 checks the fingerprint, and keeps the previous policy when they do not

@@ -68,7 +68,7 @@ func (b *Backend) Checks(context.Context, console.Session) []console.Finding { r
 func (b *Backend) LoadPolicy() (console.Policy, error) {
 	data, err := os.ReadFile(b.o.Config)
 	if err != nil {
-		return nil, fmt.Errorf("reading the policy: %w (create it with: lockhttp init)", err)
+		return nil, fmt.Errorf("reading the policy: %w (lockhttp profile add writes it in the project, lox up copies it here)", err)
 	}
 	p, err := policy.Parse(data, b.o.Config, b.o.Profile)
 	if err != nil {

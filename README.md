@@ -193,11 +193,12 @@ with Docker Desktop.
 
 | Command | Runs as | What it does |
 |---|---|---|
-| `lockhttp init` | `lockhttp`, volume `lockhttp-home` | Writes the policy `~/.config/lockhttp/config.toml`, profile `default`. |
-| `lockhttp policy show\|edit\|path` | `lockhttp`, volume `lockhttp-home` | Prints, edits or locates the policy. |
+| `lockhttp profile add [--non-interactive] [--json] [--profile NAME] [--production] [--trusted "a.com .corp.example"]` | you, on the project | Adds a profile with the default policy to the project's `.lockhttp/config.toml` (never rewrites one already there; never takes a secret). |
+| `lockhttp init <agent>` | you, on the project | Nothing to write: lockhttp has no agent files (lea routes the agent's HTTP through the gate). |
+| `lockhttp doctor [--fix [--yes]] [--json] [--gate ADDR] [--ca-cert FILE]` | you, on the project | Separated setup, the project's policy and its permissions, CA, gate; `--fix` repairs the permissions. |
+| `lockhttp policy show\|edit\|path` | `lockhttp`, volume `lockhttp-home` | Prints, edits or locates the console's copy of the policy. |
 | `lockhttp console` | `lockhttp`, container `lockhttp-console` | The policy console (under `lox up`, its own service runs it). It must run in a terminal. |
 | `lockhttp gate` | `gate`, container `lockhttp-gate` | The proxy. It needs the hub flags (`--hub`, `--hub-key-file`, `--instance`): lea passes them from `lox up`'s `up.json`. |
-| `lockhttp doctor [--gate ADDR] [--ca-cert FILE]` | `lockhttp` | Separated setup, policy, CA, gate. |
 | `lockhttp version`, `lockhttp update [vX.Y.Z]` | | The launcher's and the image's versions; a newer release's launcher, checked the same way, and its image. |
 
 `LOCKHTTP_IMAGE` runs an image of your own (`docker build -t lockhttp .`
