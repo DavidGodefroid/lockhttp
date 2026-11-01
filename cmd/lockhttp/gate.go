@@ -43,10 +43,10 @@ func runGate(e env, args []string) int {
 	instance := fs.String("instance", os.Getenv("LOCKHTTP_INSTANCE"), "the lock instance name the hub knows this gate by")
 	home := fs.String("home", os.Getenv("LOCKHTTP_HOME"), "the gate's own volume: instance key, plans and hub state (default: the home directory)")
 	plainHTTP := fs.Bool("hub-plain-http", os.Getenv("LOCKHTTP_HUB_PLAIN_HTTP") == "1", "allow an http:// hub URL on a network of its own (a service name without a dot or a private address)")
-	devicesFile := fs.String("devices-file", os.Getenv("LOCKHTTP_DEVICES_FILE"), "the approval devices this gate pins (JSON, written by lock up): device decisions must carry their signature")
+	devicesFile := fs.String("devices-file", os.Getenv("LOCKHTTP_DEVICES_FILE"), "the approval devices this gate pins (JSON, written by lox up): device decisions must carry their signature")
 	requireDevice := fs.String("require-device", os.Getenv("LOCKHTTP_REQUIRE_DEVICE"), "risk classes (comma-separated) whose approvals must be signed by a pinned device, from any facade")
 	sealClear := fs.Bool("seal-clear", os.Getenv("LOCKHTTP_SEAL_CLEAR") == "1", "send the clear screen sealed to the pinned devices (end to end; the hub relays ciphertext)")
-	facadeKeys := fs.String("facade-keys-file", os.Getenv("LOCKHTTP_FACADE_KEYS_FILE"), "the facade keys the gate pins (JSON, written by lock up): reveals of a clear screen are sealed only to them")
+	facadeKeys := fs.String("facade-keys-file", os.Getenv("LOCKHTTP_FACADE_KEYS_FILE"), "the facade keys the gate pins (JSON, written by lox up): reveals of a clear screen are sealed only to them")
 	var hubNets prefixList
 	fs.Var(&hubNets, "hub-net", "a network of the hub, refused as a target (repeatable)")
 	if !parse(e, fs, "gate", usage, args) {
@@ -299,7 +299,7 @@ func openHub(rawURL, keyFile, instance, home string, nets []netip.Prefix, plainH
 }
 
 // hubDevices are the device flags of hub mode, as lockkit's console takes
-// them: --devices-file (the devices `lock up` pins, read with
+// them: --devices-file (the devices `lox up` pins, read with
 // hubclient.ReadDevices), --require-device (risk classes, comma-separated)
 // and --seal-clear. Without pinned devices, a decision of the mobile
 // facade is refused.
@@ -365,7 +365,7 @@ func (l *prefixList) Set(s string) error {
 }
 
 // runHubKey is `lockhttp hub-key --instance NAME [--home DIR]`: it prints
-// the instance's public key (made on the first call) for `lock up` to pin
+// the instance's public key (made on the first call) for `lox up` to pin
 // at the hub.
 func runHubKey(e env, args []string) int {
 	home := os.Getenv("LOCKHTTP_HOME")

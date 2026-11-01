@@ -233,8 +233,8 @@ with the socket volume, publishes its port on `LOCKHTTP_PUBLISH`
 | `--instance NAME` | `LOCKHTTP_INSTANCE` | none (required) | The lock instance name the hub knows the gate by. |
 | `--home DIR` | `LOCKHTTP_HOME` | the home directory | The gate's own volume (`0700`, the gate's uid only): the instance key (`hub/NAME.key`, made by `lockhttp hub-key`), the plans and the hub state (`hub/NAME/`). Never mount it in another container. |
 | `--hub-plain-http` | `LOCKHTTP_HUB_PLAIN_HTTP=1` | off | Allow an `http://` `--hub` URL to a hub on a network of its own: a service name without a dot (`lockhub`) or a private address only. Without it an `http://` hub is refused unless it is a loopback address; use `https`. Requests and decisions are signed either way. |
-| `--facade-keys-file FILE` | `LOCKHTTP_FACADE_KEYS_FILE` | none | The facade keys the gate pins (JSON, written by `lock up`). A reveal (Ctrl-O on a local facade of the hub) is answered with the ticket's clear screen sealed to the facade's ephemeral key, only when one of these keys signed it; the hub relays ciphertext. Without it, reveals are refused. |
-| `--devices-file FILE` | `LOCKHTTP_DEVICES_FILE` | none | The approval devices the gate pins (JSON, written by `lock up` at `/run/lockfamily/devices.json`). A decision taken on a device (the hub's mobile facade) is acted on only if it carries the signature of one of them over the gate's own signed ticket. Without it, every decision of the mobile facade is refused. |
+| `--facade-keys-file FILE` | `LOCKHTTP_FACADE_KEYS_FILE` | none | The facade keys the gate pins (JSON, written by `lox up`). A reveal (Ctrl-O on a local facade of the hub) is answered with the ticket's clear screen sealed to the facade's ephemeral key, only when one of these keys signed it; the hub relays ciphertext. Without it, reveals are refused. |
+| `--devices-file FILE` | `LOCKHTTP_DEVICES_FILE` | none | The approval devices the gate pins (JSON, written by `lox up` at `/run/lockfamily/devices.json`). A decision taken on a device (the hub's mobile facade) is acted on only if it carries the signature of one of them over the gate's own signed ticket. Without it, every decision of the mobile facade is refused. |
 | `--require-device RISKS` | `LOCKHTTP_REQUIRE_DEVICE` | none | Risk classes, comma-separated (`write`, `prod-write`), whose approvals must be signed by a pinned device, from any facade: an approval without one is a denial. The gate's asks are `write`, or `prod-write` under a production policy. Needs `--devices-file`. |
 | `--seal-clear` | `LOCKHTTP_SEAL_CLEAR=1` | off | Send each ticket's clear screen (the console's, personal data unmasked) sealed to every pinned device; the hub relays ciphertext. Off, the clear screen never leaves the gate. Needs `--devices-file`. |
 | `--hub-net CIDR` | | none | A network of the hub. The gate refuses as a target the hub's host name, its addresses (resolved at start) and any name resolving into these networks, even when `internal_hosts` allows private addresses; a name that does not resolve is refused too. Repeatable. Without it, the hub host must resolve at start, or the gate does not start. |
@@ -279,7 +279,7 @@ pinned facade key (`--facade-keys-file`) on a reveal, and with
 by the hub are audited (`reveal`/`renew`, `approval` `hub-claimed`).
 
 **Supported lockhub versions.** Which [lockhub](https://github.com/DavidGodefroid/lockhub)
-releases each lockhttp release works with. Under `lock up`, lea runs the gate in hub mode
+releases each lockhttp release works with. Under `lox up`, lea runs the gate in hub mode
 (lockhub's `docs/lock-up.md`), and only from an `up.json` that says what the gate pins
 (`"lockhttp_gate": 1`): that needs lockhub v0.2.2 or later and lea v0.3.0 or later, for every
 lockhttp release below. A gate run by hand works with the hub image of the last column.
@@ -287,7 +287,7 @@ From the release after v0.5.1 the gate is hub-attached only (there is no standal
 and lea without a trusted `up.json` naming a lockhttp lock does not start one: it says to run
 `lox up`.
 
-| lockhttp | lockkit | Under `lock up` (lea's gate) | Hub image, gate run by hand |
+| lockhttp | lockkit | Under `lox up` (lea's gate) | Hub image, gate run by hand |
 |---|---|---|---|
 | v0.5.1 | v0.8.1 | lockhub v0.2.2 + lea v0.3.0 or later: hub mode, reveals (`reveal: true`), renewals, `devices: true` | v0.2.0 or later |
 | v0.5.0 | v0.6.0 | lockhub v0.2.2 + lea v0.3.0 or later: hub mode, reveals (`reveal: true`), renewals, `devices: true` | v0.2.0 or later |
@@ -348,7 +348,7 @@ lockhttp hub-key --instance NAME [--home DIR]
 ```
 
 Prints the gate's instance public key (Ed25519, base64 on one line) for
-`lock up` to pin at the hub. The first call makes the key in
+`lox up` to pin at the hub. The first call makes the key in
 `DIR/hub/NAME.key` (`0600`); `--home` defaults to `LOCKHTTP_HOME`, then the
 home directory.
 
