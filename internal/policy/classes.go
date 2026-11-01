@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 )
@@ -159,29 +160,60 @@ var DocsTrusted = []string{
 	"dl-cdn.alpinelinux.org",
 }
 
-// DefaultConfig is the config file `lockhttp init` writes: the docs set,
-// plus imported hosts (lea's LEA_EGRESS_ALLOW: "example.org", or
-// ".corp.example" for the domain and its subdomains) as trusted reads.
-func DefaultConfig(imports []string) string {
-	trusted := slices.Clone(DocsTrusted)
-	for _, h := range imports {
+// ConfigHeader opens the config file `lockhttp profile add` creates.
+const ConfigHeader = `# lockhttp policy. Only the console's human loosens it: every loosening
+# (a new trusted host, a free or auto rule, shadow mode, ...) is confirmed
+# in the console with :review before it applies.
+`
+
+// ImportHosts reads hosts to trust for reads in the format of lea's
+// LEA_EGRESS_ALLOW: "example.org" trusts that host, ".corp.example" the
+// domain and its subdomains. It returns the trusted entries they make,
+// checked and normalised. Its error names the entry's position, never
+// the entry (it may be anything pasted in the wrong place).
+func ImportHosts(imports []string) ([]string, error) {
+	var out []string
+	for i, h := range imports {
 		h = strings.ToLower(strings.TrimSpace(h))
 		if h == "" {
 			continue
 		}
-		if d, ok := strings.CutPrefix(h, "."); ok {
-			trusted = append(trusted, d, "*."+d)
+		d, dot := strings.CutPrefix(h, ".")
+		n, err := CheckHostPattern("trusted", d, false)
+		if err != nil || strings.HasPrefix(d, "*") {
+			return nil, fmt.Errorf("entry %d is not a host name or a .domain", i+1)
+		}
+		if dot {
+			out = append(out, n, "*."+n)
 			continue
 		}
-		trusted = append(trusted, h)
+		out = append(out, n)
 	}
-	var b strings.Builder
-	b.WriteString(`# lockhttp policy. Only the console's human loosens it: every loosening
-# (a new trusted host, a free or auto rule, shadow mode, ...) is confirmed
-# in the console with :review before it applies.
+	return out, nil
+}
 
-[profiles.default]
-# enforce: verdicts apply. shadow: log what would ask or be denied, let it
+// DefaultConfig is a new config file: ConfigHeader and DefaultProfile.
+func DefaultConfig(name string, production bool, extra []string) string {
+	return ConfigHeader + "\n" + DefaultProfile(name, production, extra)
+}
+
+// DefaultProfile is the profile `lockhttp profile add` writes: the docs
+// set, plus extra (checked entries, from ImportHosts) as trusted reads.
+// name is a valid profile name (config.CheckProfileName).
+func DefaultProfile(name string, production bool, extra []string) string {
+	trusted := slices.Clone(DocsTrusted)
+	for _, h := range extra {
+		if !slices.Contains(trusted, h) {
+			trusted = append(trusted, h)
+		}
+	}
+	key := tableKey(name)
+	var b strings.Builder
+	b.WriteString("[profiles." + key + "]\n")
+	if production {
+		b.WriteString("# A production profile: its name is typed for every approval.\nproduction = true\n")
+	}
+	b.WriteString(`# enforce: verdicts apply. shadow: log what would ask or be denied, let it
 # pass (the floor and secrets stay enforced).
 mode = "enforce"
 # exfiltration heuristics: shadow (score logged only), enforce, off
@@ -209,8 +241,9 @@ deny = []
 # never for messaging, publishing, git push, spliced hosts), ask, deny.
 # A rule names a container or none (all containers), never an agent.
 #
-# [[profiles.default.rules]]
-# id      = "npm-audit"
+`)
+	b.WriteString("# [[profiles." + key + ".rules]]\n")
+	b.WriteString(`# id      = "npm-audit"
 # container = "lea-ab12cd34ef"
 # host    = "registry.npmjs.org"
 # methods = ["POST"]
@@ -220,4 +253,15 @@ deny = []
 # expires = "2026-12-31"
 `)
 	return b.String()
+}
+
+// tableKey is name as a TOML key: bare when it can be, else quoted (a
+// profile name may hold a '.', which a bare key would split).
+func tableKey(name string) string {
+	for _, r := range name {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-') {
+			return `"` + name + `"`
+		}
+	}
+	return name
 }

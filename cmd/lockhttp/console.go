@@ -102,13 +102,13 @@ func runPolicy(e env, args []string) int {
 	case "show":
 		b, err := os.ReadFile(path)
 		if err != nil {
-			fmt.Fprintln(e.stderr, "lockhttp policy:", err, "(create it with: lockhttp init)")
+			fmt.Fprintln(e.stderr, "lockhttp policy:", err, "("+noPolicyHint+")")
 			return exitFail
 		}
 		_, _ = e.stdout.Write(b)
 	case "edit":
 		if _, err := os.Stat(path); err != nil {
-			fmt.Fprintln(e.stderr, "lockhttp policy:", err, "(create it with: lockhttp init)")
+			fmt.Fprintln(e.stderr, "lockhttp policy:", err, "("+noPolicyHint+")")
 			return exitFail
 		}
 		edit := e.editor
@@ -148,45 +148,5 @@ func runPolicy(e env, args []string) int {
 	default:
 		return usageFail(e, "policy", usage, "unknown subcommand "+sub)
 	}
-	return exitOK
-}
-
-// runInit is `lockhttp init`: the policy file, in the console account.
-func runInit(e env, args []string) int {
-	const usage = `lockhttp init [--profile P] [--config FILE] [--trusted "a.com .corp.example"] [--force]`
-	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	profile := fs.String("profile", "default", "profile name")
-	cfgFlag := fs.String("config", "", "policy file (default: ~/.config/lockhttp/config.toml)")
-	trusted := fs.String("trusted", "", "hosts to trust for reads, space or comma separated (lea's LEA_EGRESS_ALLOW)")
-	force := fs.Bool("force", false, "overwrite an existing file")
-	if !parse(e, fs, "init", usage, args) {
-		return exitUsage
-	}
-	path, err := e.configPath(*cfgFlag)
-	if err != nil {
-		return usageFail(e, "init", usage, err.Error())
-	}
-	if _, err := os.Stat(path); err == nil && !*force {
-		fmt.Fprintf(e.stderr, "lockhttp init: %s exists (edit it, or --force)\n", path)
-		return exitFail
-	}
-	imports := strings.FieldsFunc(*trusted, func(r rune) bool { return r == ' ' || r == ',' || r == '\n' })
-	text := policy.DefaultConfig(imports)
-	if *profile != "default" {
-		text = strings.ReplaceAll(text, "profiles.default", "profiles."+*profile)
-	}
-	if _, err := policy.Parse([]byte(text), path, *profile); err != nil {
-		fmt.Fprintln(e.stderr, "lockhttp init:", err)
-		return exitUsage
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		fmt.Fprintln(e.stderr, "lockhttp init:", err)
-		return exitFail
-	}
-	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
-		fmt.Fprintln(e.stderr, "lockhttp init:", err)
-		return exitFail
-	}
-	fmt.Fprintf(e.stdout, "wrote %s (profile %s)\nnext: lockhttp console --profile %s\n", path, *profile, *profile)
 	return exitOK
 }

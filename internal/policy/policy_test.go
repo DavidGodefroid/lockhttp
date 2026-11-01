@@ -222,18 +222,48 @@ func TestHostMatch(t *testing.T) {
 }
 
 func TestDefaultParses(t *testing.T) {
-	p, err := Parse([]byte(DefaultConfig(nil)), "config.toml", "default")
+	p, err := Parse([]byte(DefaultConfig("default", false, nil)), "config.toml", "default")
 	if err != nil {
 		t.Fatalf("default config: %v", err)
 	}
-	if len(p.Trusted) == 0 {
-		t.Fatal("default config trusts nothing")
+	if len(p.Trusted) == 0 || p.Production {
+		t.Fatalf("default config: %+v", p)
 	}
-	q, err := Parse([]byte(DefaultConfig([]string{"example.org", ".corp.example"})), "config.toml", "default")
+	extra, err := ImportHosts([]string{"Example.org", ".corp.example", ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err := Parse([]byte(DefaultConfig("default", false, extra)), "config.toml", "default")
 	if err != nil {
 		t.Fatalf("default config with imports: %v", err)
 	}
-	if !q.Trusts("example.org") || !q.Trusts("x.corp.example") {
+	if !q.Trusts("example.org") || !q.Trusts("x.corp.example") || !q.Trusts("corp.example") {
 		t.Fatalf("imports not trusted: %v", q.Trusted)
+	}
+	// A dotted name is a quoted key, not a nested table; production is
+	// written.
+	r, err := Parse([]byte(DefaultConfig("prod.eu", true, nil)), "config.toml", "prod.eu")
+	if err != nil || !r.Production {
+		t.Fatalf("dotted production profile: %+v %v", r, err)
+	}
+	// Two profiles side by side parse.
+	two := DefaultConfig("default", false, nil) + "\n" + DefaultProfile("lab", false, nil)
+	if names, err := Profiles([]byte(two), "config.toml"); err != nil || len(names) != 2 {
+		t.Fatalf("two profiles: %v %v", names, err)
+	}
+}
+
+// ImportHosts refuses what is not a host or a .domain, and never quotes
+// the entry.
+func TestImportHostsRefuses(t *testing.T) {
+	for _, in := range []string{"1.2.3.4", "*.example.com", "localhost", "a b.com", `x".com`, "user:pw@host.com"} {
+		_, err := ImportHosts([]string{"ok.example", in})
+		if err == nil {
+			t.Errorf("%q accepted", in)
+			continue
+		}
+		if strings.Contains(err.Error(), in) || !strings.Contains(err.Error(), "entry 2") {
+			t.Errorf("%q: %v", in, err)
+		}
 	}
 }

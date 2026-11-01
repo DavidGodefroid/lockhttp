@@ -18,11 +18,13 @@ not on a machine with a lockhttp setup.
 Standard library only.
 """
 
+import json
 import os
 import pty
 import select
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -47,10 +49,10 @@ def sh(*args, check_=True, **kw):
     return r
 
 
-def launcher(*args, env=None, check_=True):
+def launcher(*args, env=None, check_=True, cwd=None):
     e = dict(os.environ)
     e.update(env or {})
-    return sh("sh", LAUNCHER, *args, check_=check_, env=e, stdin=subprocess.DEVNULL)
+    return sh("sh", LAUNCHER, *args, check_=check_, env=e, stdin=subprocess.DEVNULL, cwd=cwd)
 
 
 def cleanup():
@@ -118,11 +120,37 @@ def main():
         check("lockhttp launcher dev (image " + image + ")" in r.stdout or "(image " + image + ")" in r.stdout, "version names the image", r.stdout)
         r = launcher("install", check_=False)
         check(r.returncode != 0 and "runs in Docker" in r.stderr, "install is refused", r.stderr)
-        launcher("init", "--trusted", "example.com")
+        # The launcher verbs lox init runs, as the invoking user on the
+        # project (lockkit GUIDE.md section 14).
+        project = tempfile.mkdtemp(prefix="lockhttp-e2e-")
+        sub = os.path.join(project, "sub")
+        os.makedirs(os.path.join(project, ".git"))
+        os.makedirs(sub)
+        r = launcher("profile", "add", "--non-interactive", "--json", "--trusted", "example.com", cwd=sub, check_=False)
+        out = json.loads(r.stdout) if r.returncode == 0 else {}
+        config = os.path.join(project, ".lockhttp", "config.toml")
+        check(out == {"lock": "lockhttp", "profile": "default", "config": config, "production": False},
+              "profile add writes the project's policy and prints one verbs.Profile", r.stdout + r.stderr)
+        with open(config) as f:
+            policy = f.read()
+        check('"example.com",' in policy, "profile add imports --trusted", policy)
+        check(os.stat(config).st_uid == os.getuid(), "the policy is the invoking user's", str(os.stat(config)))
+        r = launcher("profile", "add", "--non-interactive", "--json", cwd=sub, check_=False)
+        check(r.returncode != 0 and json.loads(r.stdout or "{}").get("code") == "exists", "an existing profile is kept (exists)", r.stdout + r.stderr)
+        r = launcher("profile", "add", "--non-interactive", "--json", "--profile", "web", "--password", "x", cwd=sub, check_=False)
+        check(r.returncode != 0 and json.loads(r.stdout or "{}").get("code") == "secret", "profile add refuses a secret", r.stdout + r.stderr)
+        r = launcher("init", "claude", cwd=sub, check_=False)
+        check(r.returncode == 0 and "nothing to write" in r.stdout, "init claude writes nothing", r.stdout + r.stderr)
+        r = launcher("doctor", "--fix", "--yes", "--json", cwd=sub, check_=False)
+        out = json.loads(r.stdout) if r.stdout.startswith("{") else {}
+        check(r.returncode == 0 and out.get("ok") is True and "checks" in out, "doctor --fix --yes --json passes on the project", r.stdout + r.stderr)
+
+        # lox up copies the project's policy into the console's volume; do
+        # the same for the launcher's console.
+        sh("docker", "run", "-i", "--rm", "--user", "lockhttp", "-v", "lockhttp-home:/home/lockhttp", "--entrypoint", "sh", image,
+           "-c", "umask 077 && mkdir -p /home/lockhttp/.config/lockhttp && cat > /home/lockhttp/.config/lockhttp/config.toml", input=policy)
         r = launcher("policy", "show")
-        check('"example.com",' in r.stdout, "init wrote the policy in the console's volume", r.stdout)
-        r = launcher("doctor", check_=False)
-        check(r.returncode == 0 and "separated setup" in r.stdout, "doctor passes as the console account", r.stdout + r.stderr)
+        check('"example.com",' in r.stdout, "the policy is in the console's volume", r.stdout)
 
         # The console starts without hub flags, as lox up runs it (lockhub
         # internal/family/compose.go gives a gate kind's console `console`,

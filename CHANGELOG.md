@@ -6,6 +6,50 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+The launcher verbs of lockkit v0.10.0 (lockkit#111, GUIDE.md §14), which
+`lox init` runs on every lock (#31).
+
+### Added
+
+- `lockhttp profile add [--non-interactive] [--json] [--project DIR]
+  [--profile NAME] [--production] [--trusted "a.com .corp.example"]`:
+  adds a profile with the default policy to the project's
+  `.lockhttp/config.toml`, which `lox up` reviews and copies into the
+  console. A profile already there is never rewritten (code `exists`,
+  nothing written); other profiles are kept byte for byte. Parsed with
+  lockkit's `verbs.Parse`: a flag named like a secret, a value that embeds
+  a password or a positional argument is refused, and no error quotes a
+  value. lockhttp's target needs no secret: no `--credentials`, no
+  `credentials` in the JSON. Without `--non-interactive` it asks on the
+  terminal for the name, production and trusted hosts, and refuses
+  without one. `--json` prints one `verbs.Profile` or `verbs.Error` line.
+- `lockhttp init <agent>` (`claude`, `codex`, `cursor`, `gemini`): writes
+  nothing (lockhttp has no agent files: lea routes the agent's HTTP
+  through the gate), says so and exits 0.
+- `lockhttp doctor --fix [--yes]` repairs the write permission others have
+  on the project's policy or its directory, asking before each repair
+  unless `--yes` (required without a terminal; `--yes` alone is a usage
+  error). `--json` prints one `verbs.Doctor` (or `verbs.Error`) line.
+
+### Changed
+
+- `lockhttp doctor` checks the project of the current directory (its
+  `.lockhttp/config.toml`, every profile unless `--profile`) instead of the
+  console account's policy, and `--config` is gone.
+- The launcher runs `profile`, `init` and `doctor` as you, with the
+  project mounted at its own path and the current directory as the
+  working directory (`profile add --project` mounted and made absolute),
+  without the volume `lockhttp-home`; `policy` and `console` keep the
+  console account.
+- lockkit v0.10.0.
+
+### Removed
+
+- `lockhttp init [--profile] [--config] [--trusted] [--force]`, which
+  wrote the console account's policy (pre-release, no alias). Its
+  `--trusted` is now `profile add --trusted`, named after the config key
+  it fills; `--profile` is `profile add --profile`.
+
 ## [0.6.0] - 2026-11-01
 
 Hub-only release, built on lockkit v0.9.1. The gate runs hub-attached

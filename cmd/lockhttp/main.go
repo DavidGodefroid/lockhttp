@@ -53,15 +53,21 @@ const usageText = `usage: lockhttp <command> [arguments]
 lockhttp runs in Docker: on the host, the lockhttp launcher runs each
 command in the image, as the account it needs (docs/docker.md).
 
-Human commands (console account)
-  init     [--profile P] [--config FILE] [--trusted "a.com .corp.example"] [--force]
-                                   write the policy file
+Launcher verbs (as you, on the project; lox init runs them)
+  profile add [--non-interactive] [--json] [--project DIR] [--profile NAME]
+              [--production] [--trusted "a.com .corp.example"]
+                                   add a profile to .lockhttp/config.toml
+  init     <agent>                 agent files: none (lea routes the agent's HTTP)
+  doctor   [--fix [--yes]] [--json] [--profile P] [--ca-cert FILE] [--gate ADDR]
+                                   check the setup and the project's policy
+
+Console account
   policy   show | edit | path [--config FILE]
-                                   print, edit or locate the policy file
+                                   print, edit or locate the console's policy file
   console  [--profile P] [--config FILE]
                                    run the policy console (lox up runs it)
-  doctor   [--profile P] [--config FILE] [--ca-cert FILE] [--gate ADDR]
-                                   check the setup
+
+Other human commands
   ca init  --dir DIR [--name NAME] [--force]
                                    create (or rotate) the local CA for decryption
 
@@ -113,6 +119,8 @@ func run(e env, args []string) int {
 		return runPolicy(e, args[1:])
 	case "init":
 		return runInit(e, args[1:])
+	case "profile":
+		return runProfile(e, args[1:])
 	case "console":
 		return runConsole(e, args[1:])
 	case "doctor":

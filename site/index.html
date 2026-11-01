@@ -134,11 +134,12 @@ V=vX.Y.Z
 curl -fsSLO "https://raw.githubusercontent.com/DavidGodefroid/lockhttp/$V/scripts/install.sh"
 less install.sh && LOCKHTTP_VERSION=$V sh install.sh
 
-# 2. Write the policy (trusted read-only hosts)
-lockhttp init
+# 2. Write the project's policy (trusted read-only hosts)
+lockhttp profile add
 
-# 3. In a terminal you keep in view: the console
-lockhttp console
+# 3. The hub and the console, which reviews the project's policy
+lox add lockhttp web
+lox up
 
 # 4. In another terminal: turn lockhttp on in lea (opt-in)
 export LEA_LOCKHTTP=1</code></pre>

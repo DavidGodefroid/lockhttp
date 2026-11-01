@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/DavidGodefroid/lockhttp/internal/policy"
 )
 
 func runArgs(t *testing.T, args ...string) (int, string, string) {
@@ -67,8 +69,8 @@ func TestPolicyCommand(t *testing.T) {
 	if code, _, _ := runEnv(t, env{}, "policy", "show", "--config", path); code != exitFail {
 		t.Fatal("show without a file")
 	}
-	if code, _, _ := runEnv(t, env{}, "init", "--config", path); code != exitOK {
-		t.Fatal("init")
+	if err := os.WriteFile(path, []byte(policy.DefaultConfig("default", false, nil)), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	code, out, _ := runEnv(t, env{}, "policy", "show", "--config", path)
 	if code != exitOK || !strings.Contains(out, "[profiles.default]") {
@@ -90,32 +92,6 @@ func TestPolicyCommand(t *testing.T) {
 	}
 	if code, _, _ := runEnv(t, env{}, "policy", "nope"); code != exitUsage {
 		t.Fatal("unknown subcommand")
-	}
-}
-
-func TestInitWritesValidPolicy(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cfg", "config.toml")
-	code, out, errs := runEnv(t, env{}, "init", "--config", path, "--trusted", "example.org,.corp.example")
-	if code != exitOK || !strings.Contains(out, "wrote") {
-		t.Fatalf("init: %d %s %s", code, out, errs)
-	}
-	b, _ := os.ReadFile(path)
-	if !strings.Contains(string(b), `"*.corp.example"`) {
-		t.Fatalf("imports missing:\n%s", b)
-	}
-	fi, _ := os.Stat(path)
-	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
-		t.Fatalf("mode %o", fi.Mode().Perm())
-	}
-	if code, _, _ := runEnv(t, env{}, "init", "--config", path); code != exitFail {
-		t.Fatal("overwrote without --force")
-	}
-	if code, _, _ := runEnv(t, env{}, "init", "--config", path, "--force", "--profile", "lab"); code != exitOK {
-		t.Fatal("--force --profile")
-	}
-	code, out, _ = runEnv(t, env{}, "doctor", "--config", path, "--profile", "lab")
-	if !strings.Contains(out, "profile lab") {
-		t.Fatalf("doctor: %d %s", code, out)
 	}
 }
 
@@ -144,8 +120,8 @@ func TestCAInitAndSignerKeyMode(t *testing.T) {
 	if code != exitUsage || !strings.Contains(errs, "readable by others") {
 		t.Fatalf("signer with a readable key: %d %s", code, errs)
 	}
-	code, out, _ := runEnv(t, env{}, "doctor", "--ca-cert", filepath.Join(dir, "ca.pem"), "--config", filepath.Join(dir, "none.toml"))
-	if !strings.Contains(out, "CA valid until") {
+	code, out, _ := runEnv(t, env{}, "doctor", "--ca-cert", filepath.Join(dir, "ca.pem"))
+	if !strings.Contains(out, "ca: valid until") {
 		t.Fatalf("doctor CA: %d %s", code, out)
 	}
 }

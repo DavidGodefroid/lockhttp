@@ -16,8 +16,8 @@ image, as the account it needs ([docker.md](docker.md#subcommand--docker-run)).
 | Command | Runs as | Volumes |
 |---|---|---|
 | `console` | the console account `lockhttp` (uid 10021), in the container `lockhttp-console`, no log driver | `lockhttp-run`, `lockhttp-home` |
-| `init`, `policy` | `lockhttp` | `lockhttp-home` |
-| `doctor` | `lockhttp` | `lockhttp-home` |
+| `profile add`, `init`, `doctor` | you (your uid and gid), from the current directory | the project, at its own path |
+| `policy` | `lockhttp` | `lockhttp-home` |
 | `gate` | `gate` (uid 10003, in `lockhttp-clients`), in the container `lockhttp-gate`, port published on `127.0.0.1:3130` | `lockhttp-run` |
 | `signer` | `signer` (uid 10004) | `lockhttp-signer` |
 | `ca init` | you (your uid and gid) | the `--dir` directory, at its own path |
@@ -26,8 +26,9 @@ image, as the account it needs ([docker.md](docker.md#subcommand--docker-run)).
 
 lea does not use the launcher for the gate and the signer: it runs them
 from the same image beside its proxy container ([lea.md](lea.md)). A path
-given to a command is a path inside its container: only `ca init` mounts a
-host directory; `LOCKHTTP_DOCKER_ARGS` adds mounts for the others.
+given to a command is a path inside its container: only `ca init` and the
+launcher verbs (the project) mount a host directory; `LOCKHTTP_DOCKER_ARGS`
+adds mounts for the others.
 
 Flags use Go's syntax: `-flag value`, `--flag value` or `--flag=value`.
 Positional arguments are refused.
@@ -48,29 +49,71 @@ on the host. Install the launcher with `scripts/install.sh`
 ([docker.md](docker.md#install-and-update)); a former host install is
 removed as in [Migrating from a host install](docker.md#migrating-from-a-host-install).
 
-## `lockhttp init`
+## Launcher verbs
+
+`lox init` sets up every lock of a project through the same three verbs
+(lockkit's GUIDE.md, "Launcher verbs"):
 
 ```
-lockhttp init [--profile P] [--config FILE] [--trusted "a.com .corp.example"] [--force]
+lockhttp profile add --non-interactive --json --profile NAME [--production]
+lockhttp init claude
+lockhttp doctor --fix --yes --json
 ```
 
-Writes the policy file, as the console account, in its home volume
-(`lockhttp-home`).
+The launcher runs them as you, with the project mounted at its own path
+and the current directory as the working directory. The project is the
+nearest directory holding `.lockhttp/config.toml`, else the nearest holding
+`.git`, else the current directory. With `--json`, a verb prints exactly
+one line of JSON on stdout, even when it fails: lockkit's `verbs.Profile`,
+`verbs.Doctor` or `verbs.Error` (`{"lock":"lockhttp","code":"usage|secret|exists|failed","error":"..."}`);
+human text goes to stderr.
+
+### `lockhttp profile add`
+
+```
+lockhttp profile add [--non-interactive] [--json] [--project DIR] [--profile NAME]
+                     [--production] [--trusted "a.com .corp.example"]
+```
+
+Adds one profile, with the default policy, to the project's
+`.lockhttp/config.toml`, which `lox up` reviews and copies into the
+lockhttp console. A new file is written `0600` in a `0700` directory; a
+profile added to an existing file is appended, the other profiles left
+byte for byte. A profile already in the file is never rewritten: exit 1,
+code `exists`, nothing written.
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--profile P` | `default` | Profile name (the table `[profiles.P]`). |
-| `--config FILE` | `~/.config/lockhttp/config.toml` | The policy file. |
-| `--trusted "..."` | none | Hosts to trust for reads, space or comma separated, in the format of lea's `LEA_EGRESS_ALLOW`: `example.org` adds that host; `.corp.example` adds `corp.example` and `*.corp.example`. |
-| `--force` | off | Overwrite an existing file. Without it, an existing file is left alone (exit 1). |
+| `--non-interactive` | off | Never read the terminal. Without it, `profile add` asks on the terminal for what the flags did not give (name, production, trusted hosts), and refuses without a terminal (exit 3). |
+| `--json` | off | One line of JSON on stdout: `{"lock":"lockhttp","profile":"web","config":"/path/.lockhttp/config.toml","production":false}`, or a `verbs.Error`. |
+| `--project DIR` | the project of the current directory | The project (the launcher mounts it). |
+| `--profile NAME` | `default` | Profile name (the table `[profiles.NAME]`). |
+| `--production` | off | A production profile (`production = true`): its name is typed for every approval, so it needs 2 characters or more and not `y`, `yes`, `n`, `no` or `ok`. |
+| `--trusted "..."` | none | Hosts to trust for reads (the config key `trusted`), space or comma separated, in the format of lea's `LEA_EGRESS_ALLOW`: `example.org` adds that host; `.corp.example` adds `corp.example` and `*.corp.example`. |
 
-The file holds the profile with `mode = "enforce"`, `heuristics = "shadow"`,
+lockhttp's target needs no secret: `profile add` takes no `--credentials`,
+and its JSON has no `credentials` key. No form of it takes, asks for or
+writes a secret: a flag named like one (`--password`, `--token`, ...), a
+value that embeds a password (`user:pw@host`, `password=`) or a positional
+argument is refused (code `secret`, or `usage` for a positional argument)
+before anything is written, and no error quotes a flag's value.
+
+The profile holds `mode = "enforce"`, `heuristics = "shadow"`,
 `buffer_limit = "10MiB"`, `hold = "60s"`, `connect_grant = "10m"`, the
 initial trusted set (Go, Python, npm, Node, MDN, Docker, Kubernetes, man7,
 `docs.anthropic.com`, GitHub, crates.io, Debian, Ubuntu, Alpine) plus the
 `--trusted` hosts, empty `splice` and `deny` lists, and a commented rule
-example. It is written `0600` in a `0700` directory, after being parsed.
-It then prints `next: lockhttp console --profile P`.
+example. The file is parsed before it is written.
+
+### `lockhttp init`
+
+```
+lockhttp init <agent>
+```
+
+`<agent>` is one of `claude`, `codex`, `cursor`, `gemini`. lockhttp has no
+agent files: lea routes the agent's HTTP through the gate. `init` checks
+the agent, writes nothing, says so and exits 0. It takes no flag.
 
 ## `lockhttp policy`
 
@@ -91,8 +134,9 @@ first, then the flag.
 |---|---|---|
 | `--config FILE` | `~/.config/lockhttp/config.toml` | The policy file. |
 
-`show` and `edit` exit 1 when the file does not exist (`create it with:
-lockhttp init`).
+`show` and `edit` exit 1 when the file does not exist: `lockhttp profile
+add` writes the policy in the project, and `lox up` copies it into the
+console.
 
 ## `lockhttp console`
 
@@ -151,24 +195,32 @@ distinct requests pending under the same container, method, host and path.
 ## `lockhttp doctor`
 
 ```
-lockhttp doctor [--profile P] [--config FILE] [--ca-cert FILE] [--gate ADDR]
+lockhttp doctor [--fix [--yes]] [--json] [--profile P] [--ca-cert FILE] [--gate ADDR]
 ```
 
-Checks the setup and prints one line per check. Exit 1 when a check fails.
+A launcher verb: checks the setup and the project of the current directory
+and prints one line per check (`✓`, `▲` warning, `✗` failure). Exit 0
+exactly when no check fails (a warning does not fail), 1 otherwise.
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--profile P` | `default` | Profile to check in the policy file. |
-| `--config FILE` | `~/.config/lockhttp/config.toml` | The policy file. |
+| `--fix` | off | Repair what can be (the write permission others have on the project's policy or its `.lockhttp` directory), asking before each repair, then check again. Without a terminal it needs `--yes` (exit 3 otherwise). |
+| `--yes` | off | With `--fix`: repair without asking. Alone, a usage error (exit 3). |
+| `--json` | off | One line of JSON on stdout: `{"lock":"lockhttp","ok":true,"fixed":[],"checks":[{"check":"policy","status":"ok","detail":"...","fix":"..."}]}`; a usage error prints a `verbs.Error` instead (the `code` key rather than `checks`). |
+| `--profile P` | every profile | Profile to check in the project's policy. |
 | `--ca-cert FILE` | none | CA certificate to check (fails under 7 days of validity). Without it, the doctor warns that decryption is off. |
 | `--gate ADDR` | none | Gate address to dial (for example `127.0.0.1:3130`). |
 
-It checks the separated setup (the image's `/etc/lockhttp/system.toml`, and
-`allowed_uids` when set), the policy (parse, mode, heuristics, counts; a
-warning in shadow mode), the CA and the gate. The launcher runs it as the
-console account, which alone can read the policy.
+The checks: `setup`, the separated setup (the image's
+`/etc/lockhttp/system.toml`, and `allowed_uids` when set); `agent`, nothing
+to wire; `policy`, the project's `.lockhttp/config.toml` (missing: run
+`lockhttp profile add`), each profile parsed, with its mode, heuristics
+and counts, a warning in shadow mode; `permissions`, the policy and its
+directory writable by their owner only (`--fix` removes the others' write
+permission); `ca` and `gate`.
 
-It runs in a container of its own: `--ca-cert` names a file inside it, and
+It runs in a container of its own: `--ca-cert` names a file inside it (a
+file in the project is at its own path), and
 `127.0.0.1` is that container. Mount the CA and join the gate's network
 namespace with `LOCKHTTP_DOCKER_ARGS`, for example
 `LOCKHTTP_DOCKER_ARGS="--network container:lockhttp-gate -v $PWD/ca.pem:/tmp/ca.pem:ro" lockhttp doctor --gate 127.0.0.1:3130 --ca-cert /tmp/ca.pem`.
