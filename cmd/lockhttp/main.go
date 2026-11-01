@@ -53,7 +53,7 @@ const usageText = `usage: lockhttp <command> [arguments]
 lockhttp runs in Docker: on the host, the lockhttp launcher runs each
 command in the image, as the account it needs (docs/docker.md).
 
-Launcher verbs (as you, on the project; lox init runs them)
+Launcher verbs (as you, on the project; lox add runs them)
   profile add [--non-interactive] [--json] [--project DIR] [--profile NAME]
               [--production] [--trusted "a.com .corp.example"]
                                    add a profile to .lockhttp/config.toml

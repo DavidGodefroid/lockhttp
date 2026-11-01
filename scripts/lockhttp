@@ -10,7 +10,7 @@
 #                         console's policy lives there)
 #   profile, init, doctor as you, with the project mounted at its own path
 #                         and the current directory as the working
-#                         directory (the launcher verbs lox init runs: they
+#                         directory (the launcher verbs lox add runs: they
 #                         work on the project's .lockhttp/config.toml)
 #   gate                  as gate (uid 10003), with the socket volume, its
 #                         port published on 127.0.0.1:3130 (it needs the hub

@@ -19,7 +19,7 @@ import (
 	"github.com/DavidGodefroid/lockhttp/internal/product"
 )
 
-// The launcher verbs `lox init` calls on every lock (lockkit GUIDE.md §14):
+// The launcher verbs `lox add` calls on every lock (lockkit GUIDE.md §14):
 //
 //	lockhttp init <agent>
 //	lockhttp profile add [--non-interactive] [--json] [--project DIR] [--profile NAME] [--production] [--trusted "..."]

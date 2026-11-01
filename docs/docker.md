@@ -71,7 +71,7 @@ refused.
 |---|---|---|---|
 | `console` | `lockhttp` (10021) | `--name lockhttp-console --log-driver none --user lockhttp -v lockhttp-run:/run/lockhttp -v lockhttp-home:/home/lockhttp` | the only container with `lockhttp-home`; no log driver, so `docker logs` keeps no approval screen; a stopped container named `lockhttp-console` is removed first |
 | `policy` | `lockhttp` | `--user lockhttp -v lockhttp-home:/home/lockhttp` | it reads or edits the policy in the console account's home |
-| `profile`, `init`, `doctor` | you (`id -u`:`id -g`) | `--user UID:GID -v ROOT:ROOT -w CWD`: ROOT is the project of the current directory (the nearest directory holding `.lockhttp/config.toml`, else `.git`, else the current directory), or `profile add`'s `--project DIR`, made absolute; under rootless Podman also `--userns keep-id`; no lockhttp volume | the launcher verbs `lox init` runs: they write and check the project's `.lockhttp/config.toml`, which is yours |
+| `profile`, `init`, `doctor` | you (`id -u`:`id -g`) | `--user UID:GID -v ROOT:ROOT -w CWD`: ROOT is the project of the current directory (the nearest directory holding `.lockhttp/config.toml`, else `.git`, else the current directory), or `profile add`'s `--project DIR`, made absolute; under rootless Podman also `--userns keep-id`; no lockhttp volume | the launcher verbs `lox add` runs: they write and check the project's `.lockhttp/config.toml`, which is yours |
 | `gate` | `gate` (10003) | `--name lockhttp-gate --user gate -v lockhttp-run:/run/lockhttp -p ${LOCKHTTP_PUBLISH:-127.0.0.1:3130}:3130`, and `--listen 0.0.0.0:3130` unless you pass `--listen` | it needs the hub flags, and refuses to start without them; lea starts its own gate ([lea.md](lea.md)) |
 | `signer` | `signer` (10004) | `--user signer -v lockhttp-signer:/run/lockhttp-signer` | the socket directory (`signer:lockhttp-clients`, 2750, from the image) the gate shares; lea runs its own signer ([lea.md](lea.md#3-mitm-phase-2-optional)) |
 | `ca` | you (`id -u`:`id -g`) | `--user UID:GID -v DIR:DIR`, with `--dir DIR` made absolute (created 0700) and `--name $(uname -n)` unless you pass `--name`; under rootless Podman also `--userns keep-id`, so that the files are yours on the host | the CA files are yours; lea reads `ca.pem` and gives `ca-key.pem` to the signer alone |
@@ -180,7 +180,7 @@ the gate beside its proxy with the hub flags `lox up` writes in
 [lea.md](lea.md)). `lockhttp gate` without `--hub`, `--hub-key-file` and
 `--instance` exits with a usage error ("launched by `lox up` only").
 
-`lox init` writes the policy through the launcher verbs, from the project
+`lox add lockhttp` writes the policy through the launcher verbs, from the project
 root: `lockhttp profile add --non-interactive --json --profile NAME`
 (`<workspace>/.lockhttp/config.toml`), `lockhttp init claude` (nothing to
 write) and `lockhttp doctor --fix --yes --json`. They run as you on the

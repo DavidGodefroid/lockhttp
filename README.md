@@ -141,9 +141,9 @@ proxy container when `LEA_LOCKHTTP=1`, with the hub flags `lox up` writes in
 uids, network rules) is in [docs/lea.md](docs/lea.md); the one between
 `lox up` and lea in lockhub's `docs/lox-up.md`.
 
-LockHTTP needs lea, and `lox init` sets it up in manual mode only
-(`lox init --manual`, then check lockhttp): see lockhub's
-[docs/lox-init.md](https://github.com/DavidGodefroid/lockhub/blob/main/docs/lox-init.md).
+LockHTTP needs lea, and `lox add lockhttp` sets it up (its only question is
+the lock's name): see lockhub's
+[docs/lox-add.md](https://github.com/DavidGodefroid/lockhub/blob/main/docs/lox-add.md).
 
 ```sh
 # 1. Install the Lock Family (lox, lea and the launchers), or only this tool;
@@ -155,14 +155,17 @@ brew install davidgodefroid/tap/lockfamily   # or: brew install davidgodefroid/t
 # 2. In lea's projects directory (LEA_PROJECTS_DIR: lea reads
 #    .lockfamily/up.json only at its root): a lockhttp lock, the hub, its console
 cd ~/projects
-lox init --manual             # check lockhttp: profile add, lox add, lox up, the console
+lox add lockhttp              # asks for the lock's name: profile add, the declaration, lox up, the console
 # or by hand:
 #   lockhttp profile add      # the policy: .lockhttp/config.toml, which lox up reviews and copies
 #   lox add lockhttp web
 #   lox up                    # runs the hub and the console, registers the gate's key
 #   lox attach web            # the console's terminal: approve its first policy (detach: Ctrl-P Ctrl-Q)
 
-# 3. Start lea with LockHTTP on: its gate asks the hub
+# 3. Start lea with LockHTTP on: its gate asks the hub. If lea already runs,
+#    `lox add` said "lea gets lock NAME at its next start: lea stop, then lea":
+#    lea mounts the locks' sockets when its container starts, so lea stop,
+#    then lea brings the new lock in.
 export LEA_LOCKHTTP=1
 lea
 
@@ -250,7 +253,7 @@ deny    = []                # always refused
 
 | Key | Default | Notes |
 |---|---|---|
-| `production` | `false` | No rule may be `auto`, and the console treats the profile as production. |
+| `production` | `false` | No rule may be `auto` (an `auto` rule only asks), and the console treats the profile as production. |
 | `mode` | `enforce` | `shadow`: what would ask or be denied passes and is logged as such. |
 | `heuristics` | `shadow` | Exfiltration score: `off` (not computed), `shadow` (logged), `enforce` (a score ≥ 3 asks, `NeverAuto`, red). |
 | `buffer_limit` | `10MiB` | `B`, `KiB`, `MiB`, `GiB` or bytes; more than 0. |
@@ -280,15 +283,14 @@ trusted = ["docs.rs", "*.readthedocs.io"]       # free reads of docs
 splice  = ["pinned.example.com"]                # a client that pins its certificate
 deny    = ["pastebin.com"]
 
-# A container-scoped rule that auto mode may answer
+# A container-scoped rule: the gate asks lockhub and a human answers
 [[profiles.default.rules]]
 id        = "npm-audit"
 container = "lea-ab12cd34ef"
 host      = "registry.npmjs.org"
 methods   = ["POST"]
 path      = "/-/npm/v1/security/advisories/bulk"
-verdict   = "auto"
-max_body  = "256KiB"
+verdict   = "ask"
 expires   = "2026-12-31"
 
 # Every write under an API path asks (NeverAuto), even on a trusted host
@@ -381,7 +383,8 @@ console the only place a loosening of the policy is. In short:
   `docker` on the host can reach the console's container and volumes: keep
   the agent away from the Docker socket.
 - **NeverAuto.** Every hub ticket of the gate is `NeverAuto`: the hub
-  cannot check a `verdict = "auto"` rule against the console's policy, so
+  cannot check an `auto` rule against the console's policy (a rule that asks
+  like `ask`), so
   nothing answers a held request but a human. Secrets are denied.
 - **A decision is shared only by identical requests.** Same container,
   method, URL, significant headers and normalised body; anything else is
@@ -400,7 +403,7 @@ console the only place a loosening of the policy is. In short:
   24-hour leaf per host, over a Unix socket restricted to allowed uids; it
   never sees the CA key.
 - **The AI tightens, the human loosens.** Any change that widens what passes
-  without a human (a trusted host, a `free` or `auto` rule, shadow mode, a
+  without a human (a trusted host, a `free` rule, shadow mode, a
   longer grant, a removed deny...) waits for your `:review`.
 - **Traced.** The gate's JSONL audit and the console's audit carry
   `request_id`, `container`, `agent`, `attribution`, `via`, never a body, a
