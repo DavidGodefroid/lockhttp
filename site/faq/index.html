@@ -61,17 +61,17 @@
 <h3>Why not a simple domain allowlist?</h3>
 <p>Because an allowed domain is allowed for reads and writes. lockhttp keeps reads of trusted hosts free and stops writes, uploads and unknown hosts for a human, with a trace of who asked.</p>
 
-<h3>What happens when nobody watches the console?</h3>
-<p>Requests that need a human are held 60 s, then refused with <code>E_PENDING</code>; the item stays on the console and the same request goes through once you approve it. With no console at all, they are refused at once with <code>E_NO_CONSOLE</code>, while trusted reads continue.</p>
+<h3>What happens when nobody answers?</h3>
+<p>Requests that need a human are held 60 s, then refused with <code>E_PENDING</code>; the ticket stays pending on the hub and the same request goes through once you approve it. When the hub ticket expires unanswered, the agent gets <code>E_TIMEOUT</code>. With no console running (<code>lox up</code> starts it), they are refused at once with <code>E_NO_CONSOLE</code>, while trusted reads continue.</p>
 
 <h3>Does lockhttp decrypt my traffic?</h3>
 <p>Only if you turn it on. Without it, lockhttp decides HTTPS on the host name and port (CONNECT and SNI). With a CA generated per installation (<code>lockhttp ca init</code>), trusted only inside lea’s containers, and the signer that holds its key, the gate decrypts and decides each request. Hosts that pin their certificates go in a splice list and stay decided at the domain.</p>
 
 <h3>Can the agent approve its own request?</h3>
-<p>No. Approvals happen only in the console, on the host, in another account and session. lea’s deck shows a counter of pending requests, never an approve button.</p>
+<p>No. Approvals happen only on <a href="https://github.com/DavidGodefroid/lockhub">lockhub</a>, outside the agent’s containers: in <code>lox approve</code>, lea’s deck or a paired phone. Each held request is a <code>NeverAuto</code> ticket, the hub signs your decision and the gate checks it. The agent cannot reach the hub: its containers are not on the hub’s network, and the gate refuses the hub’s addresses as targets.</p>
 
 <h3>Can I let some requests through without asking?</h3>
-<p>Yes: a <code>free</code> rule, or an <code>auto</code> rule that auto mode may answer. Both are written and confirmed by you, scoped to a container or to all, and some classes (uploads, messaging, publishing, pushes) can never be <code>auto</code>.</p>
+<p>Yes: a <code>free</code> rule, written and confirmed by you in the console’s review, scoped to a container or to all. An <code>auto</code> rule stays valid in the policy (and some classes, such as uploads, messaging, publishing and pushes, can never be <code>auto</code>), but under the hub it asks like <code>ask</code>: every held request is a <code>NeverAuto</code> ticket a human answers.</p>
 
 <h3>Is there an MCP server?</h3>
 <p>No, not yet. Agents meet lockhttp as a proxy; its refusal pages tell them what to ask of you.</p>

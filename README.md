@@ -146,12 +146,15 @@ LockHTTP needs lea, and `lox init` sets it up in manual mode only
 [docs/lox-init.md](https://github.com/DavidGodefroid/lockhub/blob/main/docs/lox-init.md).
 
 ```sh
-# 1. Install the Lock Family (lox, lea and the launchers), or only this tool
+# 1. Install the Lock Family (lox, lea and the launchers), or only this tool;
+#    Homebrew asks to trust a third-party tap once
+brew trust davidgodefroid/tap
 brew install davidgodefroid/tap/lockfamily   # or: brew install davidgodefroid/tap/lockhttp
                                               # or the launcher alone: see Install
 
-# 2. In your project: a lockhttp lock, then the hub and its console
-cd ~/projects/shop
+# 2. In lea's projects directory (LEA_PROJECTS_DIR: lea reads
+#    .lockfamily/up.json only at its root): a lockhttp lock, the hub, its console
+cd ~/projects
 lox init --manual             # check lockhttp: profile add, lox add, lox up, the console
 # or by hand:
 #   lockhttp profile add      # the policy: .lockhttp/config.toml, which lox up reviews and copies
@@ -179,7 +182,8 @@ run `lox up`. `lockhttp gate` refuses to start without its hub flags
 LockHTTP runs in Docker. On the host, `scripts/install.sh` installs only the
 `lockhttp` launcher, a shell script that runs every command in the release's
 image (`ghcr.io/davidgodefroid/lockhttp:X.Y.Z`, amd64 and arm64). With
-Homebrew: `brew install davidgodefroid/tap/lockhttp` (or
+Homebrew: `brew trust davidgodefroid/tap` (Homebrew asks to trust a
+third-party tap once), then `brew install davidgodefroid/tap/lockhttp` (or
 `davidgodefroid/tap/lockfamily` for the whole family). Otherwise, download
 the script from the release you install, read it, then run it:
 
