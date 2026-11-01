@@ -280,7 +280,7 @@ by the hub are audited (`reveal`/`renew`, `approval` `hub-claimed`).
 
 **Supported lockhub versions.** Which [lockhub](https://github.com/DavidGodefroid/lockhub)
 releases each lockhttp release works with. Under `lox up`, lea runs the gate in hub mode
-(lockhub's `docs/lock-up.md`), and only from an `up.json` that says what the gate pins
+(lockhub's `docs/lox-up.md`), and only from an `up.json` that says what the gate pins
 (`"lockhttp_gate": 1`): that needs lockhub v0.2.2 or later and lea v0.3.0 or later, for every
 lockhttp release below. A gate run by hand works with the hub image of the last column.
 From the release after v0.5.1 the gate is hub-attached only (there is no standalone gate),
