@@ -5,14 +5,16 @@ path of its agents, and what LockHTTP guarantees in return. The lea side
 lives in the lea repository; this page is the contract both sides test
 against. Contract version: **1** (the `version` field of every file below).
 
-> **Hub-attached only (after v0.5.1).** The gate always asks lockhub: it
+> **Hub-attached only (from v0.6.0).** The gate always asks lockhub: it
 > does not start without `--hub`, `--hub-key-file` and `--instance`
 > ("launched by `lox up` only"), and there is no standalone gate asking a
 > console of its own. lockhub's `lox up` runs the lockhttp console (it
 > serves the policy) and the hub, and writes in `<workspace>/.lockfamily/up.json`
 > what lea passes to the gate (lockhub's `docs/lox-up.md`). Without a
-> trusted `up.json` naming one lockhttp lock, lea does not start the gate
-> and says to run `lox up`. The console's socket volume is `lox up`'s
+> trusted `up.json` naming one lockhttp lock, lea after v0.3.5 (lea#232)
+> does not start the gate and says to run `lox up`; lea v0.3.0 to v0.3.5
+> fall back to a standalone gate, which this gate refuses (its container
+> exits and restarts, and nothing gets out). The console's socket volume is `lox up`'s
 > `<project>_<instance>-run`, no longer `lockhttp-run`.
 
 > **Changes since v0.1.0.** LockHTTP runs in Docker only
