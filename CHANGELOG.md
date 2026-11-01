@@ -6,8 +6,12 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-The launcher verbs of lockkit v0.10.0 (lockkit#111, GUIDE.md §14), which
-`lox init` runs on every lock (#31).
+## [0.7.0] - 2026-11-01
+
+Built on lockkit v0.10.0; supported lockhub as v0.6.0. The launcher verbs
+of lockkit v0.10.0 (lockkit#111, GUIDE.md §14), which `lox init` runs on
+every lock (#31, #32). Breaking: `lockhttp init --trusted` is removed (now
+`profile add --trusted`).
 
 ### Added
 
@@ -300,7 +304,8 @@ separate signer, Claude API allowlist) available behind `--ca-cert` and
 - Release pipeline: goreleaser, cosign keyless signatures, SBOMs,
   SHA-pinned actions, `scripts/install.sh` with signature verification.
 
-[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.7.0
 [0.6.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.6.0
 [0.5.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.5.1
 [0.5.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.5.0
