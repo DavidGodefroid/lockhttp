@@ -120,7 +120,7 @@ def main():
         check("lockhttp launcher dev (image " + image + ")" in r.stdout or "(image " + image + ")" in r.stdout, "version names the image", r.stdout)
         r = launcher("install", check_=False)
         check(r.returncode != 0 and "runs in Docker" in r.stderr, "install is refused", r.stderr)
-        # The launcher verbs lox init runs, as the invoking user on the
+        # The launcher verbs lox add runs, as the invoking user on the
         # project (lockkit GUIDE.md section 14).
         project = tempfile.mkdtemp(prefix="lockhttp-e2e-")
         sub = os.path.join(project, "sub")

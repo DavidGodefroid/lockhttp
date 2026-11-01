@@ -128,7 +128,7 @@
 
 <section aria-labelledby="quick-start">
   <h2 id="quick-start">Quick start with lea</h2>
-  <p class="prose">lockhttp is built for <a href="https://github.com/DavidGodefroid/lea">lea</a>, which runs agents in containers whose only way out is its proxy container. It runs hub-attached only: <a href="https://github.com/DavidGodefroid/lockhub">lockhub</a>’s <code>lox up</code> runs the hub and the lockhttp console, and lea runs the gate. <code>lox init</code> sets it up in manual mode (<a href="https://github.com/DavidGodefroid/lockhub/blob/main/docs/lox-init.md">lox init</a>):</p>
+  <p class="prose">lockhttp is built for <a href="https://github.com/DavidGodefroid/lea">lea</a>, which runs agents in containers whose only way out is its proxy container. It runs hub-attached only: <a href="https://github.com/DavidGodefroid/lockhub">lockhub</a>’s <code>lox up</code> runs the hub and the lockhttp console, and lea runs the gate. <code>lox add lockhttp</code> sets it up (<a href="https://github.com/DavidGodefroid/lockhub/blob/main/docs/lox-add.md">lox add</a>):</p>
   <pre tabindex="0" class="term"><code># 1. Install the Lock Family (lox, lea and the launchers);
 #    Homebrew asks to trust a third-party tap once
 brew trust davidgodefroid/tap
@@ -137,7 +137,7 @@ brew install davidgodefroid/tap/lockfamily   # or: brew install davidgodefroid/t
 # 2. In lea's projects directory (LEA_PROJECTS_DIR: lea reads
 #    .lockfamily/up.json only at its root): the policy, the lock, the hub, the console
 cd ~/projects
-lox init --manual        # check lockhttp (it needs lea)
+lox add lockhttp         # asks for the lock's name, sets it up, runs lox up (it needs lea)
 # or by hand:
 #   lockhttp profile add   # the project's policy (trusted read-only hosts)
 #   lox add lockhttp web

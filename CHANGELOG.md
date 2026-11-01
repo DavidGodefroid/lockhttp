@@ -4,7 +4,13 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.1] - 2026-11-01
+
+### Changed
+
+- Docs and the default policy's comments follow the first run: `lox add lockhttp`
+  sets a lock up; no auto mode (an `auto` rule asks like `ask`, every hub ticket
+  is NeverAuto); the commented sample rule asks.
 
 ### Added
 

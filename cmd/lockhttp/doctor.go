@@ -36,7 +36,7 @@ type doctorOpts struct {
 
 // runDoctor is `lockhttp doctor`: the setup, the project's policy and its
 // permissions, the CA and the gate. It checks the project of the current
-// directory, as the invoking user (`lox init` runs `doctor --fix --yes
+// directory, as the invoking user (`lox add` runs `doctor --fix --yes
 // --json`). --fix repairs the permissions of the project's policy and
 // checks again.
 func runDoctor(e env, args []string) int {

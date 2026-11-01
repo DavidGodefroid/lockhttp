@@ -162,8 +162,8 @@ var DocsTrusted = []string{
 
 // ConfigHeader opens the config file `lockhttp profile add` creates.
 const ConfigHeader = `# lockhttp policy. Only the console's human loosens it: every loosening
-# (a new trusted host, a free or auto rule, shadow mode, ...) is confirmed
-# in the console with :review before it applies.
+# (a new trusted host, a free rule, shadow mode, ...) is confirmed in the
+# console (lox attach NAME, then :review) before it applies.
 `
 
 // ImportHosts reads hosts to trust for reads in the format of lea's
@@ -237,8 +237,8 @@ splice = []
 # Hosts always refused.
 deny = []
 
-# Rules, most specific first. verdict: free, auto (auto mode may approve;
-# never for messaging, publishing, git push, spliced hosts), ask, deny.
+# Rules, most specific first. verdict: free, ask (the gate asks lockhub;
+# auto asks like ask), deny.
 # A rule names a container or none (all containers), never an agent.
 #
 `)
@@ -248,7 +248,7 @@ deny = []
 # host    = "registry.npmjs.org"
 # methods = ["POST"]
 # path    = "/-/npm/v1/security/advisories/bulk"
-# verdict = "auto"
+# verdict = "ask"
 # max_body = "256KiB"
 # expires = "2026-12-31"
 `)

@@ -15,8 +15,8 @@ image, through the launcher.
    file and cannot approve anything.
 2. **The network is the boundary.** In lea the agent's container has no
    route out except the proxy container; proxy variables are a convenience.
-3. **NeverAuto by default.** A human answers every ASK, unless an approved,
-   active, container-scoped `auto` rule matches and the console agrees.
+3. **NeverAuto.** A human answers every ASK: every hub ticket of the gate is
+   `NeverAuto`, and an `auto` rule asks like `ask`.
 4. **The AI tightens, the human loosens.** A policy change that widens what
    passes without a human waits for the human's `:review`.
 5. **Fail closed.** No console, an unknown source, an unreadable source map,
@@ -59,9 +59,9 @@ image, through the launcher.
 | T5 | A write to a trusted host (a webhook, an issue, a push). | Trusted means reads only: with decryption every non-read asks (`NeverAuto`, red for messaging, publishing, pushes), and a git push shows its refs. | **Without decryption, a trusted host is free at the domain, reads and writes**, and an approved `CONNECT` opens its host for `connect_grant`; the screen and the doctor say so. |
 | T6 | The Claude API as a relay: `mcp_servers`, server tools, code execution containers, Files, a third-party key. | With decryption: the `/v1/messages` parameter allowlist, `/v1/files` asks, any other path or Anthropic host asks, credentials checked against the caller's list. | Without decryption the four Claude hosts are free at the domain. Prompt content sent to Anthropic is intended traffic. With no `credentials.json` the key check is off. |
 | T7 | A secret leaving with a request. | Known formats (GitHub, Anthropic, AWS, Slack, OpenAI, Google, npm, GitLab, private keys) in the URL, headers or held body are denied outside their hosts, in shadow mode too. | Unknown formats, encoded or split secrets, and bodies over `buffer_limit` streamed by a `free` rule are not matched. Cookies are not scanned. |
-| T8 | Approval fatigue. | Container-scoped `auto` rules for routine calls; identical requests share one screen; the pending count per container, method, host and path; a single-use authorisation after `E_PENDING` instead of a second screen. | The human factor. Requests with another body are separate screens, by design. |
-| T9 | The agent manipulates the policy. | The policy lives in the console account's home; the gate only receives it; every loosening waits for `:review`; `auto` is refused on forbidden classes at parse time and re-checked by the console at approval time. | A human who approves a bad `:review`. |
-| T10 | A compromised gate. | Dedicated non-root uid; no decision authority (the console re-checks auto claims and is the only one to approve); no CA key. | It sees and can alter FREE traffic and decrypted content; it can ask the signer for leaves for any valid host name while it runs; it can lie to the human about a request's content within the screen's bounds. |
+| T8 | Approval fatigue. | Container-scoped `free` rules for routine calls (confirmed with `:review`); identical requests share one screen; the pending count per container, method, host and path; a single-use authorisation after `E_PENDING` instead of a second screen. | The human factor. Requests with another body are separate screens, by design. |
+| T9 | The agent manipulates the policy. | The policy lives in the console account's home; the gate only receives it; every loosening waits for `:review`; `auto` is refused on forbidden classes at parse time, and an `auto` rule only asks. | A human who approves a bad `:review`. |
+| T10 | A compromised gate. | Dedicated non-root uid; no decision authority (every hub ticket it makes is `NeverAuto`; only a human approves on lockhub); no CA key. | It sees and can alter FREE traffic and decrypted content; it can ask the signer for leaves for any valid host name while it runs; it can lie to the human about a request's content within the screen's bounds. |
 | T11 | Theft of the CA key. | Only the signer reads it (`0600`, its own uid); CA `pathlen:0`, 90 days, trusted only in lea's containers; `lockhttp ca init --force` rotates. | Whoever holds the key can intercept traffic of containers that trust the CA until it expires or is rotated. |
 | T12 | One agent impersonates another. | Rules apply to containers, never to agents; an agent token from another container is marked `ambiguous`. | Agents in one container share a uid: attribution within a container is declarative. |
 | T13 | Replay or forgery of an approval. | A decision covers one fingerprint (container, method, URL, media type, every end-to-end header value hashed, normalised body); a single-use authorisation is consumed once and lives 10 minutes; a connect grant is per container × host × port. | During `connect_grant`, a `CONNECT` grant opens the host for any traffic of that container. |
@@ -78,10 +78,8 @@ These do not change with the policy ([decisions.md](decisions.md)):
 - The console runs as its own account, in its own container, the only one
   with the console's home volume; the agent never gets the console's socket
   or the Docker socket.
-- Every screen is `NeverAuto` unless an approved `auto` rule matches; the
-  console re-checks that claim against its own approved policy (rule id,
-  active, `auto`, allowed for its host and the profile, host, method, path,
-  container, `max_body`, not spliced, not red, not a `CONNECT`).
+- Every screen is `NeverAuto`: the gate runs hub-attached only, every hub
+  ticket it makes is `NeverAuto`, and an `auto` rule asks like `ask`.
 - A human decision is shared only by requests of identical fingerprint.
 - The Claude API is checked per path and parameter once decrypted.
 - Fail closed: no console means every ASK is refused; an unknown source, an

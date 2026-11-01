@@ -42,7 +42,7 @@ container = "lea-ab12cd34ef"
 host      = "registry.npmjs.org"
 methods   = ["POST"]
 path      = "/-/npm/v1/security/advisories/bulk"
-verdict   = "auto"
+verdict   = "ask"
 max_body  = "256KiB"
 expires   = "2026-12-31"
 note      = "npm audit in the shop container"
@@ -383,8 +383,9 @@ Trusted reads of docs, and their subdomains:
 trusted = ["docs.rs", "readthedocs.io", "*.readthedocs.io"]
 ```
 
-A container-scoped rule auto mode may answer (container names come from
-lea's `sources.json`):
+A container-scoped rule: the gate asks lockhub and a human answers
+(container names come from lea's `sources.json`). `verdict = "auto"` here
+would ask the same way, so `ask` says what happens:
 
 ```toml
 [[profiles.default.rules]]
@@ -393,7 +394,7 @@ container = "lea-ab12cd34ef"
 host      = "search.example.com"
 methods   = ["POST"]
 path      = "/v1/query"
-verdict   = "auto"
+verdict   = "ask"
 max_body  = "16KiB"
 expires   = "2026-12-31"
 ```

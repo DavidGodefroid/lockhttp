@@ -51,7 +51,7 @@ removed as in [Migrating from a host install](docker.md#migrating-from-a-host-in
 
 ## Launcher verbs
 
-`lox init` sets up every lock of a project through the same three verbs
+`lox add` sets up every lock of a project through the same three verbs
 (lockkit's GUIDE.md, "Launcher verbs"):
 
 ```
