@@ -6,6 +6,12 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [0.7.1] - 2026-11-01
 
+### Changed
+
+- Docs and the default policy's comments follow the first run: `lox add lockhttp`
+  sets a lock up; no auto mode (an `auto` rule asks like `ask`, every hub ticket
+  is NeverAuto); the commented sample rule asks.
+
 ### Added
 
 - Each release tag bumps the `lockhttp` formula of the
