@@ -338,10 +338,11 @@ lockhttp release below. A gate run by hand works with the hub image of the last 
 From v0.6.0 the gate is hub-attached only (there is no standalone gate): run it under `lox up`,
 with a trusted `up.json` naming one lockhttp lock. lea after v0.3.5 (lea#232) then refuses to
 start a gate without one and says to run `lox up`; lea v0.3.0 to v0.3.5 instead falls back to a
-standalone gate, which v0.6.0 refuses: that gate container exits and restarts (nothing gets out).
+standalone gate, which v0.6.0 and later refuse: that gate container exits and restarts (nothing gets out).
 
 | lockhttp | lockkit | Under `lox up` (lea's gate) | Hub image, gate run by hand |
 |---|---|---|---|
+| v0.7.0 | v0.10.0 | as v0.6.0 | v0.2.0 or later |
 | v0.6.0 | v0.9.1 | lockhub v0.2.2 + lea v0.3.0 or later, with a trusted `up.json` only: hub mode only (no standalone gate), reveals (`reveal: true`), renewals, `devices: true` | v0.2.0 or later |
 | v0.5.1 | v0.8.1 | lockhub v0.2.2 + lea v0.3.0 or later: hub mode, reveals (`reveal: true`), renewals, `devices: true` | v0.2.0 or later |
 | v0.5.0 | v0.6.0 | lockhub v0.2.2 + lea v0.3.0 or later: hub mode, reveals (`reveal: true`), renewals, `devices: true` | v0.2.0 or later |
