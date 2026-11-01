@@ -59,10 +59,11 @@
 <section aria-labelledby="status">
   <h2 id="status">Status</h2>
   <div class="prose">
-    <p>The quickest way in is the Lock Family with Homebrew: <code>lox</code>, lea and every launcher (or <code>brew install davidgodefroid/tap/lockhttp</code> for this launcher alone). Then, in your project, <code>lox init --manual</code> and check lockhttp, which needs lea (<a href="https://github.com/DavidGodefroid/lockhub/blob/main/docs/lox-init.md">lox init</a>):</p>
+    <p>The quickest way in is the Lock Family with Homebrew: <code>lox</code>, lea and every launcher (or <code>brew install davidgodefroid/tap/lockhttp</code> for this launcher alone). Homebrew asks to trust a third-party tap once: <code>brew trust davidgodefroid/tap</code> first. Then, in lea’s projects directory (<code>LEA_PROJECTS_DIR</code>: lea reads <code>.lockfamily/up.json</code> only at its root), <code>lox init --manual</code> and check lockhttp, which needs lea (<a href="https://github.com/DavidGodefroid/lockhub/blob/main/docs/lox-init.md">lox init</a>):</p>
   </div>
-  <pre tabindex="0" class="term"><code>brew install davidgodefroid/tap/lockfamily
-cd ~/projects/shop
+  <pre tabindex="0" class="term"><code>brew trust davidgodefroid/tap
+brew install davidgodefroid/tap/lockfamily
+cd ~/projects
 lox init --manual</code></pre>
   <div class="prose">
     <p>lockhttp runs in Docker. The only thing installed on the host is the <code>lockhttp</code> launcher, a shell script that runs every command in the signed image <code>ghcr.io/davidgodefroid/lockhttp</code>, by digest. Without Homebrew, download the install script from the release you install on the <a href="https://github.com/DavidGodefroid/lockhttp/releases">releases page</a>, read it, then run it (cosign is required):</p>
@@ -106,7 +107,7 @@ lockhttp version</code></pre>
   <h2 id="setup">Setup with lea</h2>
   <ol class="steps prose">
     <li><strong>Install the launcher.</strong> Homebrew or <code>scripts/install.sh</code>, as above. There is no host account or group to create: they are in the image.</li>
-    <li><strong>Add the lock and start the hub.</strong> In your project: <code>lox init --manual</code> and check lockhttp, or by hand <code>lockhttp profile add</code> (its policy in <code>.lockhttp/config.toml</code>), <code>lox add lockhttp web</code>, then <code>lox up</code>, which runs the hub and the lockhttp console (<code>lox attach web</code> for its terminal). lea never writes the policy.</li>
+    <li><strong>Add the lock and start the hub.</strong> In lea’s projects directory: <code>lox init --manual</code> and check lockhttp, or by hand <code>lockhttp profile add</code> (its policy in <code>.lockhttp/config.toml</code>), <code>lox add lockhttp web</code>, then <code>lox up</code>, which runs the hub and the lockhttp console (<code>lox attach web</code> for its terminal). lea never writes the policy.</li>
     <li><strong>Turn it on in lea.</strong> <code>LEA_LOCKHTTP=1</code>. lea starts the gate from the same image beside its proxy container, asking the hub of <code>lox up</code>, puts squid on loopback behind it, routes keyproxy through it and switches off the SSH git forwarders.</li>
     <li><strong>Check.</strong> <code>lockhttp doctor</code>, and lea’s own doctor: from an agent, <code>curl --noproxy '*' https://example.com</code> must fail.</li>
   </ol>

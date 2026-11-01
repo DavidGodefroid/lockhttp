@@ -52,14 +52,14 @@
 <h1>How lockhttp works</h1>
 <div class="prose">
   <p class="lead">Two planes on two sides of a boundary. Only the human side can say yes.</p>
-  <p>The data plane, <code>lockhttp gate</code>, is a proxy in lea’s proxy container. The control plane, <code>lockhttp console</code>, is the standard lockkit console on the host, in its own account. The gate asks the console only about requests that need a human.</p>
+  <p>The data plane, <code>lockhttp gate</code>, is a proxy in lea’s proxy container. The control plane is the standard lockkit console, <code>lockhttp console</code>, in a container <a href="https://github.com/DavidGodefroid/lockhub">lockhub</a>’s <code>lox up</code> runs, in its own account: it serves the policy and asks you about every loosening. Requests that need a human become signed tickets on the hub, which you answer on a facade (<code>lox approve</code>, lea’s deck or a paired phone).</p>
 </div>
 
 <div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.7.0</code> is out as a pre-release and runs in Docker only (one <code>lockhttp</code> launcher, a cosign-signed image): command names are fixed, flags may still move. TLS decryption ships in it and is optional, wired by lea: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
 
 <section aria-labelledby="layout">
   <h2 id="layout">Where each piece runs</h2>
-  <pre tabindex="0" class="diagram" role="img" aria-label="Agent containers reach only the lockhttp gate, a container sharing the network namespace of lea's proxy container; the gate forwards to squid on loopback and the Internet; for requests that need a human it asks the lockhttp console, in its own container, over a Unix socket in a volume only the gate and the console mount."><code> agent container  (internal network, no other route)
+  <pre tabindex="0" class="diagram" role="img" aria-label="Agent containers reach only the lockhttp gate, a container sharing the network namespace of lea's proxy container; the gate forwards to squid on loopback and the Internet; it reads the policy from the lockhttp console, which lox up runs in its own container, over a Unix socket in a volume only the gate and the console mount; for requests that need a human it asks lockhub, where you answer on a facade."><code> agent container  (internal network, no other route)
  ┌──────────────────────────────────────────────────────┐
  │ claude code · curl · git · npm · chromium            │
  │ HTTP(S)_PROXY=http://&lt;agent&gt;:&lt;token&gt;@lea-proxy:3130 │
@@ -74,13 +74,15 @@
  └──────────────────────────┬───────────────────────────┘
                             │ Unix socket, volume lockhttp-run:
                             │ the gate and the console only
- console container          ▼
+ console container (lox up) ▼
  ┌──────────────────────────────────────────────────────┐
- │ lockhttp console --profile default                   │
+ │ lockhttp console --profile default  (run by lox up)  │
  │   account lockhttp, volume lockhttp-home (policy)    │
- │   approvals · policy review · auto mode · audit      │
- └──────────────────────────────────────────────────────┘</code></pre>
-  <p class="prose">The agent containers never see the console socket. The console authenticates the gate by its uid (<code>SO_PEERCRED</code>) and never goes on the network itself.</p>
+ │   serves the policy · policy review · audit          │
+ └──────────────────────────────────────────────────────┘
+ gate ──▶ lockhub (hub network: lea's proxy only)
+   held request → signed ticket → you, on a facade</code></pre>
+  <p class="prose">The agent containers never see the console socket, and never join the hub’s network: the gate refuses the hub’s addresses as targets. The console authenticates the gate by its uid (<code>SO_PEERCRED</code>) and never goes on the network itself.</p>
 </section>
 
 <section aria-labelledby="order">
@@ -101,12 +103,12 @@
   <ol class="prose">
     <li>Agent → gate: <code>POST https://api.unknown.io/v1/upload</code></li>
     <li>Gate: source → container; policy → ASK; body buffered (up to the limit); local queue</li>
-    <li>Gate → console: summary, masked preview, warnings, correlation (container, agent, task, session)</li>
-    <li>Console → you: approval screen</li>
-    <li>You → console: <code>y</code>, or <code>n &lt;reason&gt;</code></li>
+    <li>Gate → hub: a signed ticket (<code>NeverAuto</code>) with the summary, masked preview, warnings, correlation (container, agent, task, session)</li>
+    <li>Hub → you: the approval screen on a facade (<code>lox approve</code>, lea’s deck or a paired phone)</li>
+    <li>You → hub: <code>y</code>, or <code>n &lt;reason&gt;</code>; the hub signs the decision and the gate checks it</li>
     <li>Gate → upstream: the held request (on <code>y</code>), or <code>403 E_DENIED</code> with your reason</li>
   </ol>
-  <p class="prose">The gate holds a request for 60 s. If nobody answered by then, the agent gets <code>403 E_PENDING</code> and the item stays on the console; once you approve, the same request (same fingerprint) goes through within 10 minutes, once. Without a console, an ASK is refused at once with <code>E_NO_CONSOLE</code>, while FREE traffic continues on the last approved policy.</p>
+  <p class="prose">The gate holds a request for 60 s. If nobody answered by then, the agent gets <code>403 E_PENDING</code> and the ticket stays pending on the hub; once you approve, the same request (same fingerprint) goes through within 10 minutes, once. Without a console, an ASK is refused at once with <code>E_NO_CONSOLE</code>, while FREE traffic continues on the last approved policy.</p>
 </section>
 
 <section aria-labelledby="tls">
@@ -137,7 +139,7 @@
 </section>
 
 <section aria-labelledby="policy">
-  <h2 id="policy">Rules and auto mode</h2>
+  <h2 id="policy">Rules</h2>
   <p class="prose">The policy lives with the console, never in the project: the gate reads no policy file, it uses what the console serves. A rule applies to all containers or to one, never to an agent (an agent name is a claim, not an identity).</p>
   <pre tabindex="0"><code>[[profiles.default.rules]]
 id      = "github-api-read"
@@ -151,9 +153,9 @@ container = "lea-ab12cd34ef"
 host      = "registry.npmjs.org"
 methods   = ["POST"]
 path      = "/-/npm/v1/security/advisories/bulk"
-verdict   = "auto"        # asks, but auto mode may answer
+verdict   = "auto"        # valid, but asks like "ask" under the hub
 max_body  = "256KiB"</code></pre>
-  <p class="prose">A rule shape from the design document; the exact schema is settled with <code>v0.1.0</code>. Any loosening (a new host, a wider method or path, <code>ask → auto → free</code>, a wider scope) is confirmed by you in the console’s review. An <code>auto</code> rule is refused for uploads, messaging, registry publishing, <code>git-receive-pack</code>, spliced hosts, heuristic hits, secrets and production profiles.</p>
+  <p class="prose">A rule shape from the design document; the exact schema is settled with <code>v0.1.0</code>. Any loosening (a new host, a wider method or path, <code>ask → auto → free</code>, a wider scope) is confirmed by you in the console’s review. Every held request is a <code>NeverAuto</code> ticket on the hub, so an <code>auto</code> rule asks like <code>ask</code>; it is still refused for uploads, messaging, registry publishing, <code>git-receive-pack</code>, spliced hosts, heuristic hits, secrets and production profiles.</p>
 </section>
 
 <section aria-labelledby="refusals">
@@ -165,8 +167,8 @@ max_body  = "256KiB"</code></pre>
   <tbody>
   <tr><th scope="row"><code>E_DENIED</code></th><td>the human denied the request</td><td>ask the user</td></tr>
   <tr><th scope="row"><code>E_TIMEOUT</code></th><td>nobody answered the approval in time</td><td>ask the user</td></tr>
-  <tr><th scope="row"><code>E_PENDING</code></th><td>the request waits for the human</td><td>retry the same request in a moment</td></tr>
-  <tr><th scope="row"><code>E_NO_CONSOLE</code></th><td>no lockhttp console is running</td><td>ask the user to run <code>lockhttp console</code></td></tr>
+  <tr><th scope="row"><code>E_PENDING</code></th><td>the request waits for the human on lockhub</td><td>retry the same request in a moment</td></tr>
+  <tr><th scope="row"><code>E_NO_CONSOLE</code></th><td>no lockhttp console is running</td><td>ask the user to start it (<code>lox up</code>)</td></tr>
   <tr><th scope="row"><code>E_HOST_UNKNOWN</code></th><td>the host is not trusted and needs a human</td><td>ask the user</td></tr>
   <tr><th scope="row"><code>E_METHOD</code></th><td>the method is not allowed for this host</td><td>ask the user</td></tr>
   <tr><th scope="row"><code>E_RULE</code></th><td>a policy rule denies the request</td><td>ask the user</td></tr>

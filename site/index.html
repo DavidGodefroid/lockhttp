@@ -116,7 +116,7 @@
   <ul class="cards">
     <li><span class="icon" aria-hidden="true">👤</span><h3>Human in the loop</h3><p>The console runs in its own container, under its own <code>lockhttp</code> account, the only one with the policy. The agent never gets its socket.</p></li>
     <li><span class="icon" aria-hidden="true">🧱</span><h3>Fail closed</h3><p>No console: an ASK is refused at once (<code>E_NO_CONSOLE</code>). An error while deciding, an unknown source, a policy that does not decode: deny.</p></li>
-    <li><span class="icon" aria-hidden="true">🔁</span><h3>Progressive auto mode</h3><p>Every screen is <code>NeverAuto</code> by default. Only a rule with <code>verdict = "auto"</code>, approved by you and scoped to a container, can be answered by auto mode.</p></li>
+    <li><span class="icon" aria-hidden="true">🔁</span><h3>Never answered automatically</h3><p>Every held request is a <code>NeverAuto</code> ticket on the hub: a human answers it, <code>auto</code> rule or not. Only a <code>free</code> rule you approved lets a request pass without asking.</p></li>
     <li><span class="icon" aria-hidden="true">🧩</span><h3>Identical, not similar</h3><p>A decision is shared only by requests of identical fingerprint: container, method, URL, significant headers, normalised body.</p></li>
     <li><span class="icon" aria-hidden="true">🕶️</span><h3>Masked previews</h3><p>The approval screen shows a masked preview of the body (PII detectors and terminal sanitising, first 1 KiB), never the clear body.</p></li>
     <li><span class="icon" aria-hidden="true">🔐</span><h3>CA key out of the data plane</h3><p>For TLS decryption a separate <code>lockhttp signer</code> holds the CA key and issues leaf certificates; the gate never sees the key.</p></li>
@@ -129,11 +129,14 @@
 <section aria-labelledby="quick-start">
   <h2 id="quick-start">Quick start with lea</h2>
   <p class="prose">lockhttp is built for <a href="https://github.com/DavidGodefroid/lea">lea</a>, which runs agents in containers whose only way out is its proxy container. It runs hub-attached only: <a href="https://github.com/DavidGodefroid/lockhub">lockhub</a>’s <code>lox up</code> runs the hub and the lockhttp console, and lea runs the gate. <code>lox init</code> sets it up in manual mode (<a href="https://github.com/DavidGodefroid/lockhub/blob/main/docs/lox-init.md">lox init</a>):</p>
-  <pre tabindex="0" class="term"><code># 1. Install the Lock Family (lox, lea and the launchers)
+  <pre tabindex="0" class="term"><code># 1. Install the Lock Family (lox, lea and the launchers);
+#    Homebrew asks to trust a third-party tap once
+brew trust davidgodefroid/tap
 brew install davidgodefroid/tap/lockfamily   # or: brew install davidgodefroid/tap/lockhttp
 
-# 2. In your project: the policy, the lock, the hub and the console
-cd ~/projects/shop
+# 2. In lea's projects directory (LEA_PROJECTS_DIR: lea reads
+#    .lockfamily/up.json only at its root): the policy, the lock, the hub, the console
+cd ~/projects
 lox init --manual        # check lockhttp (it needs lea)
 # or by hand:
 #   lockhttp profile add   # the project's policy (trusted read-only hosts)
