@@ -14,7 +14,7 @@ import (
 	"github.com/DavidGodefroid/lockkit/ticket/devicetest"
 )
 
-// writeDevicesFile writes the devices file lock up mounts.
+// writeDevicesFile writes the devices file lox up mounts.
 func writeDevicesFile(t *testing.T, devs ...ticket.Device) string {
 	t.Helper()
 	b, err := ticket.MarshalDevices(devs)
