@@ -59,7 +59,13 @@
 <section aria-labelledby="status">
   <h2 id="status">Status</h2>
   <div class="prose">
-    <p>lockhttp runs in Docker. The only thing installed on the host is the <code>lockhttp</code> launcher, a shell script that runs every command in the signed image <code>ghcr.io/davidgodefroid/lockhttp</code>, by digest. Download the install script from the release you install on the <a href="https://github.com/DavidGodefroid/lockhttp/releases">releases page</a>, read it, then run it (cosign is required):</p>
+    <p>The quickest way in is the Lock Family with Homebrew: <code>lox</code>, lea and every launcher (or <code>brew install davidgodefroid/tap/lockhttp</code> for this launcher alone). Then, in your project, <code>lox init --manual</code> and check lockhttp, which needs lea (<a href="https://github.com/DavidGodefroid/lockhub/blob/main/docs/lox-init.md">lox init</a>):</p>
+  </div>
+  <pre tabindex="0" class="term"><code>brew install davidgodefroid/tap/lockfamily
+cd ~/projects/shop
+lox init --manual</code></pre>
+  <div class="prose">
+    <p>lockhttp runs in Docker. The only thing installed on the host is the <code>lockhttp</code> launcher, a shell script that runs every command in the signed image <code>ghcr.io/davidgodefroid/lockhttp</code>, by digest. Without Homebrew, download the install script from the release you install on the <a href="https://github.com/DavidGodefroid/lockhttp/releases">releases page</a>, read it, then run it (cosign is required):</p>
   </div>
   <pre tabindex="0" class="term"><code>V=vX.Y.Z
 curl -fsSLO "https://raw.githubusercontent.com/DavidGodefroid/lockhttp/$V/scripts/install.sh"
@@ -73,7 +79,7 @@ lockhttp version</code></pre>
   <ul class="prose">
     <li>Docker: Docker Engine on Linux, Docker Desktop on macOS, or WSL 2 with Docker Desktop on Windows; and <code>cosign</code> to verify the release.</li>
     <li><a href="https://github.com/DavidGodefroid/lea">lea</a>, which runs the agents in containers on internal networks and runs the gate in its proxy container (Docker, or rootless Podman).</li>
-    <li>A terminal you keep in view, where the console stays open.</li>
+    <li><a href="https://github.com/DavidGodefroid/lockhub">lockhub</a>’s <code>lox</code>: the gate runs hub-attached only, and you answer held requests on the hub (<code>lox approve</code>, the lea deck or a paired phone).</li>
   </ul>
 </section>
 
@@ -99,8 +105,8 @@ lockhttp version</code></pre>
 <section aria-labelledby="setup">
   <h2 id="setup">Setup with lea</h2>
   <ol class="steps prose">
-    <li><strong>Install the launcher.</strong> <code>scripts/install.sh</code>, as above. There is no host account or group to create: they are in the image.</li>
-    <li><strong>Add the lock and start the hub.</strong> In your projects directory: <code>lox add lockhttp web</code> (its policy in <code>.lockhttp/config.toml</code>), then <code>lox up</code>, which runs the hub and the lockhttp console (<code>lox attach web</code> for its terminal). lea never writes the policy.</li>
+    <li><strong>Install the launcher.</strong> Homebrew or <code>scripts/install.sh</code>, as above. There is no host account or group to create: they are in the image.</li>
+    <li><strong>Add the lock and start the hub.</strong> In your project: <code>lox init --manual</code> and check lockhttp, or by hand <code>lockhttp profile add</code> (its policy in <code>.lockhttp/config.toml</code>), <code>lox add lockhttp web</code>, then <code>lox up</code>, which runs the hub and the lockhttp console (<code>lox attach web</code> for its terminal). lea never writes the policy.</li>
     <li><strong>Turn it on in lea.</strong> <code>LEA_LOCKHTTP=1</code>. lea starts the gate from the same image beside its proxy container, asking the hub of <code>lox up</code>, puts squid on loopback behind it, routes keyproxy through it and switches off the SSH git forwarders.</li>
     <li><strong>Check.</strong> <code>lockhttp doctor</code>, and lea’s own doctor: from an agent, <code>curl --noproxy '*' https://example.com</code> must fail.</li>
   </ol>

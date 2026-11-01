@@ -12,7 +12,7 @@
 #   LOCKHTTP_VERSION=$V sh install.sh
 #
 # Environment:
-#   LOCKHTTP_VERSION      tag to install (default: the latest release), e.g. v0.1.1
+#   LOCKHTTP_VERSION      tag to install (default: the latest release), e.g. v0.7.0
 #   LOCKHTTP_INSTALL_DIR  target directory (default: /usr/local/bin, via sudo if needed)
 #   LOCKHTTP_SKIP_COSIGN=1  install without cosign: the signature is then NOT checked
 #
