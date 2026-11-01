@@ -248,7 +248,7 @@ deny = []
 # host    = "registry.npmjs.org"
 # methods = ["POST"]
 # path    = "/-/npm/v1/security/advisories/bulk"
-# verdict = "auto"
+# verdict = "ask"
 # max_body = "256KiB"
 # expires = "2026-12-31"
 `)
