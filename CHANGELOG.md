@@ -6,6 +6,15 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Each release tag bumps the `lockhttp` formula of the
+  [Homebrew tap](https://github.com/DavidGodefroid/homebrew-tap)
+  (`brew install davidgodefroid/tap/lockhttp`): the release workflow's last job
+  dispatches the bump once the release is signed
+  (DavidGodefroid/lockfamily#8). It is skipped while the
+  `TAP_DISPATCH_TOKEN` secret is not set.
+
 ## [0.7.0] - 2026-11-01
 
 Built on lockkit v0.10.0; supported lockhub as v0.6.0. The launcher verbs
