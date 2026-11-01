@@ -6,7 +6,10 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-The gate runs hub-attached only (lockkit#110): one mode, `lox up`'s.
+## [0.6.0] - 2026-11-01
+
+Hub-only release, built on lockkit v0.9.1. The gate runs hub-attached
+only (lockkit#110): one mode, `lox up`'s.
 
 ### Removed
 
@@ -40,6 +43,8 @@ The gate runs hub-attached only (lockkit#110): one mode, `lox up`'s.
   the gate refuses to start without the hub; requests through a
   hub-attached gate are covered by the integration tests (lockkit's test
   hub) and lockhub's e2e.
+- Flag help (`--devices-file`, `--facade-keys-file`), comments and docs
+  name `lox`, the host CLI's name since lockhub v0.3.0 (#29).
 
 ## [0.5.1] - 2026-10-31
 
@@ -250,7 +255,8 @@ separate signer, Claude API allowlist) available behind `--ca-cert` and
 - Release pipeline: goreleaser, cosign keyless signatures, SBOMs,
   SHA-pinned actions, `scripts/install.sh` with signature verification.
 
-[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.6.0
 [0.5.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.5.1
 [0.5.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.5.0
 [0.4.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.4.0

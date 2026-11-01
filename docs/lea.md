@@ -5,7 +5,7 @@ path of its agents, and what LockHTTP guarantees in return. The lea side
 lives in the lea repository; this page is the contract both sides test
 against. Contract version: **1** (the `version` field of every file below).
 
-> **Hub-attached only (after v0.5.1).** The gate always asks lockhub: it
+> **Hub-attached only (from v0.6.0).** The gate always asks lockhub: it
 > does not start without `--hub`, `--hub-key-file` and `--instance`
 > ("launched by `lox up` only"), and there is no standalone gate asking a
 > console of its own. lockhub's `lox up` runs the lockhttp console (it
