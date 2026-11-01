@@ -18,7 +18,8 @@ only (lockkit#110): one mode, `lox up`'s.
   lea passes them from `lox up`'s `up.json`. The gate never asks a console
   about a held request any more: every ask is a hub ticket.
 - The rollback of hub mode (a gate started without its hub flags
-  withdrawing its pending hub tickets) and its refusal code `E_WITHDRAWN`.
+  withdrawing its pending hub tickets) and its refusal code `E_WITHDRAWN`
+  (#26).
 - `lockhttp console --auto`, auto mode, and the console's `http.approve`
   method: the console serves the approved policy (`policy.get`) and asks
   its human about loosenings only. A `verdict = "auto"` rule asks like
