@@ -72,6 +72,7 @@ characters and not `y`, `yes`, `n`, `no` or `ok`.
 | `redirect_cdn` | list of `"origin>cdn"` | `[]` | A 3xx from `origin` whose `Location` is on `cdn` lets the same container `GET` that exact URL once, without a body, within 60 s. Both sides are host patterns. |
 | `internal_hosts` | array of tables | `[]` | See [Internal hosts](#internal-hosts). |
 | `rules` | array of tables | `[]` | See [Rules](#rules). |
+| `inject` | array of tables | `[]` | See [Credential injection](#credential-injection). |
 
 Built-in `redirect_cdn` pairs, always active:
 
@@ -206,6 +207,11 @@ For each connection, then each request, the first step that decides wins.
    (`*.amazonaws.com`), Slack tokens (Slack), OpenAI keys
    (`api.openai.com`), Google API keys (`*.googleapis.com`), npm tokens
    (`registry.npmjs.org`), GitLab tokens (GitLab), and private keys (no host).
+   Before this, the value of any secret of the gate's secrets file (as is,
+   URL-escaped or in base64) anywhere in what the agent sent: DENY
+   `E_SECRET_EGRESS` (rule `secret:injected`), whatever the host, in
+   shadow mode too; the audit keeps no path for it. See
+   [Credential injection](#credential-injection).
 9. **Internal hosts.** An internal host with `read = true`: FREE for a
    `CONNECT` or a read. Any other request to an internal host: ASK,
    `NeverAuto`.
@@ -271,7 +277,9 @@ For each connection, then each request, the first step that decides wins.
     `E_BODY_TOO_LARGE`.
 18. A FREE request goes out (through `--upstream`, or dialled directly,
     refusing non-public addresses except for internal hosts). The `Host`
-    sent upstream is the host decided, never the client's.
+    sent upstream is the host decided, never the client's. A FREE or
+    approved request first gets the headers of its
+    [credential injections](#credential-injection).
 19. An ASK request waits in the gate's queue. No console: `E_NO_CONSOLE` at
     once. Past `hold`: `E_PENDING` (the item stays on the console). The
     human's `n` or the console's timeout: `E_DENIED` or `E_TIMEOUT`.
@@ -279,6 +287,93 @@ For each connection, then each request, the first step that decides wins.
 With no policy received yet (the console never answered since the gate
 started), step 7 to 9 and 11 do nothing, nothing is trusted, and only the
 four Claude hosts and their allowlist are free.
+
+## Credential injection
+
+An injection lets the agent call an authenticated API without ever
+holding its credential: the secret stays in the gate's container, the
+agent sends its request without it, and the gate adds the header after
+the verdict, for one host and port only.
+
+```toml
+[[profiles.default.internal_hosts]]
+host  = "homeassistant"
+ports = [8123]
+read  = true
+
+[[profiles.default.inject]]
+id         = "home-assistant"
+host       = "homeassistant"      # an exact host (an internal host may be single-label)
+port       = 8123                 # required
+header     = "Authorization"
+scheme     = "Bearer"             # optional: the value is "Bearer <secret>"
+credential = "ha-token"           # the secret's name in the gate's secrets file
+container  = "lea-ab12cd34ef"     # optional: one container; empty: every one
+note       = "Home Assistant long-lived token"
+```
+
+| Key | Required | Meaning |
+|---|---|---|
+| `id` | yes | Unique among the injections. Same form as a rule id. |
+| `host` | yes | An exact host name, lower-cased; no pattern, no `*`, no IP literal (name the host as an internal host). A spliced host is refused: it is never decrypted. |
+| `port` | yes | 1-65535. Only requests to this port get the header. |
+| `header` | yes | A header name. The gate's own headers are refused: `Host`, `Content-Length`, `Content-Type`, `Content-Encoding`, `Transfer-Encoding`, `Connection`, `Keep-Alive`, `Te`, `Trailer`, `Upgrade`, `Expect`, any `Proxy-*`, `X-Lea-Source` and any `X-LockHTTP-*`. |
+| `scheme` | no | A word (`Bearer`, `Token`) put before the value with a space. |
+| `credential` | yes | The name of the secret in the gate's secrets file: lower-case letters, digits, `_`, `-`, `.`, at most 32 characters, no run of more than 16 letters and digits (a name, not a pasted token). Never the value. |
+| `container` | no | The container it applies to. A container's injection wins over an all-containers one of the same header. |
+| `note` | no | Free text for you. |
+
+Two injections of the same header, host, port and container are refused.
+
+**The secrets file.** The values live in the gate's secrets file
+(`lockhttp gate --secrets FILE`, [usage.md](usage.md#lockhttp-gate)), in
+the gate's container only, never in an agent's, nor in the policy, the
+console or the hub:
+
+```json
+{"version": 1, "secrets": {"ha-token": "eyJhbGciOi..."}}
+```
+
+It must be mode `0600` (refused if group- or world-readable). Each value
+is at least 8 bytes of printable ASCII (inner spaces allowed): no control
+character can split the request. It is reloaded when it changes; a
+rotated-out value stays in the leak check until the gate restarts. A file
+that does not load, or a secret it lacks, refuses every request the
+injection covers (`E_INJECT`): the request never goes out without its
+credential.
+
+**When the gate injects.** After the verdict (FREE, or approved on the
+hub) and only on a request it can read and that does not cross the
+internet in clear text:
+
+- a decrypted HTTPS request (the gate decrypts with `--ca-cert` and
+  `--signer`, and the host is neither spliced nor internal);
+- a plain HTTP request to an internal host (a LAN API such as
+  `http://homeassistant:8123`).
+
+A plain HTTP request to any other host, and a `CONNECT` decided at the
+domain (an internal host on HTTPS, a spliced host, no decryption), get no
+header; the audit says `inject <id> skipped`. An injection never changes
+the verdict: the request is decided as the agent sent it, and the approval
+screen says which header the gate will add, from which secret (by name).
+A header of the same name the agent sent is replaced, never forwarded
+(audited as a warning).
+
+**The secret never goes elsewhere.** The header is added only to the
+request decided for that host and port: the `Host` sent upstream is that
+host, and the gate does not follow redirects (a 3xx goes back to the
+agent, whose next request has no credential). The agent never holds the
+value; if a request of the agent carries it anyway, in the URL, a header or
+the body, as is, URL-escaped or in base64, it is refused with
+`E_SECRET_EGRESS`, whatever its host and whatever rule or grant would let
+it pass.
+
+**Audit.** A request that got a header is audited with
+`"injected": ["<id>:<Header>"]`: the injection and the header's name,
+never the value.
+
+**Review.** Adding or changing an injection is a loosening (it waits for
+`:review`); removing one tightens.
 
 ## Claude API
 
@@ -369,6 +464,7 @@ force.
 | `internal_hosts` | a host or port added, or `read` set (removing `read` tightens) |
 | a rule added | unless its verdict is `deny` |
 | a rule removed | unless its verdict is `free` (its requests fall back to another rule or the defaults) |
+| `inject` | an entry added or changed (removing one tightens) |
 | a rule changed | its verdict rises (`deny` < `ask` < `auto` < `free`); or it now matches something it did not (another host, a container scope removed or changed, methods added or emptied, a wider path, a larger `max_body`, a later or removed `expires`); or a `deny`, `ask` or `auto` rule now matches less (what it no longer matches falls back elsewhere) |
 
 The comparison is conservative: a rule's host change, for example, counts

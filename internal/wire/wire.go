@@ -114,4 +114,7 @@ type Record struct {
 	RespBytes   int64  `json:"resp_bytes,omitempty"`
 	DurationMS  int64  `json:"duration_ms,omitempty"`
 	PolicyFP    string `json:"policy_fp,omitempty"`
+	// Injected names the credentials the gate added ("inject-id:Header"),
+	// never their values.
+	Injected []string `json:"injected,omitempty"`
 }

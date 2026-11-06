@@ -75,9 +75,15 @@ trusted = ["trusted.test"]
 
 func startConsole(t *testing.T, h *human) context.CancelFunc {
 	t.Helper()
+	return startConsoleWith(t, h, policyText)
+}
+
+// startConsoleWith starts the console on the policy text conf.
+func startConsoleWith(t *testing.T, h *human, conf string) context.CancelFunc {
+	t.Helper()
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(cfg, []byte(policyText), 0o600); err != nil {
+	if err := os.WriteFile(cfg, []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -118,6 +124,13 @@ func startConsole(t *testing.T, h *human) context.CancelFunc {
 // startGate starts a gate on the console's policy, asking a test hub.
 func startGate(t *testing.T, backend string) (string, string, *hubtest.Hub) {
 	t.Helper()
+	return startGateWith(t, backend, nil)
+}
+
+// startGateWith is startGate with the gate's configuration changed by
+// mutate.
+func startGateWith(t *testing.T, backend string, mutate func(*gate.Config)) (string, string, *hubtest.Hub) {
+	t.Helper()
 	pub, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +157,7 @@ func startGate(t *testing.T, backend string) (string, string, *hubtest.Hub) {
 		t.Fatal(err)
 	}
 	h := &gate.Hub{Client: cl, Plans: st, Poll: 20 * time.Millisecond}
-	g := gate.New(gate.Config{
+	cfg := gate.Config{
 		Profile: "default", Console: &gate.LockkitConsole{Profile: "default"}, PolicyPoll: 100 * time.Millisecond,
 		Hub: h, StatusFile: filepath.Join(dir, "status.json"),
 		Upstream: nil,
@@ -153,7 +166,11 @@ func startGate(t *testing.T, backend string) (string, string, *hubtest.Hub) {
 			var d net.Dialer
 			return d.DialContext(ctx, network, backend)
 		},
-	})
+	}
+	if mutate != nil {
+		mutate(&cfg)
+	}
+	g := gate.New(cfg)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

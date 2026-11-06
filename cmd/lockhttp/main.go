@@ -75,7 +75,7 @@ Gate and signer (lea runs them beside its proxy container)
   gate     --listen ADDR --hub URL --hub-key-file FILE --instance NAME
            [--home DIR] [--hub-net CIDR ...] [--hub-plain-http]
            [--upstream URL] [--profile P] [--sources FILE]
-           [--credentials FILE] [--audit-dir DIR] [--status-file FILE]
+           [--credentials FILE] [--secrets FILE] [--audit-dir DIR] [--status-file FILE]
            [--ca-cert FILE --signer SOCKET] | --check
                                    run the HTTP(S) proxy, asking lockhub
                                    (launched by lox up only, through lea)

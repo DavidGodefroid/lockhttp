@@ -336,9 +336,10 @@ plain HTTP); a target the gate cannot reach is a `502`.
 | `E_TIMEOUT` | The hub ticket expired before anyone answered it (the ticket is in `X-LockHTTP-Ticket`). | Send the same request again: it is asked again. |
 | `E_RULE` | A deny rule or the deny list refuses it. | Ask the user to change the rule. |
 | `E_FLOOR` | The network floor: IP literal, DoH, cloud metadata, port, single-label host, SNI or Host mismatch, `h2c`, nested `CONNECT`, a non-absolute URL. | Use a named public host on 80 or 443. |
-| `E_SECRET_EGRESS` | A known credential sent outside its own hosts, or a Claude credential that is not the container's. | Never send a credential to another host. |
+| `E_SECRET_EGRESS` | A known credential sent outside its own hosts, a Claude credential that is not the container's, or the value of a secret the gate injects. | Never send a credential to another host. |
 | `E_BODY_TOO_LARGE` | The body is over `buffer_limit` and cannot be held for a human. | Send less, or ask for a rule. |
 | `E_SOURCE_UNKNOWN` | The gate cannot tell which container sent the request. | Use the proxy address lea gave. |
+| `E_INJECT` | The policy injects a credential for this host, and the gate's secrets file lacks it or does not load. | Ask the user to check the gate's secrets file; never send the credential yourself. |
 
 `E_HOST_UNKNOWN`, `E_CLAUDE_API_PARAM`, `E_EXFIL_SUSPECT`, `E_METHOD` and
 `E_PINNED` are registered codes too; in v0.1.0 a refused ASK reaches the

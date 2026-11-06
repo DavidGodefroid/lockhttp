@@ -194,6 +194,16 @@ func TestGateHubFlags(t *testing.T) {
 	if code != exitUsage || !strings.Contains(errs, "facades.json") {
 		t.Fatalf("bad facade keys: %d %s", code, errs)
 	}
+	// So is a secrets file that does not load, without echoing it.
+	secrets := filepath.Join(t.TempDir(), "secrets.json")
+	if err := os.WriteFile(secrets, []byte(`{"version":1,"secrets":{"a":"VALUE-not-closed`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errs = runEnv(t, gate, "gate", "--listen", "127.0.0.1:0", "--hub", "http://127.0.0.1:8443", "--hub-key-file", good, "--instance", "egress", "--home", home,
+		"--secrets", secrets)
+	if code != exitUsage || !strings.Contains(errs, "secrets file") || strings.Contains(errs, "VALUE") {
+		t.Fatalf("bad secrets file: %d %s", code, errs)
+	}
 }
 
 func TestHubAddrs(t *testing.T) {

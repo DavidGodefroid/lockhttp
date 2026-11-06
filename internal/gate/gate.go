@@ -47,8 +47,10 @@ type Config struct {
 	Upstream *url.URL
 	Sources  *Sources
 	Creds    *Credentials
-	Console  Console
-	Audit    *AuditLog
+	// Secrets holds the values the policy's injections name (nil: none).
+	Secrets *Secrets
+	Console Console
+	Audit   *AuditLog
 	// StatusFile is rewritten when the console state or the pending
 	// counts change ("" for none).
 	StatusFile string
@@ -102,6 +104,9 @@ func New(cfg Config) *Gate {
 	}
 	if cfg.Creds == nil {
 		cfg.Creds = NewCredentials("")
+	}
+	if cfg.Secrets == nil {
+		cfg.Secrets = NewSecrets("")
 	}
 	if cfg.Log == nil {
 		cfg.Log = io.Discard
@@ -180,6 +185,7 @@ func (g *Gate) Run(ctx context.Context) {
 		g.poll(ctx)
 		g.cfg.Sources.Reload()
 		g.cfg.Creds.Reload()
+		g.cfg.Secrets.Reload()
 		g.grants.Sweep()
 		select {
 		case <-ctx.Done():

@@ -78,6 +78,17 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 		g.refuse(w, d, id, src, t, true)
 		return false
 	}
+	// A secret the gate injects never comes from the agent: one in its
+	// request is refused, whatever the host (no grant or shadow lifts it).
+	if name, leak := g.cfg.Secrets.Leak(agentParts(req, path, body)...); leak {
+		d := decide.Decision{Verdict: decide.Deny, Rule: "secret:injected", Code: product.CodeSecretEgress,
+			Reason: "the request carries the value of the secret " + name + ", which only the gate adds: never send it yourself"}
+		// The value may be in the path: the audit keeps none of it.
+		t.Path, t.QueryLen, t.QueryHash, t.BodyFP = "(redacted: carries an injected secret)", 0, "", ""
+		g.refuse(w, d, id, src, t, false)
+		return rest == nil
+	}
+	injects, injectWarn := g.injectsFor(pol, src.Container, host, port, tlsMode)
 	fp := RequestFingerprint(src.Container, req.Method, target, req.Header, bodyFP)
 	var d decide.Decision
 	hard, isHard := decide.Hard(pol, r)
@@ -98,6 +109,7 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 				Reason: "the body exceeds the buffer limit (" + policy.FormatSize(limit) + ")"}
 		}
 	}
+	d.Warnings = append(d.Warnings, injectWarn...)
 	rec := recordOf(d, id, src, t)
 	switch d.Verdict {
 	case decide.Deny:
@@ -141,6 +153,25 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 	}
 	for _, h := range hopHeaders {
 		out.Header.Del(h)
+	}
+	// Credential injection, after the verdict: the agent never held it.
+	for _, inj := range injects {
+		v, err := g.cfg.Secrets.Value(inj.Credential)
+		if err != nil {
+			d := decide.Decision{Verdict: decide.Deny, Rule: "inject:" + inj.ID, Code: product.CodeInject,
+				Reason: "inject " + inj.ID + ": " + err.Error()}
+			g.refuse(w, d, id, src, t, false)
+			return rest == nil
+		}
+		if inj.Scheme != "" {
+			v = inj.Scheme + " " + v
+		}
+		if len(out.Header.Values(inj.Header)) > 0 {
+			rec.Warnings = append(rec.Warnings, "replaced the agent's "+inj.Header+" header")
+		}
+		out.Header.Del(inj.Header)
+		out.Header.Set(inj.Header, v)
+		rec.Injected = append(rec.Injected, inj.ID+":"+inj.Header)
 	}
 	ws := strings.EqualFold(req.Header.Get("Upgrade"), "websocket")
 	if ws {
@@ -206,6 +237,45 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 	rec.Status, rec.RespBytes, rec.DurationMS = resp.StatusCode, n, g.cfg.Now().Sub(start).Milliseconds()
 	g.audit(rec)
 	return keep
+}
+
+// injectsFor returns the injections of a request, and the warnings that
+// say so on the approval screen and in the audit. A header is injected
+// into a decrypted HTTPS request, or a plain HTTP one to an internal
+// host: never in clear text across the internet.
+func (g *Gate) injectsFor(pol *policy.Policy, container, host string, port int, tlsMode string) ([]policy.Inject, []string) {
+	if pol == nil {
+		return nil, nil
+	}
+	var out []policy.Inject
+	var warns []string
+	for _, inj := range pol.InjectFor(container, host, port) {
+		if tlsMode != "mitm" && !(tlsMode == "plain" && internalHost(pol, host)) {
+			warns = append(warns, "inject "+inj.ID+" skipped: plain HTTP to a host that is not internal")
+			continue
+		}
+		out = append(out, inj)
+		warns = append(warns, "the gate adds "+inj.Header+" (secret "+inj.Credential+", inject "+inj.ID+"): the agent does not hold it")
+	}
+	return out, warns
+}
+
+// agentParts are the parts of a request the agent wrote, for the leak
+// check of the injected secrets.
+func agentParts(req *http.Request, path string, body []byte) [][]byte {
+	parts := [][]byte{[]byte(path), []byte(req.URL.Path), []byte(req.URL.RawQuery), body}
+	if q, err := url.QueryUnescape(req.URL.RawQuery); err == nil {
+		parts = append(parts, []byte(q))
+	}
+	if req.URL.User != nil {
+		parts = append(parts, []byte(req.URL.User.String()))
+	}
+	for _, vs := range req.Header {
+		for _, v := range vs {
+			parts = append(parts, []byte(v))
+		}
+	}
+	return parts
 }
 
 func isRuleID(p *policy.Policy, id string) bool {

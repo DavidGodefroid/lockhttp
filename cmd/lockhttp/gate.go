@@ -26,13 +26,14 @@ import (
 // hub-attached only: lea starts it with the hub flags `lox up` gives it
 // (up.json), and it asks lockhub about every held request.
 func runGate(e env, args []string) int {
-	const usage = "lockhttp gate --listen ADDR --hub URL --hub-key-file FILE --instance NAME [--home DIR] [--hub-net CIDR ...] [--hub-plain-http] [--devices-file FILE [--require-device RISKS] [--seal-clear]] [--facade-keys-file FILE] [--upstream URL] [--profile P] [--sources FILE] [--credentials FILE] [--audit-dir DIR] [--status-file FILE] [--ca-cert FILE --signer SOCKET] | --check"
+	const usage = "lockhttp gate --listen ADDR --hub URL --hub-key-file FILE --instance NAME [--home DIR] [--hub-net CIDR ...] [--hub-plain-http] [--devices-file FILE [--require-device RISKS] [--seal-clear]] [--facade-keys-file FILE] [--upstream URL] [--profile P] [--sources FILE] [--credentials FILE] [--secrets FILE] [--audit-dir DIR] [--status-file FILE] [--ca-cert FILE --signer SOCKET] | --check"
 	fs := flag.NewFlagSet("gate", flag.ContinueOnError)
 	listen := fs.String("listen", envOr("LOCKHTTP_LISTEN", "127.0.0.1:3130"), "address to listen on")
 	upstream := fs.String("upstream", os.Getenv("LOCKHTTP_UPSTREAM"), "proxy to send through (squid: http://127.0.0.1:3128); empty dials directly")
 	profile := fs.String("profile", envOr("LOCKHTTP_PROFILE", "default"), "console profile")
 	sources := fs.String("sources", os.Getenv("LOCKHTTP_SOURCES"), "sources.json written by lea (empty: one container \"local\")")
 	creds := fs.String("credentials", os.Getenv("LOCKHTTP_CREDENTIALS"), "credentials.json written by lea (Claude API keys per container)")
+	secrets := fs.String("secrets", os.Getenv("LOCKHTTP_SECRETS"), "the gate's secrets file (JSON, mode 0600): the values the policy's inject entries name, added by the gate, never seen by the agent")
 	auditDir := fs.String("audit-dir", os.Getenv("LOCKHTTP_AUDIT_DIR"), "directory of the daily JSONL audit (empty: stderr)")
 	status := fs.String("status-file", os.Getenv("LOCKHTTP_STATUS_FILE"), "status file for lea (pending asks, console state)")
 	caCert := fs.String("ca-cert", os.Getenv("LOCKHTTP_CA_CERT"), "CA certificate (enables decryption, with --signer)")
@@ -73,10 +74,15 @@ func runGate(e env, args []string) int {
 		Profile: *profile,
 		Sources: gate.NewSources(*sources),
 		Creds:   gate.NewCredentials(*creds),
+		Secrets: gate.NewSecrets(*secrets),
 		Console: &gate.LockkitConsole{Profile: *profile},
 		Log:     e.stderr,
 	}
 	if err := cfg.Sources.Err(); err != nil {
+		fmt.Fprintln(e.stderr, "lockhttp gate:", err)
+		return exitUsage
+	}
+	if err := cfg.Secrets.Err(); err != nil {
 		fmt.Fprintln(e.stderr, "lockhttp gate:", err)
 		return exitUsage
 	}

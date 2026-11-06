@@ -1,0 +1,151 @@
+//go:build integration && linux
+
+package integration
+
+import (
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/DavidGodefroid/lockhttp/internal/gate"
+)
+
+const injectSecret = "ha-integration-0123456789"
+
+const injectPolicyText = `
+[profiles.default]
+hold = "5s"
+trusted = ["trusted.test"]
+
+[[profiles.default.internal_hosts]]
+host  = "homeassistant"
+ports = [8123]
+read  = true
+
+[[profiles.default.inject]]
+id         = "ha"
+host       = "homeassistant"
+port       = 8123
+header     = "Authorization"
+scheme     = "Bearer"
+credential = "ha-token"
+`
+
+// authBackend records the Authorization each request carried and answers
+// whether it was the expected one, never the value.
+type authBackend struct {
+	mu   sync.Mutex
+	auth []string
+}
+
+func (a *authBackend) start(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		a.mu.Lock()
+		a.auth = append(a.auth, r.Header.Get("Authorization"))
+		a.mu.Unlock()
+		if r.Header.Get("Authorization") == "Bearer "+injectSecret {
+			_, _ = io.WriteString(w, "authenticated "+r.Host+r.URL.Path)
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	})}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { srv.Close() })
+	return ln.Addr().String()
+}
+
+func (a *authBackend) seen() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.auth...)
+}
+
+// The agent calls an authenticated internal API without holding its
+// token: the console approves a policy that names the secret only, the
+// gate adds the header from its own secrets file, and a request carrying
+// the value is refused.
+func TestCredentialInjection(t *testing.T) {
+	setRuntime(t)
+	h := &human{answers: make(chan string, 8)}
+	stop := startConsoleWith(t, h, injectPolicyText)
+	defer stop()
+	// The human approved a policy that shows the injection, by name.
+	if txt := h.text(); !strings.Contains(txt, "inject ha homeassistant:8123 Authorization Bearer credential=ha-token") || strings.Contains(txt, injectSecret) {
+		t.Fatalf("the console's description:\n%s", txt)
+	}
+	secrets := filepath.Join(t.TempDir(), "secrets.json")
+	if err := os.WriteFile(secrets, []byte(`{"version":1,"secrets":{"ha-token":"`+injectSecret+`"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	auditDir := filepath.Join(t.TempDir(), "audit")
+	var be authBackend
+	addr, _, hub := startGateWith(t, be.start(t), func(c *gate.Config) {
+		c.Secrets = gate.NewSecrets(secrets)
+		log, err := gate.NewAuditLog(auditDir, nil, time.Now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.Audit = log
+	})
+	c := client(addr)
+
+	// No credential from the agent: the gate adds it, the API answers.
+	resp, body := get(t, c, "GET", "http://homeassistant:8123/api/states", "")
+	if resp.StatusCode != 200 || body != "authenticated homeassistant:8123/api/states" {
+		t.Fatalf("injected call: %s %q", resp.Status, body)
+	}
+	if n := len(hub.Tickets()); n != 0 {
+		t.Fatalf("an internal read asked the hub (%d tickets)", n)
+	}
+	// The agent's own Authorization never reaches the API.
+	req, _ := http.NewRequest("GET", "http://homeassistant:8123/api/config", nil)
+	req.Header.Set("Authorization", "Bearer guessed-by-the-agent")
+	r2, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2.Body.Close()
+	if r2.StatusCode != 200 {
+		t.Fatalf("replaced credential: %s", r2.Status)
+	}
+	for _, a := range be.seen() {
+		if a != "Bearer "+injectSecret {
+			t.Fatalf("the API saw Authorization %q", a)
+		}
+	}
+	// The value, sent by the agent to any host, is refused.
+	resp, _ = get(t, c, "GET", "http://trusted.test/x?t="+url.QueryEscape(injectSecret), "")
+	if resp.StatusCode != 403 || resp.Header.Get("X-LockHTTP-Code") != "E_SECRET_EGRESS" {
+		t.Fatalf("leak: %s %v", resp.Status, resp.Header)
+	}
+	if n := len(be.seen()); n != 2 {
+		t.Fatalf("the backend saw %d requests, want 2", n)
+	}
+	// The audit names the injection, never the value.
+	time.Sleep(100 * time.Millisecond)
+	files, _ := filepath.Glob(filepath.Join(auditDir, "gate-*.jsonl"))
+	var audit strings.Builder
+	for _, f := range files {
+		b, _ := os.ReadFile(f)
+		audit.Write(b)
+	}
+	a := audit.String()
+	if !strings.Contains(a, `"injected":["ha:Authorization"]`) || !strings.Contains(a, `"rule":"secret:injected"`) {
+		t.Fatalf("audit:\n%s", a)
+	}
+	if strings.Contains(a, injectSecret) || strings.Contains(a, "guessed-by-the-agent") {
+		t.Fatalf("the audit holds a credential value:\n%s", a)
+	}
+}
