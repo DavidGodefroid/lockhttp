@@ -63,7 +63,9 @@ func TestInjectAmbiguousPathNotInjected(t *testing.T) {
 	e.remap("scoped", "8124")
 	for _, p := range []string{"/api/../admin", "/api/%2e%2e/admin", "/api/%2E%2E%2Fadmin",
 		"/api/..%20/admin", "/api/.%20/admin", "/api/..%00/admin", "/api/...", "/api/..%3f/admin",
-		"/api/%c0%ae%c0%ae/admin", "/api/%e0%80%ae%e0%80%ae/admin", "/api/%ef%bc%8e%ef%bc%8e/admin", "/api/%ff/x", "/api/x%41"} {
+		"/api/%c0%ae%c0%ae/admin", "/api/%e0%80%ae%e0%80%ae/admin", "/api/%ef%bc%8e%ef%bc%8e/admin", "/api/%ff/x", "/api/x%41",
+		"/api/..%cd%8f/admin", "/api/..%ef%b8%8f/admin", "/api/..%e3%85%a4/admin", "/api/..%e1%85%9f/admin",
+		"/api/..%cc%b8/admin", "/api/.%cc%81./admin", "/api/%cc%81../admin"} {
 		resp := rawGet(t, e, "GET", "http://scoped:8124"+p, "scoped:8124")
 		if resp.StatusCode != 200 {
 			t.Fatalf("%s: %s", p, resp.Status)
@@ -76,7 +78,7 @@ func TestInjectAmbiguousPathNotInjected(t *testing.T) {
 			t.Fatalf("%s reached the backend with the credential", p)
 		}
 	}
-	for _, p := range []string{"/api/states", "/api/caf%C3%A9", "/api/a%3Ab"} {
+	for _, p := range []string{"/api/states", "/api/caf%C3%A9", "/api/a%3Ab", "/api/%ce%b1%cc%81"} {
 		resp := rawGet(t, e, "GET", "http://scoped:8124"+p, "scoped:8124")
 		if a, _ := s.get(p); resp.StatusCode != 200 || a != haSecret {
 			t.Fatalf("%s: %s, credential %v", p, resp.Status, a == haSecret)

@@ -271,6 +271,12 @@ func TestInjectAmbiguousPathsAndTraceCase(t *testing.T) {
 		"/api/%c0", "/api/%ff", "/api/%c3", "/api/%ed%a0%80", "/api/%ef%bc%8e%ef%bc%8e/admin", "/api/%ef%bc%8fadmin",
 		"/api/%e3%80%82", "/api/x%41", "/api/%20x", "/api/%25", "/api/%7e", "/api/a;b", "/api/a b", "/api/\xe9",
 		"/api/a,b", "/api/x@y", "/api/%e2%82%81", "/api/%e2%80%a4%e2%80%a4",
+		// Dots with a default-ignorable letter or mark, or a mark after a
+		// dot or at the start of a segment: a target that drops them reads "..".
+		"/api/..%cd%8f/admin", "/api/..%ef%b8%8f/admin", "/api/..%e3%85%a4/admin", "/api/..%e1%85%9f/admin",
+		"/api/..%e1%85%a0/admin", "/api/..%ef%be%a0/admin", "/api/..%f3%a0%84%80/admin",
+		"/api/..%cc%b8/admin", "/api/.%cc%81./admin", "/api/%cc%81../admin", "/api/a-%cc%81", "/api/%3b%cc%81",
+		"/api/a%cd%8f", "/api/%ce%b1%ef%b8%8f",
 	} {
 		if !AmbiguousPath(path) {
 			t.Errorf("%q is not ambiguous", path)
@@ -280,7 +286,8 @@ func TestInjectAmbiguousPathsAndTraceCase(t *testing.T) {
 		}
 	}
 	for _, path := range []string{"/api/states", "/api/a.b/..c", "/api/x..", "/api/.x", "/api/a-b_c~d.e", "/api/", "/api//x",
-		"/api/a%3Ab", "/api/a%3bb", "/api/q%3F", "/api/caf%C3%A9", "/api/%ce%b1%e0%a5%a7", "/api/%ce%b1%cc%81", "/api/a%40b%2C%3d"} {
+		"/api/a%3Ab", "/api/a%3bb", "/api/q%3F", "/api/caf%C3%A9", "/api/%ce%b1%e0%a5%a7", "/api/%ce%b1%cc%81", "/api/a%40b%2C%3d",
+		"/api/e%cc%81", "/api/7%cc%81", "/api/e%cc%a3%cc%82", "/api/x.e%cc%81"} {
 		if AmbiguousPath(path) {
 			t.Errorf("%q is ambiguous", path)
 		}

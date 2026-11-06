@@ -240,7 +240,13 @@ func (i Inject) MatchesRequest(method, path string) bool {
 //   - escapes of bytes >= 0x80 decode to valid, shortest-form UTF-8 of
 //     letters, marks or decimal digits ("%c3%a9"): never an overlong form
 //     ("%c0%ae"), a stray byte, a space, a punctuation sign or a symbol
-//     (a fullwidth dot or slash a target may normalise to '.' or '/');
+//     (a fullwidth dot or slash a target may normalise to '.' or '/'),
+//     never a default-ignorable letter or mark ("%cd%8f" U+034F,
+//     "%ef%b8%8f" U+FE0F, "%e3%85%a4" U+3164), and a mark only right
+//     after a letter, a digit or such a mark, never after a dot, a
+//     reserved character or at the start of a segment ("..%cc%b8",
+//     ".%cc%81.", "%cc%81..") (a target that drops ignorables or marks
+//     would read "..");
 //   - no segment, decoded and cut at its first reserved character
 //     (";", "?", ":", ...), is made only of dots ("." "..", "...",
 //     "..;x", "..%3f").
@@ -275,6 +281,9 @@ const pathReserved = ":?#[]@!$&'()*+,;="
 func canonicalSegment(seg string) (string, bool) {
 	var b strings.Builder
 	var high []byte // a run of escaped bytes >= 0x80
+	// base: the last character is a letter or a digit, or a mark that
+	// follows one, so that a mark may follow it.
+	base := false
 	flush := func() bool {
 		if len(high) == 0 {
 			return true
@@ -282,7 +291,15 @@ func canonicalSegment(seg string) (string, bool) {
 		ok := utf8.Valid(high)
 		for s := string(high); ok && s != ""; {
 			r, n := utf8.DecodeRuneInString(s)
-			ok = r != utf8.RuneError && (unicode.IsLetter(r) || unicode.IsMark(r) || unicode.IsDigit(r))
+			switch {
+			case r == utf8.RuneError || defaultIgnorable(r):
+				ok = false
+			case unicode.IsMark(r):
+				ok = base
+			default:
+				ok = unicode.IsLetter(r) || unicode.IsDigit(r)
+				base = true
+			}
 			s = s[n:]
 		}
 		b.Write(high)
@@ -296,6 +313,7 @@ func canonicalSegment(seg string) (string, bool) {
 				return "", false
 			}
 			b.WriteByte(c)
+			base = alnum(c)
 			continue
 		}
 		if i+2 >= len(seg) || !ishex(seg[i+1]) || !ishex(seg[i+2]) {
@@ -311,11 +329,30 @@ func canonicalSegment(seg string) (string, bool) {
 			return "", false
 		}
 		b.WriteByte(v)
+		base = false
 	}
 	if !flush() {
 		return "", false
 	}
 	return b.String(), true
+}
+
+// defaultIgnorable reports whether r is a Unicode default-ignorable
+// letter or mark (a variation selector, U+034F, a Hangul filler, ...):
+// a target that drops them (NFKC_Casefold, IDNA mapping) would turn
+// ".\u034f." into "..". Format characters (Cf), the rest of
+// Default_Ignorable_Code_Point, are neither letters nor marks and are
+// refused already.
+func defaultIgnorable(r rune) bool {
+	switch r {
+	case 0x034F, 0x115F, 0x1160, 0x3164, 0xFFA0:
+		return true
+	}
+	return unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) || unicode.Is(unicode.Variation_Selector, r)
+}
+
+func alnum(c byte) bool {
+	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9'
 }
 
 func unreserved(c byte) bool {
