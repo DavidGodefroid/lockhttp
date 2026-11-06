@@ -1,195 +1,74 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="site/assets/banner-dark.svg">
-    <img alt="lockhttp — Your AI browses. You hold the key." src="site/assets/banner-light.svg" width="600">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.svg">
+    <img alt="lockhttp: your agent browses. You hold the key." src="docs/assets/banner-light.svg" width="600">
   </picture>
 </p>
 
 <p align="center">
   <a href="https://github.com/DavidGodefroid/lockhttp/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/DavidGodefroid/lockhttp/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/DavidGodefroid/lockhttp/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/DavidGodefroid/lockhttp?include_prereleases&color=16A34A"></a>
-  <img alt="Go 1.26+" src="https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white">
-  <a href="LICENSE"><img alt="Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-16A34A"></a>
+  <a href="https://github.com/DavidGodefroid/lockhttp/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/DavidGodefroid/lockhttp?include_prereleases&sort=semver&label=release&color=1f4a9c"></a>
+  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-575146"></a>
+  <a href="go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/DavidGodefroid/lockhttp?color=575146&logo=go&logoColor=white"></a>
 </p>
 
-<p align="center">
-  <b>Let your AI agents use the web<br>
-  without letting them send anything out behind your back.</b>
-</p>
+<p align="center"><b>Let any AI agent use the web: reads of trusted hosts pass,<br>
+anything that sends data or reaches an unknown host waits for you.</b></p>
 
 <p align="center">
-  <img src="site/assets/demo.svg" alt="Claude Code, in a lea container, fetches a page of pkg.go.dev, a trusted host: the lockhttp gate lets the GET through at once. It then POSTs a build report to hooks.example.net, an unknown host: the gate holds the request, and an approval screen in another account (drawn in the lockhttp console's frame; you answer it on the hub, with lox approve or lea's deck) shows it with the body preview masked (the email as j***(20), the token as &lt;secret&gt;). The human answers n token in body; the agent gets a 403 E_DENIED, and the gate's audit records both decisions." width="900">
+  <img src="site/assets/demo.svg" alt="An agent (here Claude Code, in a lea container) fetches a page of pkg.go.dev, a trusted host: the lockhttp gate lets the GET through at once. It then POSTs a build report to hooks.example.net, an unknown host: the gate holds the request, and an approval screen shows it with the body preview masked (the email as j***(20), the token as &lt;secret&gt;). The human answers n token in body; the agent gets a 403 E_DENIED, and the gate's audit records both decisions." width="900">
 </p>
+<p align="center"><sub>An agent (here Claude Code, left, in a lea container) and the approval screen (right). Drawn in the console's frame from before the hub: today you answer in <code>lox run</code>.</sub></p>
 
 <p align="center">
-  <a href="#quick-start-with-lea">Quick start</a> ·
+  <a href="#quick-start">Quick start</a> ·
   <a href="#how-it-works">How it works</a> ·
-  <a href="#security-model">Security model</a> ·
-  <a href="#configuration">Configuration</a> ·
-  <a href="#install">Install</a> ·
-  <a href="docs/usage.md">Docs</a> ·
-  <a href="https://lockhttp.com">Website</a>
+  <a href="#documentation">Docs</a> ·
+  <a href="#the-lock-family">Lock Family</a> ·
+  <a href="https://lockhttp.com">lockhttp.com</a>
 </p>
 
 ---
 
-A Lock of the [Lock Family](https://github.com/DavidGodefroid/lockfamily),
-harness security for AI agents: LockHTTP is the proxy every outbound HTTP(S)
-request of an AI agent goes through. Reads of hosts you trust pass. Anything that sends data, triggers an
-action or reaches an unknown host waits for **your** approval, on
-[lockhub](https://github.com/DavidGodefroid/lockhub) (`lox approve`, the lea
-deck or a paired phone), where the agent cannot reach it. Every decision is traced to the container, the agent and the session
-that asked.
+lockhttp is a Lock of the [Lock Family](https://github.com/DavidGodefroid/lockfamily),
+harness security for AI agents. It is the proxy every outbound HTTP(S)
+request of your agent goes through. Reads of hosts you trust pass; anything
+else waits for **your** approval on
+[lockhub](https://github.com/DavidGodefroid/lockhub), where the agent cannot reach it.
 
 > [!NOTE]
-> **Pre-release** (`v0.8.0`). Built on [lockkit](https://github.com/DavidGodefroid/lockkit) v0.13.0.
-> Design decisions: [docs/decisions.md](docs/decisions.md).
+> **Pre-release** (`v0.8.x`), built on [lockkit](https://github.com/DavidGodefroid/lockkit) v0.13.0.
+> Command names are fixed; flags may still move. Design decisions: [docs/decisions.md](docs/decisions.md).
 
-## Why LockHTTP?
+## Why lockhttp
 
-An agent that can read the web can also write to it: a `POST` to a webhook,
-a `git push`, a package publish, a secret tucked into a query string, a
-Claude API call that hands an MCP server to the model. An allowlist of
-domains does not tell these apart from a documentation read, and approval
-prompts inside the agent's own process can be configured away by that
-process.
+- **Per request, not per domain.** An allowlist lets a host's writes through
+  with its reads. lockhttp keeps reads free and holds writes, uploads and
+  unknown hosts for a human.
+- **Approval outside the agent.** Each held request becomes a `NeverAuto`
+  ticket on lockhub, answered by a human in `lox run`. Nothing in the agent's
+  process can switch it off.
+- **Credentials the agent never holds.** The gate can inject an API token
+  for one host and port; a credential sent to the wrong host is refused.
+- **Traced.** Every decision is tied to the container, the agent and the
+  session that asked.
 
-LockHTTP moves the decision out of the agent and onto the network path:
-
-| | Domain allowlist | In-agent approval | LockHTTP |
-|---|:---:|:---:|:---:|
-| Reads of trusted hosts pass without a prompt | ✅ | ✅ | ✅ |
-| A write to a trusted host still needs a human | ❌ | ✅ | ✅ (per request when decrypting) |
-| Approval cannot be switched off from the agent side | ✅ | ❌ | ✅ |
-| Policy loosening needs a human confirmation | ❌ | ❌ | ✅ |
-| Secrets sent to the wrong host are refused | ❌ | ❌ | ✅ (when decrypting) |
-| Claude API relays (`mcp_servers`, server tools, Files) need a human | ❌ | ❌ | ✅ (when decrypting) |
-| Each decision traced to container, agent, task | ❌ | ❌ | ✅ |
-
-## How it works
-
-Three pieces, each in a container of its own, and the hub. Only the
-policy the console serves decides what needs a human, and only the human
-answers, on the hub. LockHTTP runs hub-attached only: `lox up` runs its
-console and the hub, and lea runs the gate with the hub flags `lox up`
-hands it.
-
-```
- agent container  (internal network only, no route out)
-   HTTP(S)_PROXY=http://<agent>:<token>@lea-proxy:3130
-          │
-          ▼
- gate container   (shares the proxy container's network)
-   lockhttp gate :3130   (uid 10003 "gate", never root)  ──▶  squid 127.0.0.1:3128  ──▶  Internet
-   lockhttp signer       (its own container, uid 10004, holds the CA key; only with decryption)
-          │  socket volume <project>_<lock>-run: /run/lockhttp/user-<profile>.sock
-          │  (gate and console only; peer uid checked by the kernel)
-          ▼
- console container  (lox up's service lock-<lock>, its terminal)
-   uid 10021 "lockhttp" · the policy, the approved policy, the audit
-   serves the approved policy to the gate · asks you about every loosening
-          ·
- gate ──▶ lockhub (lox up's hub network; only lea's proxy joins it)
-   held requests become signed tickets · you approve on a facade (lox approve, lea's deck, a phone)
-```
-
-1. The agent's HTTP client sends every request to the **gate**, a Go
-   HTTP(S) proxy. In [lea](https://github.com/DavidGodefroid/lea) the agent's
-   container has no other route out: the proxy variables are a convenience,
-   the network is the boundary.
-2. The gate decides each request with the policy the **console** serves it
-   (`policy.get`, polled every 2 s). It never reads a policy file.
-3. A request that is free goes out through squid, which keeps its own floor
-   (DoH, IP literals, private ranges, ports). A request that needs a human
-   is held (60 s by default) as a signed ticket on the hub, where you
-   approve or deny it.
-4. With a local CA and the **signer**, the gate decrypts HTTPS and decides
-   each request by method, path, headers and body. Without them, it decides
-   a `CONNECT` at the domain only (see [Limits](#limits)).
-
-### Verdicts
-
-| Verdict | What happens |
-|---|---|
-| **FREE** | The request goes out. The gate audits it (JSONL, one file per day). |
-| **ASK** | The gate holds the request and asks the hub: a ticket you approve or deny (with a reason) on a facade. Every ticket is `NeverAuto`: the hub has no auto mode for the gate's asks. |
-| **DENY** | `403` with an `X-LockHTTP-Code` header, at once. |
-
-What an ASK becomes depends on what the gate sees:
-
-- **A `CONNECT` decided at the domain** (no decryption, or a spliced or
-  internal host): `y` opens *container × host × port* for `connect_grant`
-  (10 minutes by default), **for reads and writes**, content unseen. The
-  screen says so.
-- **A decrypted or plain HTTP request**: `y` approves that request. If the
-  agent's client already gave up (hold time passed, `E_PENDING`), `y` creates
-  a single-use authorisation for the identical request, valid 10 minutes.
-- **Durable openings** are policy rules, which you write and confirm in the
-  console's `:review`.
-
-Requests of identical fingerprint
-(container, method, URL, media type, every end-to-end header,
-normalised body) share one screen and one decision; a request to
-the same URL with another body is a separate screen.
-
-## Quick start with lea
-
-LockHTTP runs in Docker and hub-attached only: [lockhub](https://github.com/DavidGodefroid/lockhub)'s
-`lox up` runs the hub and the lockhttp console for your projects directory,
-and [lea](https://github.com/DavidGodefroid/lea) runs the gate beside its
-proxy container when `LEA_LOCKHTTP=1`, with the hub flags `lox up` writes in
-`.lockfamily/up.json`. The contract between lockhttp and lea (files, mounts,
-uids, network rules) is in [docs/lea.md](docs/lea.md); the one between
-`lox up` and lea in lockhub's `docs/lox-up.md`.
-
-LockHTTP needs lea, and `lox add lockhttp` sets it up (its only question is
-the lock's name): see lockhub's
-[docs/lox-add.md](https://github.com/DavidGodefroid/lockhub/blob/main/docs/lox-add.md).
-
-```sh
-# 1. Install the Lock Family (lox, lea and the launchers), or only this tool;
-#    Homebrew asks to trust a third-party tap once
-brew trust davidgodefroid/tap
-brew install davidgodefroid/tap/lockfamily   # or: brew install davidgodefroid/tap/lockhttp
-                                              # or the launcher alone: see Install
-
-# 2. In lea's projects directory (LEA_PROJECTS_DIR: lea reads
-#    .lockfamily/up.json only at its root): a lockhttp lock, the hub, its console
-cd ~/projects
-lox add lockhttp              # asks for the lock's name: profile add, the declaration, lox up, the console
-# or by hand:
-#   lockhttp profile add      # the policy: .lockhttp/config.toml, which lox up reviews and copies
-#   lox add lockhttp web
-#   lox up                    # runs the hub and the console, registers the gate's key
-#   lox attach web            # the console's terminal: approve its first policy (detach: Ctrl-P Ctrl-Q)
-
-# 3. Start lea with LockHTTP on: its gate asks the hub. If lea already runs,
-#    `lox add` said "lea gets lock NAME at its next start: lea stop, then lea":
-#    lea mounts the locks' sockets when its container starts, so lea stop,
-#    then lea brings the new lock in.
-export LEA_LOCKHTTP=1
-lea
-
-# 4. Approve the held requests on a facade of the hub
-lox approve
-```
-
-The console runs as the `lockhttp` account (uid 10021) in `lox up`'s
-service; lea's gate runs as `gate` (uid 10003) in a container of its own
-and shares only the console's socket volume with it. Without a trusted
-`up.json` naming a lockhttp lock, lea does not start the gate: it says to
-run `lox up`. `lockhttp gate` refuses to start without its hub flags
-("launched by `lox up` only").
+In-agent approval is a convenience; a separate approval process is a boundary.
 
 ## Install
 
-LockHTTP runs in Docker. On the host, `scripts/install.sh` installs only the
-`lockhttp` launcher, a shell script that runs every command in the release's
-image (`ghcr.io/davidgodefroid/lockhttp:X.Y.Z`, amd64 and arm64). With
-Homebrew: `brew trust davidgodefroid/tap` (Homebrew asks to trust a
-third-party tap once), then `brew install davidgodefroid/tap/lockhttp` (or
-`davidgodefroid/tap/lockfamily` for the whole family). Otherwise, download
-the script from the release you install, read it, then run it:
+```sh
+brew trust davidgodefroid/tap
+brew install davidgodefroid/tap/lox davidgodefroid/tap/lockhttp
+brew install davidgodefroid/tap/lea
+```
+
+lockhttp runs in Docker: Homebrew installs the `lockhttp` launcher, which runs
+every command in the release's signed image. `lox` is lockhub's CLI, and the
+gate runs inside [lea](https://github.com/DavidGodefroid/lea). The whole
+family instead: `brew install davidgodefroid/tap/lockfamily`.
+
+Without Homebrew, the signed install script of a release:
 
 ```sh
 V=vX.Y.Z
@@ -198,271 +77,160 @@ less install.sh
 LOCKHTTP_VERSION=$V sh install.sh
 ```
 
-It verifies the keyless cosign signature of `checksums.txt` against this
-repository's release workflow, checks the archive, verifies the image's
-cosign signature and writes its digest into the launcher, which runs the
-image by that digest. The launcher lands in `/usr/local/bin`, root-owned
-(`LOCKHTTP_INSTALL_DIR` to change it). cosign is required unless
-`LOCKHTTP_SKIP_COSIGN=1`, which verifies nothing and runs the image by its
-tag. Linux (Docker Engine) and macOS (Docker Desktop); on Windows, WSL 2
-with Docker Desktop.
+Linux and macOS; on Windows, WSL 2 with Docker Desktop. The launcher, its
+commands and the setup by hand: [docs/install.md](docs/install.md).
 
-| Command | Runs as | What it does |
-|---|---|---|
-| `lockhttp profile add [--non-interactive] [--json] [--profile NAME] [--production] [--trusted "a.com .corp.example"]` | you, on the project | Adds a profile with the default policy to the project's `.lockhttp/config.toml` (never rewrites one already there; never takes a secret). |
-| `lockhttp init <agent>` | you, on the project | Nothing to write: lockhttp has no agent files (lea routes the agent's HTTP through the gate). |
-| `lockhttp doctor [--fix [--yes]] [--json] [--gate ADDR] [--ca-cert FILE]` | you, on the project | Separated setup, the project's policy and its permissions, CA, gate; `--fix` repairs the permissions. |
-| `lockhttp policy show\|edit\|path` | `lockhttp`, volume `lockhttp-home` | Prints, edits or locates the console's copy of the policy. |
-| `lockhttp console` | `lockhttp`, container `lockhttp-console` | The policy console (under `lox up`, its own service runs it). It must run in a terminal. |
-| `lockhttp gate` | `gate`, container `lockhttp-gate` | The proxy. It needs the hub flags (`--hub`, `--hub-key-file`, `--instance`): lea passes them from `lox up`'s `up.json`. |
-| `lockhttp version`, `lockhttp update [vX.Y.Z]` | | The launcher's and the image's versions; a newer release's launcher, checked the same way, and its image. |
+## Quick start
 
-`LOCKHTTP_IMAGE` runs an image of your own (`docker build -t lockhttp .`
-from a clone), `LOCKHTTP_DOCKER_ARGS` adds `docker run` arguments. There is
-no host install: the image refuses `lockhttp install`. Coming from v0.1.0's
-`sudo lockhttp install`: [migrating from a host
-install](docs/docker.md#migrating-from-a-host-install).
+1. In lea's projects directory, add the lock. `lox add lockhttp` asks only
+   for its name, writes the policy and starts the console:
 
-The demo above is generated by [`scripts/brand/demo.py`](scripts/brand/demo.py):
-`python3 scripts/brand/demo.py > site/assets/demo.svg`.
+   ```sh
+   cd ~/projects
+   lox add lockhttp
+   ```
 
-Accounts, volumes, the exact `docker run` of each command, and what Docker
-does and does not separate: [docs/docker.md](docs/docker.md). Every command
-and flag: [docs/usage.md](docs/usage.md).
+2. In a terminal of its own, outside lea and any agent, keep `lox run` open.
+   Every held request shows up there:
 
-## Configuration
+   ```sh
+   lox run
+   ```
 
-The policy lives in the console account's `~/.config/lockhttp/config.toml`,
-one table per profile. The console reads it, reloads it when it changes,
-and holds every change that loosens it until you confirm it with `:review`.
-Unknown keys and keys that look like secrets are refused.
+3. Start lea with lockhttp on (`lea stop` first if it already runs):
 
-```toml
-[profiles.default]
-mode          = "enforce"   # enforce | shadow
-heuristics    = "shadow"    # off | shadow | enforce
-buffer_limit  = "10MiB"     # largest body held for a human
-hold          = "60s"       # how long a request waits for the human (max 5m)
-connect_grant = "10m"       # how long an approved CONNECT opens its host
-trusted = ["go.dev", "pkg.go.dev", "github.com", "api.github.com"]
-splice  = []                # never decrypted (certificate pinning)
-deny    = []                # always refused
+   ```sh
+   LEA_LOCKHTTP=1 lea
+   ```
+
+4. Ask your agent to read the docs of a trusted site: it goes through. Ask
+   it to post somewhere: the request waits for your `y`.
+
+lockhttp is a proxy, so it works with any agent and any HTTP client inside
+lea's containers (lea runs Claude Code today). The contract with lea:
+[docs/lea.md](docs/lea.md).
+
+## Highlights
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**👤 Never answered automatically**<br>
+Every held request is a `NeverAuto` ticket: a human answers it. Only a
+`free` rule you confirmed lets a request pass unasked.
+
+</td>
+<td width="50%" valign="top">
+
+**🔑 Credentials injected**<br>
+A policy `inject` entry has the gate add an `Authorization` header from its
+own secrets file. The agent never holds the token.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**🔁 LLM APIs checked as a relay**<br>
+With TLS decryption, the Claude API's `mcp_servers`, server tools and Files
+API wait for a human; plain messages pass.
+
+</td>
+<td valign="top">
+
+**🧱 Fail closed**<br>
+No console: asks are refused at once. Unknown source, undecodable policy, an
+error while deciding: deny.
+
+</td>
+</tr>
+</table>
+
+More: [the verdicts, refusal codes and the Claude API rules](docs/how-it-works.md),
+and [the policy keys](docs/configuration.md).
+
+## How it works
+
+Three pieces, each in a container of its own, and the hub.
+
+```
+ agent container (internal network only)
+        │ HTTP(S)_PROXY
+        ▼
+ lockhttp gate  ── FREE ──▶ squid ──▶ Internet
+        │ ASK                ▲
+        ▼                    │ on y
+ lockhub ── ticket ──▶ you, in lox run
+        ·
+ lockhttp console: serves the approved policy to the gate
 ```
 
-<details>
-<summary>All profile keys</summary>
+1. The agent's HTTP client sends every request to the **gate**. In lea the
+   agent's container has no other route out.
+2. The gate decides each request with the policy the **console** serves it.
+   It never reads a policy file.
+3. A free request goes out through squid. A request that needs a human is
+   held (60 s by default) as a signed ticket on the hub.
+4. With a local CA and the **signer**, the gate decrypts HTTPS and decides
+   each request by method, path, headers and body. Without them, it decides
+   a `CONNECT` at the domain only.
 
-| Key | Default | Notes |
-|---|---|---|
-| `production` | `false` | No rule may be `auto` (an `auto` rule only asks), and the console treats the profile as production. |
-| `mode` | `enforce` | `shadow`: what would ask or be denied passes and is logged as such. |
-| `heuristics` | `shadow` | Exfiltration score: `off` (not computed), `shadow` (logged), `enforce` (a score ≥ 3 asks, `NeverAuto`, red). |
-| `buffer_limit` | `10MiB` | `B`, `KiB`, `MiB`, `GiB` or bytes; more than 0. |
-| `hold` | `60s` | Go duration, at least `1s`, at most `5m`. |
-| `connect_grant` | `10m` | At least `1s`. |
-| `idle_timeout` | `24h` | Console session limit. |
-| `max_session` | `24h` | Console session limit. |
-| `trusted` | `[]` (`init` writes a docs set) | Reads (`GET`, `HEAD`, `OPTIONS` without body) are free. |
-| `splice` | `[]` | Never decrypted: decided at the domain. |
-| `deny` | `[]` | Always refused (`E_RULE`). |
-| `redirect_cdn` | `[]` | `"origin>cdn"`: a 3xx from origin to cdn lets the same container `GET` that exact URL once within 60 s. Eight GitHub, Docker, Go and PyPI pairs are built in. |
-| `[[profiles.P.internal_hosts]]` | none | `host`, `ports` (required), `read` (`false`). May resolve to a private address. |
-| `[[profiles.P.rules]]` | none | `id`, `container`, `host`, `methods`, `path`, `verdict`, `max_body`, `expires`, `note`. |
+The full diagram, verdicts, refusal codes, the Claude API checks and the
+limits: [docs/how-it-works.md](docs/how-it-works.md).
 
-</details>
+## Safety model
 
-Hosts are names: `example.com`, or `*.example.com` for its subdomains (not
-`example.com` itself). IP literals are refused. The full reference, with
-the evaluation order and what counts as a loosening, is in
-[docs/policy.md](docs/policy.md).
-
-### Policy examples
-
-```toml
-[profiles.default]
-trusted = ["docs.rs", "*.readthedocs.io"]       # free reads of docs
-splice  = ["pinned.example.com"]                # a client that pins its certificate
-deny    = ["pastebin.com"]
-
-# A container-scoped rule: the gate asks lockhub and a human answers
-[[profiles.default.rules]]
-id        = "npm-audit"
-container = "lea-ab12cd34ef"
-host      = "registry.npmjs.org"
-methods   = ["POST"]
-path      = "/-/npm/v1/security/advisories/bulk"
-verdict   = "ask"
-expires   = "2026-12-31"
-
-# Every write under an API path asks (NeverAuto), even on a trusted host
-[[profiles.default.rules]]
-id      = "issues-write"
-host    = "api.github.com"
-methods = ["POST", "PATCH"]
-path    = "/repos/acme/shop/issues*"
-verdict = "ask"
-
-# Refuse a host for every container
-[[profiles.default.rules]]
-id      = "no-gists"
-host    = "gist.github.com"
-verdict = "deny"
-
-# An internal host on a private address: free reads on 8443
-[[profiles.default.internal_hosts]]
-host  = "git.corp.example"
-ports = [8443]
-read  = true
-```
-
-To try a policy before enforcing it, set `mode = "shadow"`: what would ask
-or be denied passes and is audited with `"decision": "shadow-ask"` or
-`"shadow-deny"`. The floor and secret matches stay enforced.
-
-## What the agent sees
-
-A refusal is a `403 Forbidden` with a plain-text body that says why and
-what to ask of the human, and two headers: `X-LockHTTP-Code` and
-`X-LockHTTP-Request` (the id to find in the console and the audit). For a
-`CONNECT` it is the `CONNECT`'s own response, which clients show as a proxy
-error. In hub mode an `E_PENDING` also names the hub ticket the request
-waits on (`X-LockHTTP-Ticket`). A forwarded response carries `X-LockHTTP-Request` too (decrypted or
-plain HTTP); a target the gate cannot reach is a `502`.
-
-| Code | Meaning | What the agent should do |
-|---|---|---|
-| `E_PENDING` | The request waits for the human past the hold time. | Retry the same request in a moment: once approved it goes through. |
-| `E_NO_CONSOLE` | No console is running: every ASK is refused at once. | Ask the user to run `lox up`. |
-| `E_DENIED` | The human denied it (the reason is in the body). | Do not retry; ask the user. |
-| `E_TIMEOUT` | The hub ticket expired before anyone answered it (the ticket is in `X-LockHTTP-Ticket`). | Send the same request again: it is asked again. |
-| `E_RULE` | A deny rule or the deny list refuses it. | Ask the user to change the rule. |
-| `E_FLOOR` | The network floor: IP literal, DoH, cloud metadata, port, single-label host, SNI or Host mismatch, `h2c`, nested `CONNECT`, a non-absolute URL. | Use a named public host on 80 or 443. |
-| `E_SECRET_EGRESS` | A known credential sent outside its own hosts, a Claude credential that is not the container's, or the value of a secret the gate injects. | Never send a credential to another host. |
-| `E_BODY_TOO_LARGE` | The body is over `buffer_limit` and cannot be held for a human. | Send less, or ask for a rule. |
-| `E_SOURCE_UNKNOWN` | The gate cannot tell which container sent the request. | Use the proxy address lea gave. |
-| `E_INJECT` | The policy injects a credential for this host, and the gate's secrets file lacks it or does not load. | Ask the user to check the gate's secrets file; never send the credential yourself. |
-
-`E_HOST_UNKNOWN`, `E_CLAUDE_API_PARAM`, `E_EXFIL_SUSPECT`, `E_METHOD` and
-`E_PINNED` are registered codes too; in v0.1.0 a refused ASK reaches the
-agent as `E_DENIED`, `E_TIMEOUT`, `E_PENDING` or `E_NO_CONSOLE`, and
-`E_PINNED` appears in the gate's audit only (a client that rejects the
-gate's certificate closes the connection before any response).
-
-## Claude API allowlist
-
-The four hosts Claude Code reaches (`api.anthropic.com`, `claude.ai`,
-`console.anthropic.com`, `statsig.anthropic.com`) are free at the domain.
-Any other host under `anthropic.com`, `claude.ai` or `claude.com` asks
-(`NeverAuto`), unless a rule says otherwise.
-
-Once TLS is decrypted, the Claude API is a generic relay and is checked per
-request:
-
-| Request | Verdict |
-|---|---|
-| `POST /v1/messages`, `/v1/messages/count_tokens` | FREE only when the body is one unambiguous JSON object with no `mcp_servers`, no `container`, and no server tool other than `web_search` (custom tools and the client-run `bash`, `text_editor`, `computer`, `memory` are fine). Otherwise ASK, red, `NeverAuto`. |
-| OAuth paths (`/v1/oauth/`, and `/oauth/` on `claude.ai`) | FREE |
-| `/v1/files*` | ASK, `NeverAuto` |
-| Other reads on the four hosts | FREE |
-| Other writes | ASK, `NeverAuto` |
-| A credential (`Authorization`, `x-api-key`) not in the caller's list, or two credentials | DENY `E_SECRET_EGRESS` (with lea's `credentials.json`) |
-
-Duplicate keys, and keys that differ from `mcp_servers`, `tools` or
-`container` only by case, make the body ambiguous: it asks.
-
-## Security model
-
-The gate is the enforcement point on the network path; the hub's facades
-are the only place a human decision about a request is made, and the
-console the only place a loosening of the policy is. In short:
-
-- **The console is in its own container, under its own account.**
-  `lockhttp console` runs as `lockhttp` (uid 10021) in `lox up`'s service,
-  without a log driver. Its socket is reachable only by the
-  `lockhttp-clients` group (the image's `gate` account), checked with the
-  kernel's peer credentials, and its socket volume is mounted in the
-  gate's container only, never in an agent's. Anyone who can run
-  `docker` on the host can reach the console's container and volumes: keep
-  the agent away from the Docker socket.
-- **NeverAuto.** Every hub ticket of the gate is `NeverAuto`: the hub
-  cannot check an `auto` rule against the console's policy (a rule that asks
-  like `ask`), so
-  nothing answers a held request but a human. Secrets are denied.
-- **A decision is shared only by identical requests.** Same container,
-  method, URL, significant headers and normalised body; anything else is
-  its own screen.
-- **Hub-attached only.** The gate does not start without its hub flags,
-  and nothing falls back to another approver when the hub is unreachable:
-  the ticket stays pending until the hub answers.
-- **Fail closed.** No console: every ASK is refused at once
-  (`E_NO_CONSOLE`), while FREE goes on with the last policy the console
-  served. Unknown source, unreadable source map: refused. An unreadable
-  credentials file: every Claude credential is denied. A policy whose
-  fingerprint does not match: the previous one is kept.
-- **The gate never reads a policy.** It uses what the console serves, and
-  checks it against the console's fingerprint.
-- **The signer holds the CA key.** The gate asks `lockhttp signer` for a
-  24-hour leaf per host, over a Unix socket restricted to allowed uids; it
-  never sees the CA key.
+- **The gate is the enforcement point.** The console is the only place the
+  policy loosens; the hub's facades the only place a request is approved.
+- **OS separation.** The console runs as its own account in its own
+  container; the kernel checks the gate's uid on its socket.
 - **The AI tightens, the human loosens.** Any change that widens what passes
-  without a human (a trusted host, a `free` rule, shadow mode, a
-  longer grant, a removed deny...) waits for your `:review`.
-- **Traced.** The gate's JSONL audit and the console's audit carry
-  `request_id`, `container`, `agent`, `attribution`, `via`, never a body, a
-  query string or a header value.
+  without a human waits for your `:review` in the console.
+- **Audit.** The gate's JSONL log and the console's audit share a
+  `request_id`, never a body, a query string or a header value.
+- **Known limits.** Without decryption a `CONNECT` opens reads and writes,
+  and whoever can run `docker` can reach the console's container.
 
-Threats, parades and residual risks: [docs/security-model.md](docs/security-model.md).
-
-## Limits
-
-- **Without decryption, a `CONNECT` opens reads AND writes.** A trusted host
-  is free at the domain, and an approved `CONNECT` opens its host for
-  `connect_grant`; the gate does not see what goes through. Rules with
-  `methods` or `path` cannot apply at the domain. The Claude API allowlist
-  needs decryption too. `lockhttp doctor` warns when no CA is given.
-- **HTTP/1.1 only to clients when decrypting.** The gate offers ALPN
-  `http/1.1`; it does not speak HTTP/2 to clients, and refuses `Upgrade: h2c`.
-- **A WebSocket session is one approval.** The upgrade request is decided;
-  the frames that follow are not.
-- **Heuristics run in shadow by default.** The exfiltration score is logged,
-  not enforced, until you set `heuristics = "enforce"`.
-- **Asks wait side by side.** Each held request is its own hub ticket;
-  identical requests share one.
-- **The agent name is declarative.** The container is read from the network
-  the connection arrived on; the agent name comes from `Proxy-Authorization`
-  and is for the audit only. Agents of one container share a uid, so rules
-  scope to containers, never to agents.
-- No MCP server in v0.1.0: agents meet LockHTTP as a proxy, and its `403`
-  pages tell them what to ask of the human.
-
-## The Lock family
-
-LockHTTP is one of a family of human-gated tools for AI agents, built on the
-same console, separation and approval model:
-
-| Project | Gates access to |
-|---|---|
-| [locksql](https://github.com/DavidGodefroid/locksql) | databases: MariaDB, MySQL, PostgreSQL, SQLite |
-| [lockmq](https://github.com/DavidGodefroid/lockmq) | message queues: RabbitMQ |
-| [lockfile](https://github.com/DavidGodefroid/lockfile) | files: yes/no answers about a file the agent never reads |
-| **lockhttp** | outbound HTTP(S): the web, APIs, registries, the Claude API |
-| [lockkit](https://github.com/DavidGodefroid/lockkit) | the shared Go framework: console, separation, approval, masking, audit |
-
-Website: [lockhttp.com](https://lockhttp.com).
+Every rule: [docs/safety.md](docs/safety.md). Threat model:
+[docs/security-model.md](docs/security-model.md).
 
 ## Documentation
 
-| | |
+| Doc | What it covers |
 |---|---|
-| [docs/docker.md](docs/docker.md) | the launcher, the image, its accounts and volumes, install, update, migrating from a host install |
-| [docs/usage.md](docs/usage.md) | every command and flag, exit codes, files |
-| [docs/policy.md](docs/policy.md) | the policy reference, evaluation order, shadow mode, loosenings |
-| [docs/security-model.md](docs/security-model.md) | threats, parades, residual risks |
+| [docs/install.md](docs/install.md) | install paths, the launcher's commands, the setup with lea by hand |
+| [docs/how-it-works.md](docs/how-it-works.md) | the pieces, verdicts, what the agent sees, the Claude API checks, limits |
+| [docs/configuration.md](docs/configuration.md) | the policy file, every profile key, policy examples |
+| [docs/policy.md](docs/policy.md) | the policy reference: evaluation order, credential injection, shadow mode, loosenings |
+| [docs/usage.md](docs/usage.md) | every command and flag, exit codes, files, audit records |
+| [docs/docker.md](docs/docker.md) | the image, its accounts and volumes, update, migrating from a host install |
 | [docs/lea.md](docs/lea.md) | the integration contract with lea |
-| [docs/decisions.md](docs/decisions.md) | design decisions of v0.1.0 |
-| [SECURITY.md](SECURITY.md) | reporting a vulnerability, verifying a release and the image |
-| [CHANGELOG.md](CHANGELOG.md) | release notes |
+| [docs/safety.md](docs/safety.md) | the safety model in full |
+| [docs/security-model.md](docs/security-model.md) | threats, parades, residual risks |
+| [docs/decisions.md](docs/decisions.md) | design decisions |
+| [CHANGELOG.md](CHANGELOG.md) | what changed, release by release |
 
-## Licence
+The site, [lockhttp.com](https://lockhttp.com), is built from [`site/`](site/).
 
-Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+## The Lock Family
+
+| Repo | What it does |
+|---|---|
+| [lockfamily](https://github.com/DavidGodefroid/lockfamily) | The family site ([lockfamily.dev](https://lockfamily.dev)) and the one-line installer. |
+| [locksql](https://github.com/DavidGodefroid/locksql) | SQL databases: the agent queries, PII comes back masked; connections and writes wait for you. |
+| [lockmq](https://github.com/DavidGodefroid/lockmq) | RabbitMQ: masked queue inspection; reading messages and acting on queues wait for you. |
+| [lockfile](https://github.com/DavidGodefroid/lockfile) | Files (S3, SFTP, disk): the agent asks yes/no questions about files it never reads. |
+| [lockhttp](https://github.com/DavidGodefroid/lockhttp) | Outbound HTTP(S): reads of trusted hosts pass; anything that sends data or reaches an unknown host waits for you. |
+| [locklog](https://github.com/DavidGodefroid/locklog) | Logs: masked, bounded log search; the agent reads the logs, not the people in them. |
+| [lockssh](https://github.com/DavidGodefroid/lockssh) | Commands over SSH: allow-listed commands run at once, the rest waits for you; the key never leaves the console. |
+| [lockhub](https://github.com/DavidGodefroid/lockhub) | The approval hub and its `lox` CLI: `lox run` approves outside the agent's harness and never sees values in clear. |
+| [lockkit](https://github.com/DavidGodefroid/lockkit) | The shared Go core of every Lock: console, policies, masking, signed tickets, audit, MCP. |
+| [lea](https://github.com/DavidGodefroid/lea) | Runs many agents in containers, wired to the Locks. |
+
+## Contributing · Security · License
+
+- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md). Build with
+  `CGO_ENABLED=0 go build ./cmd/lockhttp` (Go 1.26+).
+- **Security:** report a vulnerability privately, see [SECURITY.md](SECURITY.md).
+- **License:** Apache License 2.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE).

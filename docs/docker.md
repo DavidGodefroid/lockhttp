@@ -176,7 +176,7 @@ lockhttp runs hub-attached only: there is no standalone gate. lockhub's
 `lox up` runs the console (in a compose service of its own, with the
 policy it reviewed from `<workspace>/.lockhttp/`) and the hub, and lea runs
 the gate beside its proxy with the hub flags `lox up` writes in
-`.lockfamily/up.json` ([README](../README.md#quick-start-with-lea),
+`.lockfamily/up.json` ([install.md](install.md#quick-start-with-lea),
 [lea.md](lea.md)). `lockhttp gate` without `--hub`, `--hub-key-file` and
 `--instance` exits with a usage error ("launched by `lox up` only").
 
