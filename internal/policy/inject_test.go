@@ -189,3 +189,54 @@ func TestInjectDiff(t *testing.T) {
 		t.Fatalf("describe:\n%s", desc)
 	}
 }
+
+func TestInjectMethodsPaths(t *testing.T) {
+	conf := strings.Replace(injectConf, `note   = "Home Assistant long-lived token"`, `methods = ["post", "GET"]
+paths = ["/api/*", "/health"]`, 1)
+	p, err := Parse([]byte(conf), "c", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ha := p.Inject[1]
+	if strings.Join(ha.Methods, ",") != "GET,POST" || strings.Join(ha.Paths, ",") != "/api/*,/health" {
+		t.Fatalf("ha: %+v", ha)
+	}
+	if !strings.Contains(ha.String(), "methods=GET,POST paths=/api/*,/health") {
+		t.Fatalf("String: %s", ha.String())
+	}
+	for _, tc := range []struct {
+		method, path string
+		want         bool
+	}{
+		{"GET", "/api/states", true}, {"POST", "/health", true}, {"GET", "/healthz", false},
+		{"DELETE", "/api/states", false}, {"GET", "/admin", false}, {"TRACE", "/api/x", false},
+	} {
+		if got := len(p.InjectForRequest("x", "homeassistant", 8123, tc.method, tc.path)) == 1; got != tc.want {
+			t.Errorf("%s %s: %v", tc.method, tc.path, got)
+		}
+	}
+	// Without methods, TRACE and TRACK still never get the credential.
+	if got := p.InjectForRequest("lea-dev", "api.example.com", 443, "TRACE", "/"); len(got) != 0 {
+		t.Fatalf("TRACE: %+v", got)
+	}
+	if got := p.InjectForRequest("lea-dev", "api.example.com", 443, "PUT", "/x"); len(got) != 1 {
+		t.Fatalf("PUT: %+v", got)
+	}
+	// A clone does not share the lists.
+	q := p.Clone()
+	q.Inject[1].Methods[0] = "X"
+	if p.Inject[1].Methods[0] != "GET" {
+		t.Fatal("Clone shares the methods")
+	}
+	for name, bad := range map[string]string{
+		"trace":    `methods = ["TRACE"]`,
+		"track":    `methods = ["track"]`,
+		"bad path": `paths = ["api"]`,
+		"method":   `methods = ["G ET"]`,
+	} {
+		c := strings.Replace(injectConf, `note   = "Home Assistant long-lived token"`, bad, 1)
+		if _, err := Parse([]byte(c), "c", "default"); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

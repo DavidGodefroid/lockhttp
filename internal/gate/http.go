@@ -75,6 +75,12 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 	// audits a target with none of the value: it may be in the path or
 	// the query.
 	leakName, leak := g.cfg.Secrets.Leak(agentParts(req, path, body)...)
+	fs := g.cfg.Secrets.Forms()
+	unscannable := ""
+	if !leak && !fs.empty() {
+		leakName, unscannable = encodedLeak(req.Header.Get("Content-Encoding"), body, rest != nil, fs)
+		leak = leakName != ""
+	}
 	if leak {
 		t.Path, t.QueryLen, t.QueryHash, t.BodyFP = "(redacted: carries an injected secret)", 0, "", ""
 	}
@@ -94,7 +100,29 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 		g.refuse(w, d, id, src, t, false)
 		return rest == nil
 	}
-	injects, injectWarn := g.injectsFor(pol, src.Container, host, port, tlsMode)
+	if unscannable != "" {
+		d := decide.Decision{Verdict: decide.Deny, Rule: "secret:unscannable", Code: product.CodeSecretEgress,
+			Reason: unscannable + ": the gate cannot check it for the value of an injected secret"}
+		g.refuse(w, d, id, src, t, false)
+		return rest == nil
+	}
+	ws := strings.EqualFold(req.Header.Get("Upgrade"), "websocket")
+	if pol != nil && (req.Method == "TRACE" || req.Method == "TRACK") && len(pol.InjectFor(src.Container, host, port)) > 0 {
+		// TRACE echoes the request: never to a host the gate injects into.
+		d := decide.Decision{Verdict: decide.Deny, Rule: "inject:trace", Code: product.CodeMethod,
+			Reason: req.Method + " echoes the request, and the gate adds a credential to " + host + ": refused"}
+		g.refuse(w, d, id, src, t, false)
+		return rest == nil
+	}
+	injects, injectWarn := g.injectsFor(pol, src.Container, host, port, tlsMode, req.Method, path)
+	if ws && len(injects) > 0 {
+		// The gate does not scan a WebSocket's frames from the target for
+		// the credential it adds: an injected request does not upgrade.
+		d := decide.Decision{Verdict: decide.Deny, Rule: "inject:" + injects[0].ID, Code: product.CodeInject,
+			Reason: "the gate adds a credential to this request (inject " + injects[0].ID + "): it may not upgrade to a WebSocket"}
+		g.refuse(w, d, id, src, t, false)
+		return rest == nil
+	}
 	fp := RequestFingerprint(src.Container, req.Method, target, req.Header, bodyFP)
 	var d decide.Decision
 	hard, isHard := decide.Hard(pol, r)
@@ -161,6 +189,7 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 		out.Header.Del(h)
 	}
 	// Credential injection, after the verdict: the agent never held it.
+	injected := map[string][]string{}
 	for _, inj := range injects {
 		v, err := g.cfg.Secrets.Value(inj.Credential)
 		if err != nil {
@@ -178,25 +207,56 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 		out.Header.Del(inj.Header)
 		out.Header.Set(inj.Header, v)
 		rec.Injected = append(rec.Injected, inj.ID+":"+inj.Header)
+		raw, _ := g.cfg.Secrets.Value(inj.Credential)
+		injected[inj.Credential] = append(injected[inj.Credential], raw)
 	}
-	ws := strings.EqualFold(req.Header.Get("Upgrade"), "websocket")
+	var respForms *formSet
+	if len(injected) > 0 {
+		// The response is scanned for the value: it comes unencoded, and
+		// no proxy on the way echoes the request (Max-Forwards).
+		respForms = formsOf(injected)
+		out.Header.Set("Accept-Encoding", "identity")
+		out.Header.Del("Max-Forwards")
+	}
+	if ws && !fs.empty() {
+		// The client's frames are scanned: no compression of them.
+		out.Header.Del("Sec-Websocket-Extensions")
+	}
 	if ws {
 		out.Header.Set("Connection", "Upgrade")
 	} else {
 		out.Header.Del("Upgrade")
 	}
 	out.ContentLength = bodyLen
+	var streamScan *scanReader
 	if body != nil || rest != nil {
 		var rd io.Reader = bytes.NewReader(body)
 		if rest != nil {
 			rd = io.MultiReader(rd, rest)
 			out.ContentLength = req.ContentLength
+			if !fs.empty() {
+				// Past the held prefix, the body is scanned as it streams:
+				// a value of a secret aborts the request before it goes
+				// out whole.
+				streamScan = &scanReader{r: rd, fs: fs}
+				rd = streamScan
+			}
 		}
 		out.Body = io.NopCloser(rd)
 	} else {
 		out.Body = nil
 	}
 	resp, err := g.transport.RoundTrip(out)
+	if streamScan != nil && len(streamScan.found) > 0 {
+		if err == nil {
+			resp.Body.Close()
+		}
+		t.Path, t.QueryLen, t.QueryHash, t.BodyFP = "(redacted: carries an injected secret)", 0, "", ""
+		d := decide.Decision{Verdict: decide.Deny, Rule: "secret:injected", Code: product.CodeSecretEgress,
+			Reason: "the streamed body carries the value of the secret " + streamScan.found[0] + ", which only the gate adds: never send it yourself"}
+		g.refuse(w, d, id, src, t, false)
+		return false
+	}
 	if err != nil {
 		rec.Base.Event, rec.Base.Decision, rec.Base.Error = "error", decisionOf(d), err.Error()
 		g.audit(rec)
@@ -205,6 +265,14 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 		return true
 	}
 	defer resp.Body.Close()
+	if respForms != nil {
+		if why := redactResponse(resp, respForms, &rec); why != "" {
+			d := decide.Decision{Verdict: decide.Deny, Rule: "inject:" + injects[0].ID, Code: product.CodeInject,
+				Reason: why + ": the gate cannot check it for the credential it added"}
+			g.refuse(w, d, id, src, t, false)
+			return false
+		}
+	}
 	if loc := resp.Header.Get("Location"); resp.StatusCode >= 300 && resp.StatusCode < 400 && loc != "" && pol != nil {
 		if u, err := out.URL.Parse(loc); err == nil && (u.Scheme == "https" || u.Scheme == "http") {
 			th, tp := splitHostPort(u.Host, map[string]int{"https": 443, "http": 80}[u.Scheme])
@@ -222,13 +290,47 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 		if !ok {
 			return false
 		}
-		_ = resp.Write(w)
+		if !fs.empty() && resp.Header.Get("Sec-Websocket-Extensions") != "" {
+			// An extension it was not offered (compression) would hide
+			// the client's frames from the scan.
+			_ = rwc.Close()
+			rec.Base.Event, rec.Base.Decision, rec.Base.Error = "error", decisionOf(d), "the target chose a WebSocket extension the gate removed"
+			g.audit(rec)
+			return false
+		}
+		// The head only: Response.Write would read a byte of the body
+		// (the upgraded connection) first, waiting on a target that
+		// waits for the client to speak.
+		head := *resp
+		head.Body = nil
+		_ = head.Write(w)
 		done := make(chan struct{})
-		go func() { _, _ = io.Copy(rwc, br); close(done) }()
+		var wsLeak string
+		go func() {
+			if fs.empty() {
+				_, _ = io.Copy(rwc, br)
+			} else {
+				var oversized bool
+				_, wsLeak, oversized = copyWebSocket(rwc, br, fs, limit)
+				if oversized {
+					rec.Warnings = append(rec.Warnings, "closed: a WebSocket frame exceeds the buffer limit, the gate cannot check it")
+				}
+				_ = rwc.Close()
+			}
+			close(done)
+		}()
 		n, _ = io.Copy(w, rwc)
 		_ = rwc.Close()
 		<-done
 		keep = false
+		if wsLeak != "" {
+			rec.Base = audit.Base{Event: "refused", Decision: "refused", Code: string(product.CodeSecretEgress), Warnings: rec.Base.Warnings,
+				Reason: "a WebSocket frame carries the value of the secret " + wsLeak + ", which only the gate adds: the connection is closed"}
+			rec.Rule = "secret:injected"
+			rec.Status, rec.RespBytes, rec.DurationMS = resp.StatusCode, n, g.cfg.Now().Sub(start).Milliseconds()
+			g.audit(rec)
+			return false
+		}
 	} else {
 		cw := &countWriter{w: w}
 		if err := resp.Write(cw); err != nil {
@@ -249,13 +351,18 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 // say so on the approval screen and in the audit. A header is injected
 // into a decrypted HTTPS request, or a plain HTTP one to an internal
 // host: never in clear text across the internet.
-func (g *Gate) injectsFor(pol *policy.Policy, container, host string, port int, tlsMode string) ([]policy.Inject, []string) {
+func (g *Gate) injectsFor(pol *policy.Policy, container, host string, port int, tlsMode, method, path string) ([]policy.Inject, []string) {
 	if pol == nil {
 		return nil, nil
 	}
 	var out []policy.Inject
 	var warns []string
 	for _, inj := range pol.InjectFor(container, host, port) {
+		if !inj.MatchesRequest(method, path) {
+			warns = append(warns, "inject "+inj.ID+" skipped: the policy does not name "+method+" "+path)
+		}
+	}
+	for _, inj := range pol.InjectForRequest(container, host, port, method, path) {
 		if tlsMode != "mitm" && !(tlsMode == "plain" && internalHost(pol, host)) {
 			warns = append(warns, "inject "+inj.ID+" skipped: plain HTTP to a host that is not internal")
 			continue

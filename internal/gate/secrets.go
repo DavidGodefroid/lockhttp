@@ -2,14 +2,12 @@ package gate
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"runtime"
-	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,6 +43,8 @@ type Secrets struct {
 	// known keeps every value ever loaded, for the leak check: a secret
 	// rotated out is still not sent by the agent.
 	known map[string]string
+	// forms caches the forms of known (nil: to compute).
+	forms *formSet
 }
 
 // NewSecrets loads path ("" for none: no injection, no leak check).
@@ -79,7 +79,10 @@ func (s *Secrets) Reload() {
 	}
 	s.vals, s.err, s.modTime = vals, nil, fi.ModTime()
 	for k, v := range vals {
-		s.known[k+"\x00"+v] = v
+		if _, ok := s.known[k+"\x00"+v]; !ok {
+			s.known[k+"\x00"+v] = v
+			s.forms = nil
+		}
 	}
 }
 
@@ -143,34 +146,40 @@ func (s *Secrets) Value(name string) (string, error) {
 }
 
 // Leak reports the name of a secret found in what the agent sent: its
-// path, query, header values or held body, as is, URL-escaped or in
-// base64. The agent never holds an injected secret: one in its request
-// is refused, whatever the host.
+// path, query, header values or held body, as is, URL-escaped (in any
+// case), hex or base64 (at any alignment). The agent never holds an
+// injected secret: one in its request is refused, whatever the host.
 func (s *Secrets) Leak(parts ...[]byte) (string, bool) {
-	if s == nil || s.path == "" {
-		return "", false
-	}
-	s.mu.Lock()
-	keys := make([]string, 0, len(s.known))
-	known := make(map[string]string, len(s.known))
-	for k, v := range s.known {
-		keys = append(keys, k)
-		known[k] = v
-	}
-	s.mu.Unlock()
-	sort.Strings(keys)
-	for _, k := range keys {
-		v := known[k]
-		forms := [][]byte{[]byte(v), []byte(url.QueryEscape(v)), []byte(base64.StdEncoding.EncodeToString([]byte(v))),
-			[]byte(base64.RawURLEncoding.EncodeToString([]byte(v)))}
-		for _, p := range parts {
-			for _, f := range forms {
-				if bytes.Contains(p, f) {
-					name, _, _ := bytes.Cut([]byte(k), []byte{0})
-					return string(name), true
-				}
-			}
+	fs := s.Forms()
+	for _, p := range parts {
+		if name, ok := fs.findDecoded(p); ok {
+			return name, true
 		}
 	}
 	return "", false
 }
+
+// Forms returns the forms of every value ever loaded (nil with none).
+func (s *Secrets) Forms() *formSet {
+	if s == nil || s.path == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.known) == 0 {
+		return nil
+	}
+	if s.forms == nil {
+		vals := map[string][]string{}
+		for k, v := range s.known {
+			name, _, _ := strings.Cut(k, "\x00")
+			vals[name] = append(vals[name], v)
+		}
+		s.forms = formsOf(vals)
+	}
+	return s.forms
+}
+
+// Active reports whether the gate holds any secret value: the streams the
+// agent sends are then scanned for them.
+func (s *Secrets) Active() bool { return !s.Forms().empty() }

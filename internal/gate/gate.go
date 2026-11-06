@@ -519,13 +519,26 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 		return
 	}
 	defer up.Close()
-	if _, err := up.Write(hello); err != nil {
-		return
+	// The gate holds secrets: what the client sends is matched as it
+	// streams (a TLS tunnel's ciphertext cannot be: see the security
+	// model), and a value of one closes the tunnel.
+	fs := g.cfg.Secrets.Forms()
+	leak, _ := fs.find(hello)
+	var in, out int64
+	if leak == "" {
+		if _, err := up.Write(hello); err != nil {
+			return
+		}
+		in, out, leak = splice(c, br, up, fs)
 	}
-	in, out := splice(c, br, up)
 	rec.Base.Event, rec.Base.Decision = "free", decisionOf(d)
 	if rec.Base.Approval != "" {
 		rec.Base.Event, rec.Base.Decision = "approved", "approved"
+	}
+	if leak != "" {
+		rec.Base = audit.Base{Event: "refused", Decision: "refused", Code: string(product.CodeSecretEgress),
+			Reason: "the tunnel carries the value of the secret " + leak + ", which only the gate adds: the tunnel is closed"}
+		rec.Rule = "secret:injected"
 	}
 	rec.ReqBytes, rec.RespBytes = in+int64(len(hello)), out
 	rec.DurationMS = g.cfg.Now().Sub(start).Milliseconds()
@@ -768,8 +781,10 @@ var nonPublic = []netip.Prefix{
 }
 
 // splice copies both ways until either side closes; it returns the
-// bytes sent and received.
-func splice(client net.Conn, br *bufio.Reader, up net.Conn) (in, out int64) {
+// bytes sent and received. With fs, what the client sends is matched as
+// it streams: a value of a secret closes both sides before the read that
+// completes it goes out, and splice returns the secret's name.
+func splice(client net.Conn, br *bufio.Reader, up net.Conn, fs *formSet) (in, out int64, leak string) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -781,14 +796,19 @@ func splice(client net.Conn, br *bufio.Reader, up net.Conn) (in, out int64) {
 			_ = client.Close()
 		}
 	}()
-	in, _ = io.Copy(up, br)
+	if fs.empty() {
+		in, _ = io.Copy(up, br)
+	} else if in, leak = copyScanned(up, br, fs); leak != "" {
+		_ = up.Close()
+		_ = client.Close()
+	}
 	if cw, ok := up.(interface{ CloseWrite() error }); ok {
 		_ = cw.CloseWrite()
 	} else {
 		_ = up.Close()
 	}
 	wg.Wait()
-	return in, out
+	return in, out, leak
 }
 
 // mitm terminates the client's TLS with a leaf for host and decides each

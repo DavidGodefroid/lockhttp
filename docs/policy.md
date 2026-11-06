@@ -309,6 +309,8 @@ header     = "Authorization"
 scheme     = "Bearer"             # optional: the value is "Bearer <secret>"
 credential = "ha-token"           # the secret's name in the gate's secrets file
 container  = "lea-ab12cd34ef"     # optional: one container; empty: every one
+methods    = ["GET", "POST"]      # optional: these methods only
+paths      = ["/api/*"]           # optional: these paths only
 note       = "Home Assistant long-lived token"
 ```
 
@@ -321,6 +323,8 @@ note       = "Home Assistant long-lived token"
 | `scheme` | no | A word (`Bearer`, `Token`) put before the value with a space. |
 | `credential` | yes | The name of the secret in the gate's secrets file: lower-case letters, digits, `_`, `-`, `.`, at most 32 characters, no run of more than 16 letters and digits (a name, not a pasted token). Never the value. |
 | `container` | no | The container it applies to. A container's injection wins over an all-containers one of the same header. |
+| `methods` | no | The methods that get the header (upper-cased); empty: every one. `TRACE`, `TRACK` and `CONNECT` are refused: they never get it. |
+| `paths` | no | The paths that get the header, each exact or a prefix when it ends with `*` (as a rule's `path`); empty: every one. A request outside them goes out without it (audited `inject <id> skipped`). |
 | `note` | no | Free text for you. |
 
 Two injections of the same header, host, port and container are refused.
@@ -364,9 +368,46 @@ request decided for that host and port: the `Host` sent upstream is that
 host, and the gate does not follow redirects (a 3xx goes back to the
 agent, whose next request has no credential). The agent never holds the
 value; if a request of the agent carries it anyway, in the URL, a header or
-the body, as is, URL-escaped or in base64, it is refused with
+the body, as is, URL-escaped (in any case), in hex or in base64 (standard
+or URL alphabet, at any alignment inside a longer blob), it is refused with
 `E_SECRET_EGRESS`, whatever its host and whatever rule or grant would let
-it pass.
+it pass. While the gate holds any secret, it scans every byte it can read
+of what the agent sends:
+
+- a body over the buffer limit is scanned as it streams; the request is
+  aborted before a whole value goes out (`E_SECRET_EGRESS`);
+- a body with a `Content-Encoding` of `gzip` or `deflate` is decoded to be
+  scanned (up to 256 MiB decoded); any other encoding, or an encoded body
+  over the buffer limit, is refused (`E_SECRET_EGRESS`, rule
+  `secret:unscannable`);
+- a WebSocket's frames from the agent are unmasked and scanned (across
+  frames); the frame that completes a value is not sent and the
+  connection closes. The gate removes the agent's
+  `Sec-WebSocket-Extensions` (no compression) and closes a WebSocket whose
+  target chose one anyway; a frame over the buffer limit closes it too;
+- a `CONNECT` tunnel decided at the domain is scanned as it streams, and
+  closed on a value.
+
+**The secret does not come back.** An injected request asks for an
+unencoded response (`Accept-Encoding: identity`) and loses its
+`Max-Forwards`. The value (as is, URL-escaped, hex, base64) is overwritten
+with `*` in the response's status line, header names and values, and body
+(the length stays the same); its trailers are dropped. A `gzip` or
+`deflate` response is decoded first and goes to the agent decoded; any
+other encoding is refused (`E_INJECT`). `TRACE` and `TRACK` to a host and
+port with an injection are refused (`E_METHOD`, rule `inject:trace`), and
+an injected request may not upgrade to a WebSocket (`E_INJECT`). The audit
+says `redacted the injected secret <name>`.
+
+**What is not covered.** A value the agent splits across requests,
+frames or tunnel reads (each part goes out before the last one completes
+it: in a WebSocket or a tunnel, the gate matches the whole value and closes
+the connection, but the parts before it are gone), or encodes otherwise
+(encrypted, compressed in an application format, reversed, any encoding
+not listed above). A `CONNECT` tunnel the gate does not decrypt carries the
+agent's TLS: its ciphertext cannot be scanned (decrypt it, or do not
+splice, to get the scan). A target that transforms the credential before
+reflecting it (hashed, re-encoded) is not redacted.
 
 **Audit.** A request that got a header is audited with
 `"injected": ["<id>:<Header>"]`: the injection and the header's name,

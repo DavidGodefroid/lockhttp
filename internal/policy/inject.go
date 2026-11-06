@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/textproto"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -32,18 +33,26 @@ type Inject struct {
 	// Credential names the value in the gate's secrets file ("secret" is
 	// a word config keys may not use).
 	Credential string `json:"credential"`
-	Note       string `json:"note,omitempty"`
+	// Methods limits the injection to these methods (upper case, sorted;
+	// empty: every method but TRACE and TRACK, which the gate refuses).
+	Methods []string `json:"methods,omitempty"`
+	// Paths limits it to these paths, each exact or a prefix when it ends
+	// with "*" (sorted; empty: every path).
+	Paths []string `json:"paths,omitempty"`
+	Note  string   `json:"note,omitempty"`
 }
 
 type rawInject struct {
-	ID         string `toml:"id"`
-	Container  string `toml:"container"`
-	Host       string `toml:"host"`
-	Port       int    `toml:"port"`
-	Header     string `toml:"header"`
-	Scheme     string `toml:"scheme"`
-	Credential string `toml:"credential"`
-	Note       string `toml:"note"`
+	ID         string   `toml:"id"`
+	Container  string   `toml:"container"`
+	Host       string   `toml:"host"`
+	Port       int      `toml:"port"`
+	Header     string   `toml:"header"`
+	Scheme     string   `toml:"scheme"`
+	Credential string   `toml:"credential"`
+	Methods    []string `toml:"methods"`
+	Paths      []string `toml:"paths"`
+	Note       string   `toml:"note"`
 }
 
 var (
@@ -135,6 +144,28 @@ func injectFromRaw(ri rawInject) (Inject, error) {
 			return Inject{}, err
 		}
 	}
+	for _, m := range ri.Methods {
+		m = strings.ToUpper(strings.TrimSpace(m))
+		if !methodRe.MatchString(m) {
+			return Inject{}, fmt.Errorf("inject %s: invalid method", ri.ID)
+		}
+		if m == "TRACE" || m == "TRACK" || m == "CONNECT" {
+			// TRACE and TRACK echo the request, its header included.
+			return Inject{}, fmt.Errorf("inject %s: the gate never injects into %s", ri.ID, m)
+		}
+		inj.Methods = append(inj.Methods, m)
+	}
+	for _, path := range ri.Paths {
+		if !strings.HasPrefix(path, "/") {
+			return Inject{}, fmt.Errorf("inject %s: a path must start with /", ri.ID)
+		}
+		if err := kconfig.CheckValue(product.P, "inject "+ri.ID+" path", path); err != nil {
+			return Inject{}, err
+		}
+		inj.Paths = append(inj.Paths, path)
+	}
+	inj.Methods = kconfig.SortedSet(inj.Methods)
+	inj.Paths = kconfig.SortedSet(inj.Paths)
 	return inj, nil
 }
 
@@ -146,6 +177,12 @@ func (i Inject) String() string {
 		s += " " + i.Scheme
 	}
 	s += " credential=" + i.Credential
+	if len(i.Methods) > 0 {
+		s += " methods=" + strings.Join(i.Methods, ",")
+	}
+	if len(i.Paths) > 0 {
+		s += " paths=" + strings.Join(i.Paths, ",")
+	}
 	if i.Container != "" {
 		s += " container=" + i.Container
 	} else {
@@ -159,13 +196,46 @@ func (i Inject) Applies(container, host string, port int) bool {
 	return i.Host == normHost(host) && i.Port == port && (i.Container == "" || i.Container == container)
 }
 
+// MatchesRequest reports whether i covers method and path (the escaped
+// path, as rules match it). TRACE and TRACK never match: they echo the
+// request, the injected header included.
+func (i Inject) MatchesRequest(method, path string) bool {
+	if method == "TRACE" || method == "TRACK" {
+		return false
+	}
+	if len(i.Methods) > 0 && !slices.Contains(i.Methods, method) {
+		return false
+	}
+	if len(i.Paths) == 0 {
+		return true
+	}
+	for _, p := range i.Paths {
+		if (Rule{Path: p}).MatchesPath(path) {
+			return true
+		}
+	}
+	return false
+}
+
 // InjectFor returns the injections that apply to a request of container
-// to host:port, a container-scoped one before an all-containers one of
-// the same header (only the first of each header applies).
+// to host:port (any method and path), a container-scoped one before an
+// all-containers one of the same header (only the first of each header
+// applies).
 func (p Policy) InjectFor(container, host string, port int) []Inject {
+	return p.injectFor(container, host, port, func(Inject) bool { return true })
+}
+
+// InjectForRequest is InjectFor for one method and path: an injection
+// whose methods or paths do not name them does not apply (and does not
+// hide an all-containers one).
+func (p Policy) InjectForRequest(container, host string, port int, method, path string) []Inject {
+	return p.injectFor(container, host, port, func(i Inject) bool { return i.MatchesRequest(method, path) })
+}
+
+func (p Policy) injectFor(container, host string, port int, keep func(Inject) bool) []Inject {
 	var scoped, all []Inject
 	for _, i := range p.Inject {
-		if !i.Applies(container, host, port) {
+		if !i.Applies(container, host, port) || !keep(i) {
 			continue
 		}
 		if i.Container != "" {

@@ -410,7 +410,11 @@ func (p Policy) Clone() Policy {
 		r.Methods = slices.Clone(r.Methods)
 		q.Rules = append(q.Rules, r)
 	}
-	q.Inject = slices.Clone(p.Inject)
+	q.Inject = nil
+	for _, i := range p.Inject {
+		i.Methods, i.Paths = slices.Clone(i.Methods), slices.Clone(i.Paths)
+		q.Inject = append(q.Inject, i)
+	}
 	return q
 }
 

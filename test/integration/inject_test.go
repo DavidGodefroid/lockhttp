@@ -3,6 +3,8 @@
 package integration
 
 import (
+	"encoding/base64"
+	"encoding/hex"
 	"io"
 	"net"
 	"net/http"
@@ -147,5 +149,61 @@ func TestCredentialInjection(t *testing.T) {
 	}
 	if strings.Contains(a, injectSecret) || strings.Contains(a, "guessed-by-the-agent") {
 		t.Fatalf("the audit holds a credential value:\n%s", a)
+	}
+}
+
+// An API that reflects the credential the gate added hands the agent
+// none of it: the gate redacts it from the response, refuses TRACE to
+// the host, and refuses the value the agent sends back, even in base64.
+func TestCredentialInjectionReflection(t *testing.T) {
+	setRuntime(t)
+	h := &human{answers: make(chan string, 8)}
+	stop := startConsoleWith(t, h, injectPolicyText)
+	defer stop()
+	secrets := filepath.Join(t.TempDir(), "secrets.json")
+	if err := os.WriteFile(secrets, []byte(`{"version":1,"secrets":{"ha-token":"`+injectSecret+`"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var traced bool
+	var mu sync.Mutex
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "TRACE" {
+			mu.Lock()
+			traced = true
+			mu.Unlock()
+		}
+		a := r.Header.Get("Authorization")
+		w.Header().Set("X-Echo", a)
+		_, _ = io.WriteString(w, "you sent "+a+" b64 "+base64.StdEncoding.EncodeToString([]byte(a)))
+	})}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { srv.Close() })
+	addr, _, _ := startGateWith(t, ln.Addr().String(), func(c *gate.Config) { c.Secrets = gate.NewSecrets(secrets) })
+	c := client(addr)
+
+	resp, body := get(t, c, "GET", "http://homeassistant:8123/api/echo", "")
+	if resp.StatusCode != 200 || !strings.HasPrefix(body, "you sent Bearer ****") {
+		t.Fatalf("echo: %s %q", resp.Status, body)
+	}
+	if strings.Contains(body, injectSecret) || strings.Contains(resp.Header.Get("X-Echo"), injectSecret) ||
+		strings.Contains(body, base64.StdEncoding.EncodeToString([]byte(injectSecret))[4:20]) {
+		t.Fatalf("the agent got the credential: %v %q", resp.Header, body)
+	}
+	resp, _ = get(t, c, "TRACE", "http://homeassistant:8123/api/echo", "")
+	if resp.StatusCode != 403 || resp.Header.Get("X-LockHTTP-Code") != "E_METHOD" {
+		t.Fatalf("TRACE: %s %v", resp.Status, resp.Header)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if traced {
+		t.Fatal("TRACE reached the API")
+	}
+	resp, _ = get(t, c, "GET", "http://trusted.test/x?h="+hex.EncodeToString([]byte(injectSecret)), "")
+	if resp.StatusCode != 403 || resp.Header.Get("X-LockHTTP-Code") != "E_SECRET_EGRESS" {
+		t.Fatalf("hex leak: %s %v", resp.Status, resp.Header)
 	}
 }
