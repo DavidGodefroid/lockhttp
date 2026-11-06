@@ -256,3 +256,17 @@ func (p Policy) injectFor(container, host string, port int, keep func(Inject) bo
 	}
 	return out
 }
+
+// InjectAt returns every injection to host:port, whatever its container,
+// methods and paths: each response from that host and port may carry one
+// of their credentials (stored by an injected request, served to another
+// path or another container).
+func (p Policy) InjectAt(host string, port int) []Inject {
+	var out []Inject
+	for _, i := range p.Inject {
+		if i.Host == normHost(host) && i.Port == port {
+			out = append(out, i)
+		}
+	}
+	return out
+}

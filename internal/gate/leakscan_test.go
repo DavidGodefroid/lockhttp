@@ -184,3 +184,28 @@ func TestRedactResponse(t *testing.T) {
 		t.Fatal("a br response was not refused")
 	}
 }
+
+// A name (host, header name) is matched ignoring case, dots and
+// percent-escapes; a clean name is not.
+func TestFormsFindFold(t *testing.T) {
+	fs := testForms()
+	for _, s := range []string{
+		haSecret + ".example.com", strings.ToUpper(haSecret) + ".example.com:443",
+		"ha-long-li.ved-0123.456789.example.com", "X-Ha-Long-Lived-0123456789",
+		strings.ReplaceAll(haSecret, "-", "%2d") + ".example.com",
+		hex.EncodeToString([]byte(haSecret)) + ".example.com",
+	} {
+		if n, ok := fs.findFold([]byte(s)); !ok || n != "ha-token" {
+			t.Errorf("%q: not found", s)
+		}
+	}
+	for _, s := range []string{"api.example.com", "X-Request-Id", "ha-long-lived.example.com"} {
+		if _, ok := fs.findFold([]byte(s)); ok {
+			t.Errorf("%q: found", s)
+		}
+	}
+	var none *formSet
+	if _, ok := none.findFold([]byte(haSecret)); ok {
+		t.Error("an empty set found a value")
+	}
+}

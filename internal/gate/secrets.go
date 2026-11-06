@@ -159,6 +159,19 @@ func (s *Secrets) Leak(parts ...[]byte) (string, bool) {
 	return "", false
 }
 
+// LeakFold is Leak for the parts that are names: a host (the absolute
+// URL's, the Host header, a CONNECT authority) or a header name, matched
+// ignoring case and dots (see formSet.findFold).
+func (s *Secrets) LeakFold(parts ...string) (string, bool) {
+	fs := s.Forms()
+	for _, p := range parts {
+		if name, ok := fs.findFold([]byte(p)); ok {
+			return name, true
+		}
+	}
+	return "", false
+}
+
 // Forms returns the forms of every value ever loaded (nil with none).
 func (s *Secrets) Forms() *formSet {
 	if s == nil || s.path == "" {

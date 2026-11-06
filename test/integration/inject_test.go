@@ -207,3 +207,106 @@ func TestCredentialInjectionReflection(t *testing.T) {
 		t.Fatalf("hex leak: %s %v", resp.Status, resp.Header)
 	}
 }
+
+// An injection limited to /api/*: the credential the API stores there is
+// redacted from the other paths of the host, two ranges do not join it
+// back, and a value in the host or a header name is refused before the
+// gate resolves or audits it.
+func TestCredentialInjectionWholeHost(t *testing.T) {
+	setRuntime(t)
+	conf := strings.Replace(injectPolicyText, `credential = "ha-token"`, `credential = "ha-token"
+paths      = ["/api/*"]`, 1)
+	h := &human{answers: make(chan string, 8)}
+	stop := startConsoleWith(t, h, conf)
+	defer stop()
+	secrets := filepath.Join(t.TempDir(), "secrets.json")
+	if err := os.WriteFile(secrets, []byte(`{"version":1,"secrets":{"ha-token":"`+injectSecret+`"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var stored string
+	var ranged, names bool
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.Header.Get("Range") != "" || r.Header.Get("If-Range") != "" {
+			ranged = true
+		}
+		for k := range r.Header {
+			names = names || strings.Contains(strings.ToLower(k), injectSecret)
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			stored = r.Header.Get("Authorization")
+			_, _ = io.WriteString(w, "stored")
+			return
+		}
+		http.ServeContent(w, r, "log", time.Time{}, strings.NewReader("log: "+stored+" end"))
+	})}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { srv.Close() })
+	auditDir := filepath.Join(t.TempDir(), "audit")
+	addr, _, _ := startGateWith(t, ln.Addr().String(), func(c *gate.Config) {
+		c.Secrets = gate.NewSecrets(secrets)
+		log, err := gate.NewAuditLog(auditDir, nil, time.Now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.Audit = log
+	})
+	c := client(addr)
+	if resp, body := get(t, c, "GET", "http://homeassistant:8123/api/states", ""); resp.StatusCode != 200 || body != "stored" {
+		t.Fatalf("store: %s %q", resp.Status, body)
+	}
+	resp, body := get(t, c, "GET", "http://homeassistant:8123/log", "")
+	if resp.StatusCode != 200 || strings.Contains(body, injectSecret) || !strings.HasPrefix(body, "log: Bearer ****") {
+		t.Fatalf("/log: %s %q", resp.Status, body)
+	}
+	var joined string
+	for _, rg := range []string{"bytes=0-23", "bytes=24-"} {
+		req, _ := http.NewRequest("GET", "http://homeassistant:8123/log", nil)
+		req.Header.Set("Range", rg)
+		r, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(r.Body)
+		r.Body.Close()
+		joined += string(b)
+	}
+	if strings.Contains(joined, injectSecret) || strings.Contains(joined, injectSecret[:10]) {
+		t.Fatalf("the ranges gave the secret: %q", joined)
+	}
+	resp, _ = get(t, c, "GET", "http://"+injectSecret+".example.com/", "")
+	if resp.StatusCode != 403 || resp.Header.Get("X-LockHTTP-Code") != "E_SECRET_EGRESS" {
+		t.Fatalf("host: %s %v", resp.Status, resp.Header)
+	}
+	req, _ := http.NewRequest("GET", "http://homeassistant:8123/log", nil)
+	req.Header.Set("X-"+injectSecret, "1")
+	r, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Body.Close()
+	if r.StatusCode != 403 || r.Header.Get("X-LockHTTP-Code") != "E_SECRET_EGRESS" {
+		t.Fatalf("header name: %s %v", r.Status, r.Header)
+	}
+	mu.Lock()
+	if ranged || names {
+		t.Fatalf("the API got a Range (%v) or the header name (%v)", ranged, names)
+	}
+	mu.Unlock()
+	time.Sleep(100 * time.Millisecond)
+	files, _ := filepath.Glob(filepath.Join(auditDir, "gate-*.jsonl"))
+	var audit strings.Builder
+	for _, f := range files {
+		b, _ := os.ReadFile(f)
+		audit.Write(b)
+	}
+	if a := strings.ToLower(audit.String()); strings.Contains(a, injectSecret) || strings.Count(a, `"rule":"secret:injected"`) != 2 {
+		t.Fatalf("audit:\n%s", audit.String())
+	}
+}

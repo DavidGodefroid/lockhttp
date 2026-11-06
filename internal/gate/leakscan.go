@@ -92,6 +92,29 @@ func (fs *formSet) find(data []byte) (string, bool) {
 	return "", false
 }
 
+// findFold is find, ignoring ASCII case, on data and on data without its
+// dots: for a host name (DNS ignores case, a label boundary may split the
+// value) and a header name (canonicalized on the way in).
+func (fs *formSet) findFold(data []byte) (string, bool) {
+	if fs.empty() {
+		return "", false
+	}
+	low := bytes.ToLower(data)
+	for _, d := range [][]byte{low, bytes.ReplaceAll(low, []byte("."), nil)} {
+		for _, f := range fs.forms {
+			if bytes.Contains(d, bytes.ToLower(f.b)) {
+				return f.name, true
+			}
+		}
+		if un, err := url.PathUnescape(string(d)); err == nil && un != string(d) {
+			if n, ok := fs.findFold([]byte(un)); ok {
+				return n, ok
+			}
+		}
+	}
+	return "", false
+}
+
 // findDecoded is find, also on data percent-decoded (any case of the
 // escapes, '+' as a space) when it holds a '%'.
 func (fs *formSet) findDecoded(data []byte) (string, bool) {

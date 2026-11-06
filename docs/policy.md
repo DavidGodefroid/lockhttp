@@ -371,8 +371,13 @@ value; if a request of the agent carries it anyway, in the URL, a header or
 the body, as is, URL-escaped (in any case), in hex or in base64 (standard
 or URL alphabet, at any alignment inside a longer blob), it is refused with
 `E_SECRET_EGRESS`, whatever its host and whatever rule or grant would let
-it pass. While the gate holds any secret, it scans every byte it can read
-of what the agent sends:
+it pass. The names the agent writes are checked too, ignoring case, dots
+and percent-escapes: the host of the URL and of the `Host` header, the
+`CONNECT` authority and the header names. A value in one of them is refused
+first (`E_SECRET_EGRESS`), before the floor, the hub's address check (which
+resolves the name) and the hub, and the audit shows the host as redacted.
+While the gate holds any secret, it scans every byte it can read of what
+the agent sends:
 
 - a body over the buffer limit is scanned as it streams; the request is
   aborted before a whole value goes out (`E_SECRET_EGRESS`);
@@ -388,16 +393,24 @@ of what the agent sends:
 - a `CONNECT` tunnel decided at the domain is scanned as it streams, and
   closed on a value.
 
-**The secret does not come back.** An injected request asks for an
-unencoded response (`Accept-Encoding: identity`) and loses its
-`Max-Forwards`. The value (as is, URL-escaped, hex, base64) is overwritten
-with `*` in the response's status line, header names and values, and body
-(the length stays the same); its trailers are dropped. A `gzip` or
-`deflate` response is decoded first and goes to the agent decoded; any
-other encoding is refused (`E_INJECT`). `TRACE` and `TRACK` to a host and
-port with an injection are refused (`E_METHOD`, rule `inject:trace`), and
-an injected request may not upgrade to a WebSocket (`E_INJECT`). The audit
-says `redacted the injected secret <name>`.
+**The secret does not come back.** The rules below apply to every request
+to a host and port that has an injection, whatever the injection's
+container, methods and paths, and whether this request got the header or
+not: a credential one request carried may be stored by the target and
+served back on another path, or to another container. Such a request asks
+for an unencoded, whole response (`Accept-Encoding: identity`; its
+`Range` and `If-Range` are removed, since two ranges could join the halves
+of a value each redacted alone) and loses its `Max-Forwards`. A partial
+response (`206`, a `Content-Range`, `multipart/byteranges`) or one that
+switches protocols is refused (`E_INJECT`). Every value the gate has
+loaded (as is, URL-escaped, hex, base64) is overwritten with `*` in the
+response's status line, header names and values, and body (the length
+stays the same); its trailers are dropped. A `gzip` or `deflate` response
+is decoded first and goes to the agent decoded; any other encoding is
+refused (`E_INJECT`). `TRACE` and `TRACK` to the host and port are refused
+(`E_METHOD`, rule `inject:trace`), and no request to it may upgrade to a
+WebSocket (`E_INJECT`). The audit says `redacted the injected secret
+<name>`.
 
 **What is not covered.** A value the agent splits across requests,
 frames or tunnel reads (each part goes out before the last one completes
@@ -407,7 +420,12 @@ the connection, but the parts before it are gone), or encodes otherwise
 not listed above). A `CONNECT` tunnel the gate does not decrypt carries the
 agent's TLS: its ciphertext cannot be scanned (decrypt it, or do not
 splice, to get the scan). A target that transforms the credential before
-reflecting it (hashed, re-encoded) is not redacted.
+reflecting it (hashed, re-encoded) is not redacted, nor one that serves a
+part of it through its own API (an offset or a length in the query, a
+substring): each response is redacted alone, so parts read in separate
+responses are not matched. A value split over several hosts or requests'
+host names, or written as an internationalized (punycode) name, is not
+matched in the host.
 
 **Audit.** A request that got a header is audited with
 `"injected": ["<id>:<Header>"]`: the injection and the header's name,

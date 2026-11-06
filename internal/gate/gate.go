@@ -287,8 +287,12 @@ func (g *Gate) handle(ctx context.Context, c net.Conn) {
 		}
 		if err != nil {
 			id := newRequestID()
+			h := hostOnly(req.Host)
+			if _, leak := g.cfg.Secrets.LeakFold(req.Host); leak {
+				h = redactedTarget
+			}
 			g.audit(wire.Record{Base: audit.Base{Event: "refused", Decision: "refused", Code: string(product.CodeSourceUnknown), Error: err.Error()},
-				RequestID: id, Target: wire.Target{Method: req.Method, Host: hostOnly(req.Host)}, Rule: "source"})
+				RequestID: id, Target: wire.Target{Method: req.Method, Host: h}, Rule: "source"})
 			writeRefusal(c, id, string(product.CodeSourceUnknown), "the gate cannot tell which container sent this request", req.Method == http.MethodConnect)
 			return
 		}
@@ -453,6 +457,19 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 	pol, _ := g.Policy()
 	r := decide.Request{Phase: decide.PhaseConnect, Container: src.Container, Via: src.Via, Method: http.MethodConnect, Host: host, Port: port}
 	t := wire.Target{Phase: "connect", TLS: "connect", Method: http.MethodConnect, Host: host, Port: port}
+	// A value in the authority (or a header name) is refused first: the
+	// floor and the hub would audit it, and the hub's check resolves it.
+	if name, ok := g.cfg.Secrets.LeakFold(append([]string{req.Host, req.RequestURI}, rawHeaderNames(req.Header)...)...); ok {
+		t.Host = redactedTarget
+		g.refuse(c, decide.Decision{Verdict: decide.Deny, Rule: "secret:injected", Code: product.CodeSecretEgress,
+			Reason: "the CONNECT authority or a header name carries the value of the secret " + name + ", which only the gate adds: never send it yourself"}, id, src, t, true)
+		return
+	}
+	if name, ok := g.cfg.Secrets.Leak(headerValues(req.Header)...); ok {
+		g.refuse(c, decide.Decision{Verdict: decide.Deny, Rule: "secret:injected", Code: product.CodeSecretEgress,
+			Reason: "a header of the CONNECT carries the value of the secret " + name + ", which only the gate adds: never send it yourself"}, id, src, t, true)
+		return
+	}
 	if d, stop := decide.Floor(pol, r); stop {
 		g.refuse(c, d, id, src, t, true)
 		return

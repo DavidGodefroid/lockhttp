@@ -101,6 +101,13 @@ credential = "mine"
 	if got := p.InjectFor("lea-x", "api.example.com", 443); len(got) != 1 || got[0].ID != "all" {
 		t.Fatalf("all: %+v", got)
 	}
+	// InjectAt sees both, whatever the container.
+	if got := p.InjectAt("API.example.com", 443); len(got) != 2 {
+		t.Fatalf("InjectAt: %+v", got)
+	}
+	if got := p.InjectAt("api.example.com", 80); len(got) != 0 {
+		t.Fatalf("InjectAt other port: %+v", got)
+	}
 }
 
 // A policy without injection keeps the fingerprint it had before

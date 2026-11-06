@@ -70,6 +70,17 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 	if req.URL.RawQuery != "" {
 		t.QueryHash = "sha256:" + sum([]byte(req.URL.RawQuery))
 	}
+	// A value in a name the agent wrote (the host of the URL or of the Host
+	// header, a header name) is refused before anything else: the floor's
+	// and the hub's checks would audit the host, and the hub's resolves it
+	// (a DNS query would carry the value out).
+	if name, ok := g.cfg.Secrets.LeakFold(append([]string{req.URL.Host, req.Host, host}, rawHeaderNames(req.Header)...)...); ok {
+		t.Host, t.Path, t.QueryLen, t.QueryHash, t.BodyFP, t.ReqHeaders = redactedTarget, redactedTarget, 0, "", "", nil
+		d := decide.Decision{Verdict: decide.Deny, Rule: "secret:injected", Code: product.CodeSecretEgress,
+			Reason: "the request's host or a header name carries the value of the secret " + name + ", which only the gate adds: never send it yourself"}
+		g.refuse(w, d, id, src, t, false)
+		return false
+	}
 	// A secret the gate injects never comes from the agent. The check runs
 	// first so that every refusal below, the floor's and the hub's too,
 	// audits a target with none of the value: it may be in the path or
@@ -82,7 +93,7 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 		leak = leakName != ""
 	}
 	if leak {
-		t.Path, t.QueryLen, t.QueryHash, t.BodyFP = "(redacted: carries an injected secret)", 0, "", ""
+		t.Path, t.QueryLen, t.QueryHash, t.BodyFP = redactedTarget, 0, "", ""
 	}
 	if d, stop := decide.Floor(pol, r); stop {
 		g.refuse(w, d, id, src, t, true)
@@ -107,7 +118,15 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 		return rest == nil
 	}
 	ws := strings.EqualFold(req.Header.Get("Upgrade"), "websocket")
-	if pol != nil && (req.Method == "TRACE" || req.Method == "TRACK") && len(pol.InjectFor(src.Container, host, port)) > 0 {
+	// Every injection to this host and port, whatever its container,
+	// methods and paths: a credential one request got may be stored and
+	// served back on another path, or to another container, so every
+	// request to the host and port gets the response rules below.
+	var atHost []policy.Inject
+	if pol != nil {
+		atHost = pol.InjectAt(host, port)
+	}
+	if (req.Method == "TRACE" || req.Method == "TRACK") && len(atHost) > 0 {
 		// TRACE echoes the request: never to a host the gate injects into.
 		d := decide.Decision{Verdict: decide.Deny, Rule: "inject:trace", Code: product.CodeMethod,
 			Reason: req.Method + " echoes the request, and the gate adds a credential to " + host + ": refused"}
@@ -115,11 +134,11 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 		return rest == nil
 	}
 	injects, injectWarn := g.injectsFor(pol, src.Container, host, port, tlsMode, req.Method, path)
-	if ws && len(injects) > 0 {
+	if ws && len(atHost) > 0 {
 		// The gate does not scan a WebSocket's frames from the target for
-		// the credential it adds: an injected request does not upgrade.
-		d := decide.Decision{Verdict: decide.Deny, Rule: "inject:" + injects[0].ID, Code: product.CodeInject,
-			Reason: "the gate adds a credential to this request (inject " + injects[0].ID + "): it may not upgrade to a WebSocket"}
+		// the credential it adds: no request to an injected host upgrades.
+		d := decide.Decision{Verdict: decide.Deny, Rule: "inject:" + atHost[0].ID, Code: product.CodeInject,
+			Reason: "the gate adds a credential to " + host + " (inject " + atHost[0].ID + "): a request to it may not upgrade to a WebSocket"}
 		g.refuse(w, d, id, src, t, false)
 		return rest == nil
 	}
@@ -211,12 +230,21 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 		injected[inj.Credential] = append(injected[inj.Credential], raw)
 	}
 	var respForms *formSet
-	if len(injected) > 0 {
-		// The response is scanned for the value: it comes unencoded, and
-		// no proxy on the way echoes the request (Max-Forwards).
-		respForms = formsOf(injected)
+	if len(atHost) > 0 {
+		// Every response from a host the gate injects into is scanned for
+		// the values (every one loaded: a rotated-out one may be stored
+		// there too), whether this request got the header or not: it
+		// comes unencoded, whole (no range: two ranges would join the
+		// halves of a redacted value), and no proxy on the way echoes
+		// the request (Max-Forwards).
+		respForms = g.cfg.Secrets.Forms()
+		if respForms.empty() && len(injected) > 0 {
+			respForms = formsOf(injected)
+		}
 		out.Header.Set("Accept-Encoding", "identity")
-		out.Header.Del("Max-Forwards")
+		for _, h := range []string{"Max-Forwards", "Range", "If-Range"} {
+			out.Header.Del(h)
+		}
 	}
 	if ws && !fs.empty() {
 		// The client's frames are scanned: no compression of them.
@@ -251,7 +279,7 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 		if err == nil {
 			resp.Body.Close()
 		}
-		t.Path, t.QueryLen, t.QueryHash, t.BodyFP = "(redacted: carries an injected secret)", 0, "", ""
+		t.Path, t.QueryLen, t.QueryHash, t.BodyFP = redactedTarget, 0, "", ""
 		d := decide.Decision{Verdict: decide.Deny, Rule: "secret:injected", Code: product.CodeSecretEgress,
 			Reason: "the streamed body carries the value of the secret " + streamScan.found[0] + ", which only the gate adds: never send it yourself"}
 		g.refuse(w, d, id, src, t, false)
@@ -265,10 +293,21 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 		return true
 	}
 	defer resp.Body.Close()
-	if respForms != nil {
-		if why := redactResponse(resp, respForms, &rec); why != "" {
-			d := decide.Decision{Verdict: decide.Deny, Rule: "inject:" + injects[0].ID, Code: product.CodeInject,
-				Reason: why + ": the gate cannot check it for the credential it added"}
+	if len(atHost) > 0 {
+		why := ""
+		if ct := strings.ToLower(resp.Header.Get("Content-Type")); resp.StatusCode == http.StatusPartialContent ||
+			resp.Header.Get("Content-Range") != "" || strings.HasPrefix(ct, "multipart/byteranges") {
+			// The gate asked for the whole response: a part of it cannot be
+			// checked (the rest of a value may be in another part).
+			why = "the response is partial (" + resp.Status + ")"
+		} else if resp.StatusCode == http.StatusSwitchingProtocols {
+			why = "the response switches protocols"
+		} else if !respForms.empty() {
+			why = redactResponse(resp, respForms, &rec)
+		}
+		if why != "" {
+			d := decide.Decision{Verdict: decide.Deny, Rule: "inject:" + atHost[0].ID, Code: product.CodeInject,
+				Reason: why + ": the gate cannot check it for the credential it adds to " + host}
 			g.refuse(w, d, id, src, t, false)
 			return false
 		}
@@ -409,6 +448,31 @@ func (c *countWriter) Write(p []byte) (int, error) {
 	n, err := c.w.Write(p)
 	c.n += int64(n)
 	return n, err
+}
+
+// redactedTarget replaces, in the audit, a part of the target that
+// carries an injected secret.
+const redactedTarget = "(redacted: carries an injected secret)"
+
+// headerValues lists the request's header values, for the leak check.
+func headerValues(h http.Header) [][]byte {
+	var out [][]byte
+	for _, vs := range h {
+		for _, v := range vs {
+			out = append(out, []byte(v))
+		}
+	}
+	return out
+}
+
+// rawHeaderNames lists the request's header names as received, for the
+// leak check.
+func rawHeaderNames(h http.Header) []string {
+	out := make([]string, 0, len(h))
+	for k := range h {
+		out = append(out, k)
+	}
+	return out
 }
 
 // headerNames lists the request's header names (lower case), for the
