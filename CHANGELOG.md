@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-11-06
+
+Built on lockkit v0.13.0.
+
+### Added
+
+- Proxy-side credential injection (#38, #41). A policy `inject` entry has the
+  gate add a header (e.g. `Authorization: Bearer …`) for one exact host and
+  port, using a secret from its own `--secrets` file, so the agent never holds
+  the credential. A request carrying such a secret is refused with
+  `E_SECRET_EGRESS`, and a missing secret with the new code `E_INJECT`.
+
+### Changed
+
+- CI runs the macOS job on `main` and nightly, not on pull requests (#39).
+
 ## [0.7.1] - 2026-11-01
 
 ### Changed
@@ -319,7 +335,9 @@ separate signer, Claude API allowlist) available behind `--ca-cert` and
 - Release pipeline: goreleaser, cosign keyless signatures, SBOMs,
   SHA-pinned actions, `scripts/install.sh` with signature verification.
 
-[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.8.0
+[0.7.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.7.1
 [0.7.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.7.0
 [0.6.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.6.0
 [0.5.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.5.1
