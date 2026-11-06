@@ -3,38 +3,42 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FAQ — lockhttp</title>
-  <meta name="description" content="Frequently asked questions about lockhttp.">
+  <title>lockhttp FAQ</title>
+  <meta name="description" content="Short answers about lockhttp: lea, agents, allowlists, unanswered requests, TLS decryption, self-approval, free rules, credentials and the licence.">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f4efe4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16140f" media="(prefers-color-scheme: dark)">
   <link rel="canonical" href="https://lockhttp.com/faq/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="lockhttp">
-  <meta property="og:title" content="FAQ — lockhttp">
-  <meta property="og:description" content="Frequently asked questions about lockhttp.">
+  <meta property="og:title" content="lockhttp FAQ">
+  <meta property="og:description" content="Short answers about lockhttp: lea, agents, allowlists, unanswered requests, TLS decryption, self-approval, free rules, credentials and the licence.">
   <meta property="og:url" content="https://lockhttp.com/faq/">
   <meta property="og:image" content="https://lockhttp.com/assets/og.png">
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="lockhttp — Your AI browses. You hold the key.">
+  <meta property="og:image:alt" content="lockhttp: your agent browses, you hold the key.">
   <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="FAQ — lockhttp">
-  <meta name="twitter:description" content="Frequently asked questions about lockhttp.">
+  <meta name="twitter:title" content="lockhttp FAQ">
+  <meta name="twitter:description" content="Short answers about lockhttp: lea, agents, allowlists, unanswered requests, TLS decryption, self-approval, free rules, credentials and the licence.">
   <meta name="twitter:image" content="https://lockhttp.com/assets/og.png">
-  <meta name="twitter:image:alt" content="lockhttp — Your AI browses. You hold the key.">
+  <meta name="twitter:image:alt" content="lockhttp: your agent browses, you hold the key.">
   <link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
-  <link rel="stylesheet" href="../assets/style.css">
+  <link rel="preload" href="../assets/fonts/zilla-slab-700.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../assets/fonts/source-serif-4-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../assets/tokens.css">
+  <link rel="stylesheet" href="../assets/lock-site.css">
   <script src="../assets/anchors.js" defer></script>
+  <script src="../assets/copy.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <div class="wrap">
-      <a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="32" height="32"><span class="wordmark">lock<span>http</span></span></a>
+      <a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="32" height="32"><span class="wordmark">lockhttp</span></a>
       <nav class="site-nav" aria-label="Main">
         <ul>
           <li><a href="../">Home</a></li>
@@ -49,49 +53,102 @@
   </header>
   <main id="main" tabindex="-1">
     <div class="wrap">
-<h1>FAQ</h1>
-<div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.8.0</code> is out as a pre-release and runs in Docker only (one <code>lockhttp</code> launcher, a cosign-signed image): command names are fixed, flags may still move. TLS decryption ships in it and is optional, wired by lea: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
-<div class="prose">
-<h3>Is lockhttp ready to use?</h3>
-<p>It is a pre-release: <code>v0.8.0</code> is out, built on lockkit v0.13.0. Try it, report what breaks; flags may still move before a stable release.</p>
 
-<h3>Do I need lea?</h3>
-<p>Yes, for now. lockhttp relies on lea’s topology: each agent container on its own internal network, a proxy container as the only way out, and a source map naming the container behind each address. The gate is a plain HTTP(S) proxy, but the guarantee comes from that topology.</p>
-
-<h3>Why not a simple domain allowlist?</h3>
-<p>Because an allowed domain is allowed for reads and writes. lockhttp keeps reads of trusted hosts free and stops writes, uploads and unknown hosts for a human, with a trace of who asked.</p>
-
-<h3>What happens when nobody answers?</h3>
-<p>Requests that need a human are held 60 s, then refused with <code>E_PENDING</code>; the ticket stays pending on the hub and the same request goes through once you approve it. When the hub ticket expires unanswered, the agent gets <code>E_TIMEOUT</code>. With no console running (<code>lox up</code> starts it), they are refused at once with <code>E_NO_CONSOLE</code>, while trusted reads continue.</p>
-
-<h3>Does lockhttp decrypt my traffic?</h3>
-<p>Only if you turn it on. Without it, lockhttp decides HTTPS on the host name and port (CONNECT and SNI). With a CA generated per installation (<code>lockhttp ca init</code>), trusted only inside lea’s containers, and the signer that holds its key, the gate decrypts and decides each request. Hosts that pin their certificates go in a splice list and stay decided at the domain.</p>
-
-<h3>Can the agent approve its own request?</h3>
-<p>No. Approvals happen only on <a href="https://github.com/DavidGodefroid/lockhub">lockhub</a>, outside the agent’s containers: in <code>lox approve</code>, lea’s deck or a paired phone. Each held request is a <code>NeverAuto</code> ticket, the hub signs your decision and the gate checks it. The agent cannot reach the hub: its containers are not on the hub’s network, and the gate refuses the hub’s addresses as targets.</p>
-
-<h3>Can I let some requests through without asking?</h3>
-<p>Yes: a <code>free</code> rule, written and confirmed by you in the console’s review, scoped to a container or to all. An <code>auto</code> rule stays valid in the policy (and some classes, such as uploads, messaging, publishing and pushes, can never be <code>auto</code>), but under the hub it asks like <code>ask</code>: every held request is a <code>NeverAuto</code> ticket a human answers.</p>
-
-<h3>Is there an MCP server?</h3>
-<p>No, not yet. Agents meet lockhttp as a proxy; its refusal pages tell them what to ask of you.</p>
-
-<h3>Which licence?</h3>
-<p>Apache 2.0, like the rest of the Lock family.</p>
-
+<p class="eyebrow">FAQ</p>
+<h1>Frequently asked questions</h1>
+<p class="lead prose">Short answers, each drawn from the README and the docs. For anything not covered here, see the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/usage.md">usage guide</a>.</p>
+<div class="faq prose">
+<section aria-labelledby="ready">
+  <h2 id="ready">Is lockhttp ready to use?</h2>
+  <p>It is a pre-release: <code>v0.8.0</code> is out, built on lockkit v0.13.0. Command names are fixed; flags may still move before a stable release.</p>
+  <p>Try it and report what breaks.</p>
+</section>
+<section aria-labelledby="agents">
+  <h2 id="agents">Which AI agents does it work with?</h2>
+  <p>Any agent and any HTTP client: lockhttp is a proxy, not an agent plugin. It sees requests, whatever tool sent them.</p>
+  <p>The agent must run in <a href="https://github.com/DavidGodefroid/lea">lea</a>, which runs Claude Code in containers today.</p>
+</section>
+<section aria-labelledby="lea">
+  <h2 id="lea">Do I need lea?</h2>
+  <p>Yes, for now. lockhttp relies on lea’s topology: each agent container on its own internal network, a proxy container as the only way out, and a source map naming the container behind each address.</p>
+  <p>The gate is a plain HTTP(S) proxy, but the guarantee comes from that topology.</p>
+</section>
+<section aria-labelledby="allowlist">
+  <h2 id="allowlist">Why not a simple domain allowlist?</h2>
+  <p>Because an allowed domain is allowed for reads and writes. lockhttp keeps reads of trusted hosts free, and stops writes, uploads and unknown hosts for a human, with a trace of who asked.</p>
+</section>
+<section aria-labelledby="unanswered">
+  <h2 id="unanswered">What happens when nobody answers?</h2>
+  <p>A request that needs a human is held 60 s, then refused with <code>E_PENDING</code>. The ticket stays pending on the hub, and the same request goes through once you approve it.</p>
+  <p>When the ticket expires unanswered, the agent gets <code>E_TIMEOUT</code>. With no console running, asks are refused at once with <code>E_NO_CONSOLE</code>, while trusted reads continue.</p>
+</section>
+<section aria-labelledby="decrypt">
+  <h2 id="decrypt">Does lockhttp decrypt my traffic?</h2>
+  <p>Only if you turn it on. Without it, lockhttp decides HTTPS on the host name and port (<code>CONNECT</code> and SNI).</p>
+  <p>With a CA made per installation (<code>lockhttp ca init</code>), trusted only inside lea’s containers, and the signer that holds its key, the gate decrypts and decides each request. Hosts that pin their certificates go in a splice list and stay decided at the domain.</p>
+</section>
+<section aria-labelledby="self">
+  <h2 id="self">Can the agent approve its own request?</h2>
+  <p>No. Approvals happen only on <a href="https://github.com/DavidGodefroid/lockhub">lockhub</a>, outside the agent’s containers: in <code>lox run</code>, <code>lox approve</code>, lea’s deck or a paired phone.</p>
+  <p>The hub signs your decision and the gate checks it. The agent cannot reach the hub: its containers are not on the hub’s network, and the gate refuses the hub’s addresses as targets.</p>
+</section>
+<section aria-labelledby="free">
+  <h2 id="free">Can I let some requests through without asking?</h2>
+  <p>Yes: a <code>free</code> rule, written and confirmed by you in the console’s review, scoped to a container or to all.</p>
+  <p>An <code>auto</code> rule asks like <code>ask</code>: every held request is a <code>NeverAuto</code> ticket, so <code>lox run</code>’s auto mode never answers it.</p>
+</section>
+<section aria-labelledby="tokens">
+  <h2 id="tokens">Can the agent call an API without holding its token?</h2>
+  <p>Yes, since v0.8.0. A policy <code>inject</code> entry has the gate add the credential header for one exact host and port, from its own secrets file. <a href="../how-it-works/#inject">How it works</a>.</p>
+</section>
+<section aria-labelledby="mcp">
+  <h2 id="mcp">Is there an MCP server?</h2>
+  <p>No. Agents meet lockhttp as a proxy; its refusal pages tell them what to ask of you.</p>
+</section>
+<section aria-labelledby="licence">
+  <h2 id="licence">Which licence?</h2>
+  <p>Apache 2.0, like the rest of the Lock Family.</p>
+</section>
 </div>
+
     </div>
   </main>
   <footer class="site-footer">
-    <div class="wrap">
-      <ul>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp">Source on GitHub</a></li>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/README.md">README</a></li>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">lea integration contract</a></li>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">Design decisions</a></li>
-        <li><a href="https://lockfamily.dev/">The Lock family</a></li>
-      </ul>
-      <p>Pre-release: <a href="https://github.com/DavidGodefroid/lockhttp/releases">v0.8.0</a> is out. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+    <div class="wrap footer-grid">
+      <div class="footer-about">
+        <a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="32" height="32"><span class="wordmark">lockhttp</span></a>
+        <p>Outbound HTTP(S) for AI agents: reads of trusted hosts pass, and anything that sends data or reaches an unknown host waits for you.</p>
+        <p class="family-link">Part of the <a href="https://lockfamily.dev">Lock Family</a>, harness security for AI agents.</p>
+      </div>
+      <nav aria-labelledby="footer-lock">
+        <h2 id="footer-lock">lockhttp</h2>
+        <ul>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp">Source on GitHub</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/README.md">README</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/usage.md">Usage guide</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/security-model.md">Security model</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/CHANGELOG.md">Changelog</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/SECURITY.md">Report a vulnerability</a></li>
+        </ul>
+      </nav>
+      <nav class="family-strip" aria-labelledby="footer-family">
+        <h2 id="footer-family">The Lock Family</h2>
+        <ul>
+          <li data-lock="locksql"><a href="https://github.com/DavidGodefroid/locksql">locksql</a><span>SQL databases, PII masked</span></li>
+          <li data-lock="lockmq"><a href="https://github.com/DavidGodefroid/lockmq">lockmq</a><span>RabbitMQ queues</span></li>
+          <li data-lock="lockfile"><a href="https://github.com/DavidGodefroid/lockfile">lockfile</a><span>Files: S3, SFTP, disk</span></li>
+          <li data-lock="lockhttp" aria-current="true"><a href="https://github.com/DavidGodefroid/lockhttp">lockhttp</a><span>Outbound HTTP(S)</span></li>
+          <li data-lock="locklog"><a href="https://github.com/DavidGodefroid/locklog">locklog</a><span>Logs, masked search</span></li>
+          <li data-lock="lockssh"><a href="https://github.com/DavidGodefroid/lockssh">lockssh</a><span>Commands over SSH</span></li>
+          <li data-lock="lockhub"><a href="https://github.com/DavidGodefroid/lockhub">lockhub</a><span>The approval hub and <code>lox</code></span></li>
+          <li data-lock="lockkit"><a href="https://github.com/DavidGodefroid/lockkit">lockkit</a><span>The shared Go core</span></li>
+          <li data-lock="lea"><a href="https://github.com/DavidGodefroid/lea">lea</a><span>Agents in containers</span></li>
+        </ul>
+      </nav>
+    </div>
+    <div class="wrap footer-bottom">
+      <p>Pre-release (v0.8.x). lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p><a href="https://lockfamily.dev">lockfamily.dev</a> · <a href="https://github.com/DavidGodefroid/lockfamily">the family on GitHub</a></p>
     </div>
   </footer>
 </body>

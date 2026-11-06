@@ -3,38 +3,42 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Security model — lockhttp</title>
-  <meta name="description" content="lockhttp's security model: requirements, threats and answers, audit.">
+  <title>lockhttp security model</title>
+  <meta name="description" content="The lockhttp security model: what the gate enforces, what only a human can approve, the threats it answers and the risks that remain.">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f4efe4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16140f" media="(prefers-color-scheme: dark)">
   <link rel="canonical" href="https://lockhttp.com/security/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="lockhttp">
-  <meta property="og:title" content="Security model — lockhttp">
-  <meta property="og:description" content="lockhttp's security model: requirements, threats and answers, audit.">
+  <meta property="og:title" content="lockhttp security model">
+  <meta property="og:description" content="The lockhttp security model: what the gate enforces, what only a human can approve, the threats it answers and the risks that remain.">
   <meta property="og:url" content="https://lockhttp.com/security/">
   <meta property="og:image" content="https://lockhttp.com/assets/og.png">
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="lockhttp — Your AI browses. You hold the key.">
+  <meta property="og:image:alt" content="lockhttp: your agent browses, you hold the key.">
   <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Security model — lockhttp">
-  <meta name="twitter:description" content="lockhttp's security model: requirements, threats and answers, audit.">
+  <meta name="twitter:title" content="lockhttp security model">
+  <meta name="twitter:description" content="The lockhttp security model: what the gate enforces, what only a human can approve, the threats it answers and the risks that remain.">
   <meta name="twitter:image" content="https://lockhttp.com/assets/og.png">
-  <meta name="twitter:image:alt" content="lockhttp — Your AI browses. You hold the key.">
+  <meta name="twitter:image:alt" content="lockhttp: your agent browses, you hold the key.">
   <link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
-  <link rel="stylesheet" href="../assets/style.css">
+  <link rel="preload" href="../assets/fonts/zilla-slab-700.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../assets/fonts/source-serif-4-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../assets/tokens.css">
+  <link rel="stylesheet" href="../assets/lock-site.css">
   <script src="../assets/anchors.js" defer></script>
+  <script src="../assets/copy.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <div class="wrap">
-      <a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="32" height="32"><span class="wordmark">lock<span>http</span></span></a>
+      <a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="32" height="32"><span class="wordmark">lockhttp</span></a>
       <nav class="site-nav" aria-label="Main">
         <ul>
           <li><a href="../">Home</a></li>
@@ -49,27 +53,36 @@
   </header>
   <main id="main" tabindex="-1">
     <div class="wrap">
+
+<p class="eyebrow">Security</p>
 <h1>Security model</h1>
 <div class="prose">
-  <p class="lead">The gate enforces; the human decides; the agent can neither reach the console nor change the policy.</p>
+  <p class="lead">The gate enforces, the human decides. The agent can neither reach the console nor change the policy.</p>
 </div>
-
-<div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.8.0</code> is out as a pre-release and runs in Docker only (one <code>lockhttp</code> launcher, a cosign-signed image): command names are fixed, flags may still move. TLS decryption ships in it and is optional, wired by lea: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
 
 <section aria-labelledby="requirements">
   <h2 id="requirements">Non-negotiable requirements</h2>
   <ul class="cards">
     <li><h3>Console in its own container</h3><p>Under its own account (<code>lockhttp</code>), the only container with the policy volume. The agent gets neither its socket nor the Docker socket.</p></li>
-    <li><h3>NeverAuto, always</h3><p>Every hub ticket the gate makes is <code>NeverAuto</code>: the hub cannot check an <code>auto</code> rule against the console’s policy, so a human answers every held request, <code>auto</code> rule or not.</p></li>
+    <li><h3>NeverAuto, always</h3><p>Every hub ticket the gate makes is <code>NeverAuto</code>. Neither <code>lox run</code>’s auto mode nor an <code>auto</code> rule answers a held request: a human does.</p></li>
     <li><h3>Identical fingerprint</h3><p>One human decision covers only requests with the same container, method, URL, significant headers and normalised body.</p></li>
-    <li><h3>Claude API allowlist</h3><p>Once TLS is decrypted, <code>mcp_servers</code>, server tools other than <code>web_search</code>, files and foreign credentials never pass without a human.</p></li>
-    <li><h3>Fail closed</h3><p>No console, an unknown source, an unreadable source map, a policy that does not decode: ASK is refused, errors deny.</p></li>
+    <li><h3>LLM API relay checks</h3><p>Once TLS is decrypted, the Claude API’s <code>mcp_servers</code>, server tools other than <code>web_search</code>, files and foreign credentials never pass without a human.</p></li>
+    <li><h3>Hub-attached only</h3><p>The gate does not start without its hub flags. When the hub is unreachable, nothing else approves: the ticket stays pending.</p></li>
+    <li><h3>Fail closed</h3><p>No console, an unknown source, an unreadable source map, a policy that does not decode: asks are refused, errors deny.</p></li>
   </ul>
+</section>
+
+<section aria-labelledby="scope">
+  <h2 id="scope">What it protects</h2>
+  <div class="prose">
+    <p><strong>Assets:</strong> the project’s and the host’s data, credentials, and actions taken online in your name.</p>
+    <p><strong>Attackers:</strong> the agent itself (prompt injection, drift) and hostile web content.</p>
+    <p><strong>Out of scope:</strong> a compromised host or console account, any account that may run <code>docker</code> on the host, the model provider itself (Anthropic), a network attacker upstream.</p>
+  </div>
 </section>
 
 <section aria-labelledby="threats">
   <h2 id="threats">Threats and answers</h2>
-  <p class="prose">Assets: the project’s and the host’s data, credentials, and actions taken online in your name. Attackers: the agent itself (prompt injection, drift) and hostile web content. Out of scope: a compromised host, Anthropic, a network attacker upstream.</p>
   <div class="table-wrap" role="region" aria-label="Threat model" tabindex="0">
   <table>
   <thead><tr><th scope="col">Threat</th><th scope="col">Answer</th><th scope="col">What remains</th></tr></thead>
@@ -78,42 +91,83 @@
   <tr><th scope="row">DNS, DoH, IP literals</th><td>Non-forwarding DNS in lea; the network floor; no UDP.</td><td>IP literals of declared internal hosts.</td></tr>
   <tr><th scope="row">Writing to a trusted host</th><td>A write asks, even on a trusted host.</td><td>Without decryption the gate sees only the host; the screen says “reads and writes”.</td></tr>
   <tr><th scope="row">Exfiltration in a GET</th><td>Decryption, and the exfiltration score (logged in shadow by default; <code>heuristics = "enforce"</code> asks).</td><td>Slow, low-bandwidth channels; spliced hosts.</td></tr>
-  <tr><th scope="row">The Claude API as a relay</th><td>Path and parameter allowlist (with decryption).</td><td>Without decryption, the exact host only.</td></tr>
-  <tr><th scope="row">Approval fatigue</th><td>Auto rules you approved; identical requests grouped; shadow mode to tune first.</td><td>The human factor.</td></tr>
-  <tr><th scope="row">The agent edits the policy</th><td>The policy lives with the console; loosening needs your review; project files are ignored.</td><td>—</td></tr>
-  <tr><th scope="row">A compromised gate</th><td>Own uid, never root; no decision authority over ASK; the CA key in a separate signer.</td><td>FREE traffic.</td></tr>
-  <tr><th scope="row">Agent impersonation</th><td>Rules apply to containers, never to agents; the agent name is audit only.</td><td>Attribution between agents of one container.</td></tr>
-  <tr><th scope="row">Prompt injection through the screen</th><td>Terminal sanitising; the agent’s stated intent is marked untrusted.</td><td>—</td></tr>
-  <tr><th scope="row">No console</th><td>ASK refused at once; FREE on the last approved policy.</td><td>Reduced availability, on purpose.</td></tr>
+  <tr><th scope="row">An LLM API as a relay</th><td>Path and parameter allowlist for the Claude API (with decryption).</td><td>Without decryption, the exact host only.</td></tr>
+  <tr><th scope="row">A credential in the agent’s hands</th><td>Credential injection: the gate adds the header, the agent never holds it; the injected value sent by the agent is refused.</td><td>Credentials you still hand the agent yourself.</td></tr>
+  <tr><th scope="row">Approval fatigue</th><td>Free rules you approved; identical requests grouped; shadow mode to tune first.</td><td>The human factor.</td></tr>
+  <tr><th scope="row">The agent edits the policy</th><td>The policy lives with the console; loosening needs your review; project files are ignored.</td><td>None known.</td></tr>
+  <tr><th scope="row">A compromised gate</th><td>Own uid, never root; no decision authority over asks; the CA key in a separate signer.</td><td>Free traffic.</td></tr>
+  <tr><th scope="row">Agent impersonation</th><td>Rules apply to containers, never to agents; the agent name is for the audit only.</td><td>Attribution between agents of one container.</td></tr>
+  <tr><th scope="row">Prompt injection through the screen</th><td>Terminal sanitising; the agent’s stated intent is marked untrusted.</td><td>None known.</td></tr>
+  <tr><th scope="row">No console</th><td>Asks refused at once; free traffic on the last approved policy.</td><td>Reduced availability, on purpose.</td></tr>
   </tbody>
   </table>
   </div>
+  <p class="prose">Every threat, answer and residual risk: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/security-model.md">docs/security-model.md</a>.</p>
 </section>
 
 <section aria-labelledby="audit">
   <h2 id="audit">Audit</h2>
   <div class="prose">
-    <p>The gate writes FREE and DENY to a daily JSONL file, kept 30 days; the console writes every ASK to its audit log. Both carry the same <code>request_id</code>, the container, the declared agent and how it was attributed. The audit never holds a body or a secret.</p>
-    <p>The container is known for sure (one internal network per container). The agent is an attribution, not an authentication: agents of one container share a uid.</p>
+    <p>The gate writes free and denied requests to a daily JSONL file, kept 30 days. The console writes every ask to its audit log.</p>
+    <p>Both carry the same <code>request_id</code>, the container, the declared agent and how it was attributed. The audit never holds a body or a secret.</p>
+    <p>The container is known for sure: one internal network per container. The agent is an attribution, not an authentication, because agents of one container share a uid.</p>
   </div>
+</section>
+
+<section class="limits" aria-labelledby="limits">
+  <h2 id="limits">Known limits</h2>
+  <ul class="prose">
+    <li><strong>Without decryption, a <code>CONNECT</code> opens reads and writes.</strong> An approved host stays open for <code>connect_grant</code> (10 minutes by default), content unseen.</li>
+    <li><strong>HTTP/1.1 only to clients when decrypting.</strong> The gate refuses <code>Upgrade: h2c</code>.</li>
+    <li><strong>A WebSocket session is one approval.</strong> The upgrade is decided; the frames that follow are not.</li>
+    <li><strong>Heuristics run in shadow by default</strong>, until you set <code>heuristics = "enforce"</code>.</li>
+    <li><strong>No MCP server.</strong> Agents meet lockhttp as a proxy; its <code>403</code> pages tell them what to ask of you.</li>
+  </ul>
 </section>
 
 <section aria-labelledby="report">
   <h2 id="report">Report a vulnerability</h2>
   <p class="prose">Please do not open a public issue. Report it privately as described in <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/SECURITY.md">SECURITY.md</a> (a private GitHub security advisory).</p>
 </section>
+
     </div>
   </main>
   <footer class="site-footer">
-    <div class="wrap">
-      <ul>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp">Source on GitHub</a></li>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/README.md">README</a></li>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">lea integration contract</a></li>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">Design decisions</a></li>
-        <li><a href="https://lockfamily.dev/">The Lock family</a></li>
-      </ul>
-      <p>Pre-release: <a href="https://github.com/DavidGodefroid/lockhttp/releases">v0.8.0</a> is out. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+    <div class="wrap footer-grid">
+      <div class="footer-about">
+        <a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="32" height="32"><span class="wordmark">lockhttp</span></a>
+        <p>Outbound HTTP(S) for AI agents: reads of trusted hosts pass, and anything that sends data or reaches an unknown host waits for you.</p>
+        <p class="family-link">Part of the <a href="https://lockfamily.dev">Lock Family</a>, harness security for AI agents.</p>
+      </div>
+      <nav aria-labelledby="footer-lock">
+        <h2 id="footer-lock">lockhttp</h2>
+        <ul>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp">Source on GitHub</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/README.md">README</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/usage.md">Usage guide</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/security-model.md">Security model</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/CHANGELOG.md">Changelog</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/SECURITY.md">Report a vulnerability</a></li>
+        </ul>
+      </nav>
+      <nav class="family-strip" aria-labelledby="footer-family">
+        <h2 id="footer-family">The Lock Family</h2>
+        <ul>
+          <li data-lock="locksql"><a href="https://github.com/DavidGodefroid/locksql">locksql</a><span>SQL databases, PII masked</span></li>
+          <li data-lock="lockmq"><a href="https://github.com/DavidGodefroid/lockmq">lockmq</a><span>RabbitMQ queues</span></li>
+          <li data-lock="lockfile"><a href="https://github.com/DavidGodefroid/lockfile">lockfile</a><span>Files: S3, SFTP, disk</span></li>
+          <li data-lock="lockhttp" aria-current="true"><a href="https://github.com/DavidGodefroid/lockhttp">lockhttp</a><span>Outbound HTTP(S)</span></li>
+          <li data-lock="locklog"><a href="https://github.com/DavidGodefroid/locklog">locklog</a><span>Logs, masked search</span></li>
+          <li data-lock="lockssh"><a href="https://github.com/DavidGodefroid/lockssh">lockssh</a><span>Commands over SSH</span></li>
+          <li data-lock="lockhub"><a href="https://github.com/DavidGodefroid/lockhub">lockhub</a><span>The approval hub and <code>lox</code></span></li>
+          <li data-lock="lockkit"><a href="https://github.com/DavidGodefroid/lockkit">lockkit</a><span>The shared Go core</span></li>
+          <li data-lock="lea"><a href="https://github.com/DavidGodefroid/lea">lea</a><span>Agents in containers</span></li>
+        </ul>
+      </nav>
+    </div>
+    <div class="wrap footer-bottom">
+      <p>Pre-release (v0.8.x). lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p><a href="https://lockfamily.dev">lockfamily.dev</a> · <a href="https://github.com/DavidGodefroid/lockfamily">the family on GitHub</a></p>
     </div>
   </footer>
 </body>
