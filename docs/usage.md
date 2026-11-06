@@ -343,6 +343,8 @@ standalone gate, which v0.6.0 and later refuse: that gate container exits and re
 
 | lockhttp | lockkit | Under `lox up` (lea's gate) | Hub image, gate run by hand |
 |---|---|---|---|
+| v0.8.0 | v0.13.0 | as v0.6.0 | v0.2.0 or later |
+| v0.7.1 | v0.10.0 | as v0.6.0 | v0.2.0 or later |
 | v0.7.0 | v0.10.0 | as v0.6.0 | v0.2.0 or later |
 | v0.6.0 | v0.9.1 | lockhub v0.2.2 + lea v0.3.0 or later, with a trusted `up.json` only: hub mode only (no standalone gate), reveals (`reveal: true`), renewals, `devices: true` | v0.2.0 or later |
 | v0.5.1 | v0.8.1 | lockhub v0.2.2 + lea v0.3.0 or later: hub mode, reveals (`reveal: true`), renewals, `devices: true` | v0.2.0 or later |

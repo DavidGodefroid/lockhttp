@@ -41,7 +41,7 @@ deck or a paired phone), where the agent cannot reach it. Every decision is trac
 that asked.
 
 > [!NOTE]
-> **Pre-release** (`v0.7.0`). Built on [lockkit](https://github.com/DavidGodefroid/lockkit) v0.10.0.
+> **Pre-release** (`v0.8.0`). Built on [lockkit](https://github.com/DavidGodefroid/lockkit) v0.13.0.
 > Design decisions: [docs/decisions.md](docs/decisions.md).
 
 ## Why LockHTTP?
