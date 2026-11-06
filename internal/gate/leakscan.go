@@ -23,6 +23,8 @@ import (
 type secretForm struct {
 	name string
 	b    []byte
+	// fold is b in lower case, for the names (findFold).
+	fold []byte
 }
 
 // formSet is the forms of a set of secrets, and the length of the
@@ -48,7 +50,7 @@ func formsOf(vals map[string][]string) *formSet {
 					continue
 				}
 				seen[string(f)] = true
-				fs.forms = append(fs.forms, secretForm{name: n, b: f})
+				fs.forms = append(fs.forms, secretForm{name: n, b: f, fold: bytes.ToLower(f)})
 				fs.max = max(fs.max, len(f))
 			}
 		}
@@ -79,8 +81,124 @@ func valueForms(v []byte) [][]byte {
 
 func (fs *formSet) empty() bool { return fs == nil || len(fs.forms) == 0 }
 
-// find reports the name of a secret one of whose forms is in data.
-func (fs *formSet) find(data []byte) (string, bool) {
+// decodeRounds is how many times every scanner percent-decodes what it
+// matches (each round in two ways: '+' kept and '+' as a space), so that
+// the held checks, the streamed ones and the names all accept the same
+// forms of a value.
+const decodeRounds = 2
+
+// expansion is how many bytes of the agent's one byte of a form may take
+// after decodeRounds rounds of escaping (%XX: 3 per round): a streaming
+// scan holds back that many times the longest form.
+const expansion = 9
+
+// hold is how many bytes a streaming scan holds back (or keeps as
+// history): one byte less than the longest form fully escaped
+// decodeRounds times, so that no form goes out whole before it is
+// matched.
+func (fs *formSet) hold() int {
+	if fs.empty() {
+		return 0
+	}
+	return max(expansion*fs.max-1, 0)
+}
+
+// unhex is the value of a hex digit, or -1.
+func unhex(c byte) int {
+	switch {
+	case '0' <= c && c <= '9':
+		return int(c - '0')
+	case 'a' <= c && c <= 'f':
+		return int(c-'a') + 10
+	case 'A' <= c && c <= 'F':
+		return int(c-'A') + 10
+	}
+	return -1
+}
+
+// pctDecode decodes every valid %XX escape (either case) of data, and with
+// plus a '+' as a space. An invalid escape stays as is: a strict decoder
+// would let one stray '%' hide every escape around it. With pos, it also
+// returns, for each byte of the output, the offset in data where it
+// starts, and len(data) last.
+func pctDecode(data []byte, plus, pos bool) ([]byte, []int) {
+	out := make([]byte, 0, len(data))
+	var at []int
+	if pos {
+		at = make([]int, 0, len(data)+1)
+	}
+	for i := 0; i < len(data); {
+		c, w := data[i], 1
+		if c == '%' && i+2 < len(data) && unhex(data[i+1]) >= 0 && unhex(data[i+2]) >= 0 {
+			c, w = byte(unhex(data[i+1])<<4|unhex(data[i+2])), 3
+		} else if c == '+' && plus {
+			c = ' '
+		}
+		out = append(out, c)
+		if pos {
+			at = append(at, i)
+		}
+		i += w
+	}
+	if pos {
+		at = append(at, len(data))
+	}
+	return out, at
+}
+
+// variant is data or one of its percent-decoded forms, with (when asked)
+// the offset in data where each of its bytes starts (nil: data itself).
+type variant struct {
+	b   []byte
+	pos []int
+}
+
+// variants returns data and its distinct percent-decoded forms, '+' kept
+// and '+' as a space, up to decodeRounds rounds (at most 7: no round
+// repeats a form already there). With pos, each carries its offsets in
+// data.
+func variants(data []byte, pos bool) []variant {
+	out := []variant{{b: data}}
+	frontier := out
+	for r := 0; r < decodeRounds && len(frontier) > 0; r++ {
+		var next []variant
+		for _, v := range frontier {
+			pct, pl := bytes.IndexByte(v.b, '%') >= 0, bytes.IndexByte(v.b, '+') >= 0
+			for _, plus := range []bool{false, true} {
+				if (!plus && !pct) || (plus && !pl) {
+					continue
+				}
+				d, at := pctDecode(v.b, plus, pos)
+				if hasVariant(out, d) {
+					continue
+				}
+				if pos && v.pos != nil {
+					for i, o := range at {
+						at[i] = v.pos[o]
+					}
+				}
+				nv := variant{b: d, pos: at}
+				out = append(out, nv)
+				next = append(next, nv)
+			}
+		}
+		frontier = next
+	}
+	return out
+}
+
+func hasVariant(vs []variant, b []byte) bool {
+	for _, v := range vs {
+		if bytes.Equal(v.b, b) {
+			return true
+		}
+	}
+	return false
+}
+
+// findRaw reports the name of a secret one of whose forms is in data, as
+// is (no decoding).
+func (fs *formSet) findRaw(data []byte) (string, bool) {
 	if fs.empty() {
 		return "", false
 	}
@@ -92,71 +210,114 @@ func (fs *formSet) find(data []byte) (string, bool) {
 	return "", false
 }
 
+// find reports the name of a secret one of whose forms is in data, as is
+// or percent-decoded (any case of the escapes, '+' kept or as a space, up
+// to decodeRounds rounds). Every scanner of what the agent sends uses it:
+// the held parts, the streamed body, the decoded body, a WebSocket's
+// frames, a tunnel.
+func (fs *formSet) find(data []byte) (string, bool) {
+	if fs.empty() {
+		return "", false
+	}
+	for _, v := range variants(data, false) {
+		if n, ok := fs.findRaw(v.b); ok {
+			return n, ok
+		}
+	}
+	return "", false
+}
+
+// findDecoded is find (the name the held checks use).
+func (fs *formSet) findDecoded(data []byte) (string, bool) { return fs.find(data) }
+
+// maxFoldName bounds a name findFold matches (a header name; a host is
+// bounded lower by the callers, see Secrets.LeakNames).
+const maxFoldName = 1024
+
 // findFold is find, ignoring ASCII case, on data and on data without its
-// dots: for a host name (DNS ignores case, a label boundary may split the
-// value) and a header name (canonicalized on the way in).
+// dots, each percent-decoded up to decodeRounds rounds (and folded
+// again): for a host name (DNS ignores case, a label boundary may split
+// the value) and a header name (canonicalized on the way in). It is
+// iterative and deduplicated: at most a few dozen candidates, each as
+// long as data at most. A name longer than maxFoldName is not scanned:
+// it reports ("", true), refused as unscannable.
 func (fs *formSet) findFold(data []byte) (string, bool) {
 	if fs.empty() {
 		return "", false
 	}
-	low := bytes.ToLower(data)
-	for _, d := range [][]byte{low, bytes.ReplaceAll(low, []byte("."), nil)} {
-		for _, f := range fs.forms {
-			if bytes.Contains(d, bytes.ToLower(f.b)) {
-				return f.name, true
+	if len(data) > maxFoldName {
+		return "", true
+	}
+	var seen [][]byte
+	frontier := [][]byte{data}
+	for r := 0; r <= decodeRounds && len(frontier) > 0; r++ {
+		var next [][]byte
+		for _, f := range frontier {
+			low := bytes.ToLower(f)
+			for _, c := range [][]byte{low, bytes.ReplaceAll(low, []byte("."), nil)} {
+				if containsSlice(seen, c) {
+					continue
+				}
+				seen = append(seen, c)
+				for _, form := range fs.forms {
+					if bytes.Contains(c, form.fold) {
+						return form.name, true
+					}
+				}
+				if r == decodeRounds {
+					continue
+				}
+				for _, plus := range []bool{false, true} {
+					if d, _ := pctDecode(c, plus, false); !bytes.Equal(d, c) && !containsSlice(next, d) {
+						next = append(next, d)
+					}
+				}
 			}
 		}
-		if un, err := url.PathUnescape(string(d)); err == nil && un != string(d) {
-			if n, ok := fs.findFold([]byte(un)); ok {
-				return n, ok
-			}
-		}
+		frontier = next
 	}
 	return "", false
 }
 
-// findDecoded is find, also on data percent-decoded (any case of the
-// escapes, '+' as a space) when it holds a '%'.
-func (fs *formSet) findDecoded(data []byte) (string, bool) {
-	if n, ok := fs.find(data); ok {
-		return n, ok
-	}
-	if bytes.IndexByte(data, '%') < 0 {
-		return "", false
-	}
-	for _, un := range []func(string) (string, error){url.QueryUnescape, url.PathUnescape} {
-		if d, err := un(string(data)); err == nil {
-			if n, ok := fs.find([]byte(d)); ok {
-				return n, ok
-			}
+func containsSlice(s [][]byte, b []byte) bool {
+	for _, x := range s {
+		if bytes.Equal(x, b) {
+			return true
 		}
 	}
-	return "", false
+	return false
 }
 
-// redact overwrites every form found in data with '*' of the same
-// length (a framing length stays right), and returns the names found.
-// data is copied first when it changes.
+// redact overwrites every form found in data, as is or percent-decoded
+// (as find matches it), with '*' over the bytes of data it takes (a
+// framing length stays right), and returns the names found. data is
+// copied first when it changes.
 func (fs *formSet) redact(data []byte) ([]byte, []string) {
 	if fs.empty() {
 		return data, nil
 	}
 	var names []string
 	var out []byte
-	for _, f := range fs.forms {
-		for off := 0; ; {
-			i := bytes.Index(data[off:], f.b)
-			if i < 0 {
-				break
+	for _, v := range variants(data, true) {
+		for _, f := range fs.forms {
+			for off := 0; ; {
+				i := bytes.Index(v.b[off:], f.b)
+				if i < 0 {
+					break
+				}
+				from, to := off+i, off+i+len(f.b)
+				if v.pos != nil {
+					from, to = v.pos[from], v.pos[to]
+				}
+				if out == nil {
+					out = append([]byte(nil), data...)
+				}
+				for j := from; j < to; j++ {
+					out[j] = '*'
+				}
+				names = appendOnce(names, f.name)
+				off += i + 1
 			}
-			if out == nil {
-				out = append([]byte(nil), data...)
-			}
-			for j := off + i; j < off+i+len(f.b); j++ {
-				out[j] = '*'
-			}
-			names = appendOnce(names, f.name)
-			off += i + 1
 		}
 	}
 	if out == nil {
@@ -178,7 +339,7 @@ func appendOnce(s []string, v string) []string {
 // injected secret: the transport aborts the request with it.
 var errLeak = errors.New("the agent sent an injected secret")
 
-// scanReader passes r through, holding back the last fs.max-1 bytes so
+// scanReader passes r through, holding back the last fs.hold() bytes so
 // that no form of a secret goes out whole before it is matched. With
 // redact, a form is overwritten (same length) and the stream goes on;
 // without, the read fails with errLeak and nothing of the form goes out.
@@ -224,7 +385,7 @@ func (s *scanReader) Read(p []byte) (int, error) {
 			s.out, s.err = data, err
 			break
 		}
-		cut := max(len(data)-max(s.fs.max-1, 0), 0)
+		cut := max(len(data)-s.fs.hold(), 0)
 		s.out, s.held = data[:cut], append([]byte(nil), data[cut:]...)
 	}
 	n := copy(p, s.out)
@@ -234,7 +395,7 @@ func (s *scanReader) Read(p []byte) (int, error) {
 
 var errTooLarge = errors.New("too large to check")
 
-// scanWriter matches what is written, keeping the last fs.max-1 bytes as
+// scanWriter matches what is written, keeping the last fs.hold() bytes as
 // history so that a form split across writes is matched too.
 type scanWriter struct {
 	fs    *formSet
@@ -254,7 +415,7 @@ func (s *scanWriter) Write(p []byte) (int, error) {
 		s.found = name
 		return 0, errLeak
 	}
-	keep := min(len(data), max(s.fs.max-1, 0))
+	keep := min(len(data), s.fs.hold())
 	s.hist = append([]byte(nil), data[len(data)-keep:]...)
 	return len(p), nil
 }

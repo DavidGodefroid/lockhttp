@@ -3,6 +3,7 @@ package policy
 import (
 	"fmt"
 	"net/textproto"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -34,10 +35,12 @@ type Inject struct {
 	// a word config keys may not use).
 	Credential string `json:"credential"`
 	// Methods limits the injection to these methods (upper case, sorted;
-	// empty: every method but TRACE and TRACK, which the gate refuses).
+	// empty: every method but TRACE and TRACK, in any case, which the gate
+	// refuses).
 	Methods []string `json:"methods,omitempty"`
 	// Paths limits it to these paths, each exact or a prefix when it ends
-	// with "*" (sorted; empty: every path).
+	// with "*" (sorted; empty: every path). A path a target may resolve to
+	// another one never matches (AmbiguousPath).
 	Paths []string `json:"paths,omitempty"`
 	Note  string   `json:"note,omitempty"`
 }
@@ -197,10 +200,12 @@ func (i Inject) Applies(container, host string, port int) bool {
 }
 
 // MatchesRequest reports whether i covers method and path (the escaped
-// path, as rules match it). TRACE and TRACK never match: they echo the
-// request, the injected header included.
+// path, as rules match it). TRACE and TRACK, in any case, never match:
+// they echo the request, the injected header included. With paths, a
+// path a target may resolve to another one (see AmbiguousPath) never
+// matches: "/api/../admin" is not under "/api/*" at the target.
 func (i Inject) MatchesRequest(method, path string) bool {
-	if method == "TRACE" || method == "TRACK" {
+	if strings.EqualFold(method, "TRACE") || strings.EqualFold(method, "TRACK") {
 		return false
 	}
 	if len(i.Methods) > 0 && !slices.Contains(i.Methods, method) {
@@ -209,12 +214,57 @@ func (i Inject) MatchesRequest(method, path string) bool {
 	if len(i.Paths) == 0 {
 		return true
 	}
+	if AmbiguousPath(path) {
+		return false
+	}
 	for _, p := range i.Paths {
 		if (Rule{Path: p}).MatchesPath(path) {
 			return true
 		}
 	}
 	return false
+}
+
+// pathDecodeRounds bounds how many times AmbiguousPath decodes a path:
+// one still changing after them is ambiguous.
+const pathDecodeRounds = 3
+
+// AmbiguousPath reports whether an escaped path may name, at a target,
+// another path than its string: a dot segment ("." or "..", also with
+// ";" parameters), a backslash, an encoded dot, slash or backslash
+// (%2E, %2F, %5C, in any case), an invalid escape, or any of them after
+// up to pathDecodeRounds rounds of percent-decoding ("%252e"). A target
+// that resolves dot segments or decodes the path would route it outside
+// the prefix it matched as a string.
+func AmbiguousPath(path string) bool {
+	p := path
+	for round := 0; round < pathDecodeRounds; round++ {
+		if strings.ContainsRune(p, '\\') {
+			return true
+		}
+		for _, seg := range strings.Split(p, "/") {
+			seg, _, _ = strings.Cut(seg, ";")
+			if seg == "." || seg == ".." {
+				return true
+			}
+		}
+		if !strings.Contains(p, "%") {
+			return false
+		}
+		low := strings.ToLower(p)
+		if strings.Contains(low, "%2e") || strings.Contains(low, "%2f") || strings.Contains(low, "%5c") {
+			return true
+		}
+		d, err := url.PathUnescape(p)
+		if err != nil {
+			return true
+		}
+		if d == p {
+			return false
+		}
+		p = d
+	}
+	return true
 }
 
 // InjectFor returns the injections that apply to a request of container

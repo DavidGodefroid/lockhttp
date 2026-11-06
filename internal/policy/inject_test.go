@@ -247,3 +247,46 @@ paths = ["/api/*", "/health"]`, 1)
 		}
 	}
 }
+
+// A path a target may resolve outside the prefix it matched as a string
+// never gets a path-limited credential; TRACE and TRACK never get one, in
+// any case.
+func TestInjectAmbiguousPathsAndTraceCase(t *testing.T) {
+	conf := strings.Replace(injectConf, `note   = "Home Assistant long-lived token"`, `paths = ["/api/*"]`, 1)
+	p, err := Parse([]byte(conf), "c", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		"/api/../admin", "/api/%2e%2e/admin", "/api/%2E%2E%2Fadmin",
+		"/api/./x", "/api/..;/admin", "/api/x/..", "/api/%2fadmin", "/api/..%5cadmin", `/api/..\admin`,
+		"/api/%252e%252e/admin", "/api/%25252e%25252e/admin", "/api/%zz", "/api/%2",
+	} {
+		if !AmbiguousPath(path) {
+			t.Errorf("%q is not ambiguous", path)
+		}
+		if got := p.InjectForRequest("x", "homeassistant", 8123, "GET", path); len(got) != 0 {
+			t.Errorf("GET %s got the credential", path)
+		}
+	}
+	for _, path := range []string{"/api/states", "/api/a.b/..c", "/api/%20x", "/api/...", "/api/x%41"} {
+		if AmbiguousPath(path) {
+			t.Errorf("%q is ambiguous", path)
+		}
+		if got := p.InjectForRequest("x", "homeassistant", 8123, "GET", path); len(got) != 1 {
+			t.Errorf("GET %s: no credential", path)
+		}
+	}
+	// Without paths, any path gets it (nothing to escape from).
+	if got := p.InjectForRequest("lea-dev", "api.example.com", 443, "GET", "/a/../b"); len(got) != 1 {
+		t.Fatalf("no paths: %+v", got)
+	}
+	for _, m := range []string{"trace", "Trace", "tRaCe", "track", "Track"} {
+		for _, host := range []string{"homeassistant", "api.example.com"} {
+			port := map[string]int{"homeassistant": 8123, "api.example.com": 443}[host]
+			if got := p.InjectForRequest("lea-dev", host, port, m, "/api/x"); len(got) != 0 {
+				t.Errorf("%s %s got the credential", m, host)
+			}
+		}
+	}
+}

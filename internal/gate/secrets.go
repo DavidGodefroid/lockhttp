@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -159,17 +160,37 @@ func (s *Secrets) Leak(parts ...[]byte) (string, bool) {
 	return "", false
 }
 
-// LeakFold is Leak for the parts that are names: a host (the absolute
-// URL's, the Host header, a CONNECT authority) or a header name, matched
-// ignoring case and dots (see formSet.findFold).
-func (s *Secrets) LeakFold(parts ...string) (string, bool) {
+// maxHostName bounds a host the gate scans for a value: a DNS name of
+// 255 bytes, with the brackets and port an authority may add.
+const maxHostName = 255 + len("[]:65535")
+
+// LeakNames is Leak for the parts that are names: the hosts (the absolute
+// URL's, the Host header, a CONNECT authority) and the header names,
+// matched ignoring case, dots and percent-escapes (see
+// formSet.findFold). While the gate holds a secret, a host longer than
+// maxHostName or a header name longer than maxFoldName is not scanned:
+// why says so, and the request is refused. name is the secret found.
+func (s *Secrets) LeakNames(hosts, headerNames []string) (name, why string) {
 	fs := s.Forms()
-	for _, p := range parts {
-		if name, ok := fs.findFold([]byte(p)); ok {
-			return name, true
+	if fs.empty() {
+		return "", ""
+	}
+	for _, h := range hosts {
+		if len(h) > maxHostName {
+			return "", "a host longer than " + strconv.Itoa(maxHostName) + " bytes"
 		}
 	}
-	return "", false
+	for _, h := range headerNames {
+		if len(h) > maxFoldName {
+			return "", "a header name longer than " + strconv.Itoa(maxFoldName) + " bytes"
+		}
+	}
+	for _, p := range append(append([]string(nil), hosts...), headerNames...) {
+		if name, ok := fs.findFold([]byte(p)); ok {
+			return name, ""
+		}
+	}
+	return "", ""
 }
 
 // Forms returns the forms of every value ever loaded (nil with none).

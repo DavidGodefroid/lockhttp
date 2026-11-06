@@ -323,8 +323,8 @@ note       = "Home Assistant long-lived token"
 | `scheme` | no | A word (`Bearer`, `Token`) put before the value with a space. |
 | `credential` | yes | The name of the secret in the gate's secrets file: lower-case letters, digits, `_`, `-`, `.`, at most 32 characters, no run of more than 16 letters and digits (a name, not a pasted token). Never the value. |
 | `container` | no | The container it applies to. A container's injection wins over an all-containers one of the same header. |
-| `methods` | no | The methods that get the header (upper-cased); empty: every one. `TRACE`, `TRACK` and `CONNECT` are refused: they never get it. |
-| `paths` | no | The paths that get the header, each exact or a prefix when it ends with `*` (as a rule's `path`); empty: every one. A request outside them goes out without it (audited `inject <id> skipped`). |
+| `methods` | no | The methods that get the header (upper-cased); empty: every one. `TRACE`, `TRACK` and `CONNECT` are refused: they never get it, in any case of the method (`trace` too). |
+| `paths` | no | The paths that get the header, each exact or a prefix when it ends with `*` (as a rule's `path`); empty: every one. A request outside them goes out without it (audited `inject <id> skipped`). So does a path a target may resolve elsewhere, whatever the list: a dot segment (`/api/../admin`, `/api/..;/x`), a backslash, an encoded dot, slash or backslash (`%2e`, `%2F`, `%5c`, in any case, also escaped again as `%252e`) or an invalid escape. |
 | `note` | no | Free text for you. |
 
 Two injections of the same header, host, port and container are refused.
@@ -369,15 +369,21 @@ host, and the gate does not follow redirects (a 3xx goes back to the
 agent, whose next request has no credential). The agent never holds the
 value; if a request of the agent carries it anyway, in the URL, a header or
 the body, as is, URL-escaped (in any case), in hex or in base64 (standard
-or URL alphabet, at any alignment inside a longer blob), it is refused with
+or URL alphabet, at any alignment inside a longer blob), each also found
+percent-decoded up to twice (any escape, in any case, `+` as a space or
+not; a stray `%` does not stop the decoding), it is refused with
 `E_SECRET_EGRESS`, whatever its host and whatever rule or grant would let
 it pass. The names the agent writes are checked too, ignoring case, dots
 and percent-escapes: the host of the URL and of the `Host` header, the
 `CONNECT` authority and the header names. A value in one of them is refused
 first (`E_SECRET_EGRESS`), before the floor, the hub's address check (which
 resolves the name) and the hub, and the audit shows the host as redacted.
+While the gate holds a secret, a host (with its port) longer than 263
+bytes or a header name longer than 1024 bytes is refused unscanned
+(`E_SECRET_EGRESS`, rule `secret:unscannable`).
 While the gate holds any secret, it scans every byte it can read of what
-the agent sends:
+the agent sends, accepting the same forms everywhere (the percent-decoding
+above included):
 
 - a body over the buffer limit is scanned as it streams; the request is
   aborted before a whole value goes out (`E_SECRET_EGRESS`);
@@ -403,11 +409,11 @@ for an unencoded, whole response (`Accept-Encoding: identity`; its
 of a value each redacted alone) and loses its `Max-Forwards`. A partial
 response (`206`, a `Content-Range`, `multipart/byteranges`) or one that
 switches protocols is refused (`E_INJECT`). Every value the gate has
-loaded (as is, URL-escaped, hex, base64) is overwritten with `*` in the
+loaded (as is, URL-escaped, hex, base64, also percent-decoded as above) is overwritten with `*` in the
 response's status line, header names and values, and body (the length
 stays the same); its trailers are dropped. A `gzip` or `deflate` response
 is decoded first and goes to the agent decoded; any other encoding is
-refused (`E_INJECT`). `TRACE` and `TRACK` to the host and port are refused
+refused (`E_INJECT`). `TRACE` and `TRACK`, in any case, to the host and port are refused
 (`E_METHOD`, rule `inject:trace`), and no request to it may upgrade to a
 WebSocket (`E_INJECT`). The audit says `redacted the injected secret
 <name>`.

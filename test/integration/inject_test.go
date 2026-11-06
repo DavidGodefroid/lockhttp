@@ -310,3 +310,68 @@ paths      = ["/api/*"]`, 1)
 		t.Fatalf("audit:\n%s", audit.String())
 	}
 }
+
+// An injection limited to /api/* never lends its credential to a path a
+// target resolves outside it ("/api/../admin", encoded dots, an encoded
+// slash), and TRACE or TRACK in any case of the method never reaches the
+// API: the real target would echo the header.
+func TestCredentialInjectionAmbiguousPathAndTraceCase(t *testing.T) {
+	setRuntime(t)
+	conf := strings.Replace(injectPolicyText, `credential = "ha-token"`, `credential = "ha-token"
+paths      = ["/api/*"]`, 1)
+	h := &human{answers: make(chan string, 8)}
+	stop := startConsoleWith(t, h, conf)
+	defer stop()
+	secrets := filepath.Join(t.TempDir(), "secrets.json")
+	if err := os.WriteFile(secrets, []byte(`{"version":1,"secrets":{"ha-token":"`+injectSecret+`"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	got := map[string]string{}
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got[r.Method+" "+r.RequestURI] = r.Header.Get("Authorization")
+		mu.Unlock()
+		if r.Header.Get("Authorization") != "Bearer "+injectSecret {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = io.WriteString(w, "authenticated")
+	})}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { srv.Close() })
+	addr, _, _ := startGateWith(t, ln.Addr().String(), func(c *gate.Config) { c.Secrets = gate.NewSecrets(secrets) })
+	c := client(addr)
+	if resp, body := get(t, c, "GET", "http://homeassistant:8123/api/states", ""); resp.StatusCode != 200 || body != "authenticated" {
+		t.Fatalf("/api/states: %s %q", resp.Status, body)
+	}
+	for _, p := range []string{"/api/../admin", "/api/%2e%2e/admin", "/api/%2E%2E%2Fadmin"} {
+		resp, _ := get(t, c, "GET", "http://homeassistant:8123"+p, "")
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("%s: %s (the API authenticated it)", p, resp.Status)
+		}
+		mu.Lock()
+		a, ok := got["GET "+p]
+		mu.Unlock()
+		if !ok || a != "" {
+			t.Fatalf("%s: reached %v, with the credential %v", p, ok, a != "")
+		}
+	}
+	for _, m := range []string{"trace", "Trace", "track"} {
+		resp, _ := get(t, c, m, "http://homeassistant:8123/api/echo", "")
+		if resp.StatusCode != 403 || resp.Header.Get("X-LockHTTP-Code") != "E_METHOD" {
+			t.Fatalf("%s: %s %v", m, resp.Status, resp.Header)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for k := range got {
+		if strings.HasPrefix(strings.ToUpper(k), "TRACE") || strings.HasPrefix(strings.ToUpper(k), "TRACK") {
+			t.Fatalf("%s reached the API", k)
+		}
+	}
+}

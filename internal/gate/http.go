@@ -74,10 +74,13 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 	// header, a header name) is refused before anything else: the floor's
 	// and the hub's checks would audit the host, and the hub's resolves it
 	// (a DNS query would carry the value out).
-	if name, ok := g.cfg.Secrets.LeakFold(append([]string{req.URL.Host, req.Host, host}, rawHeaderNames(req.Header)...)...); ok {
+	if name, why := g.cfg.Secrets.LeakNames([]string{req.URL.Host, req.Host, host}, rawHeaderNames(req.Header)); name != "" || why != "" {
 		t.Host, t.Path, t.QueryLen, t.QueryHash, t.BodyFP, t.ReqHeaders = redactedTarget, redactedTarget, 0, "", "", nil
 		d := decide.Decision{Verdict: decide.Deny, Rule: "secret:injected", Code: product.CodeSecretEgress,
 			Reason: "the request's host or a header name carries the value of the secret " + name + ", which only the gate adds: never send it yourself"}
+		if why != "" {
+			d.Rule, d.Reason = "secret:unscannable", why+": the gate cannot check it for the value of an injected secret"
+		}
 		g.refuse(w, d, id, src, t, false)
 		return false
 	}
@@ -126,8 +129,9 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 	if pol != nil {
 		atHost = pol.InjectAt(host, port)
 	}
-	if (req.Method == "TRACE" || req.Method == "TRACK") && len(atHost) > 0 {
-		// TRACE echoes the request: never to a host the gate injects into.
+	if (strings.EqualFold(req.Method, "TRACE") || strings.EqualFold(req.Method, "TRACK")) && len(atHost) > 0 {
+		// TRACE echoes the request: never to a host the gate injects into,
+		// in any case of the method (a target may not tell "trace" from it).
 		d := decide.Decision{Verdict: decide.Deny, Rule: "inject:trace", Code: product.CodeMethod,
 			Reason: req.Method + " echoes the request, and the gate adds a credential to " + host + ": refused"}
 		g.refuse(w, d, id, src, t, false)
@@ -397,7 +401,11 @@ func (g *Gate) injectsFor(pol *policy.Policy, container, host string, port int, 
 	var out []policy.Inject
 	var warns []string
 	for _, inj := range pol.InjectFor(container, host, port) {
-		if !inj.MatchesRequest(method, path) {
+		switch {
+		case inj.MatchesRequest(method, path):
+		case len(inj.Paths) > 0 && policy.AmbiguousPath(path):
+			warns = append(warns, "inject "+inj.ID+" skipped: the path has a dot segment, an encoded separator or a backslash, which a target may resolve outside "+strings.Join(inj.Paths, ","))
+		default:
 			warns = append(warns, "inject "+inj.ID+" skipped: the policy does not name "+method+" "+path)
 		}
 	}

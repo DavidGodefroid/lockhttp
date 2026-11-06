@@ -288,7 +288,7 @@ func (g *Gate) handle(ctx context.Context, c net.Conn) {
 		if err != nil {
 			id := newRequestID()
 			h := hostOnly(req.Host)
-			if _, leak := g.cfg.Secrets.LeakFold(req.Host); leak {
+			if name, why := g.cfg.Secrets.LeakNames([]string{req.Host}, nil); name != "" || why != "" {
 				h = redactedTarget
 			}
 			g.audit(wire.Record{Base: audit.Base{Event: "refused", Decision: "refused", Code: string(product.CodeSourceUnknown), Error: err.Error()},
@@ -459,10 +459,14 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 	t := wire.Target{Phase: "connect", TLS: "connect", Method: http.MethodConnect, Host: host, Port: port}
 	// A value in the authority (or a header name) is refused first: the
 	// floor and the hub would audit it, and the hub's check resolves it.
-	if name, ok := g.cfg.Secrets.LeakFold(append([]string{req.Host, req.RequestURI}, rawHeaderNames(req.Header)...)...); ok {
+	if name, why := g.cfg.Secrets.LeakNames([]string{req.Host, req.RequestURI}, rawHeaderNames(req.Header)); name != "" || why != "" {
 		t.Host = redactedTarget
-		g.refuse(c, decide.Decision{Verdict: decide.Deny, Rule: "secret:injected", Code: product.CodeSecretEgress,
-			Reason: "the CONNECT authority or a header name carries the value of the secret " + name + ", which only the gate adds: never send it yourself"}, id, src, t, true)
+		d := decide.Decision{Verdict: decide.Deny, Rule: "secret:injected", Code: product.CodeSecretEgress,
+			Reason: "the CONNECT authority or a header name carries the value of the secret " + name + ", which only the gate adds: never send it yourself"}
+		if why != "" {
+			d.Rule, d.Reason = "secret:unscannable", why+": the gate cannot check it for the value of an injected secret"
+		}
+		g.refuse(c, d, id, src, t, true)
 		return
 	}
 	if name, ok := g.cfg.Secrets.Leak(headerValues(req.Header)...); ok {
