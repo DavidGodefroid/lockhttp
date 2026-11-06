@@ -404,7 +404,7 @@ func (g *Gate) injectsFor(pol *policy.Policy, container, host string, port int, 
 		switch {
 		case inj.MatchesRequest(method, path):
 		case len(inj.Paths) > 0 && policy.AmbiguousPath(path):
-			warns = append(warns, "inject "+inj.ID+" skipped: the path has a dot segment, an encoded separator or a backslash, which a target may resolve outside "+strings.Join(inj.Paths, ","))
+			warns = append(warns, "inject "+inj.ID+" skipped: the path is not canonical (a dot segment, a byte or escape outside the allowlist, invalid or overlong UTF-8), which a target may resolve outside "+strings.Join(inj.Paths, ","))
 		default:
 			warns = append(warns, "inject "+inj.ID+" skipped: the policy does not name "+method+" "+path)
 		}

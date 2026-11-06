@@ -53,14 +53,17 @@ func rawGet(t *testing.T, e *env, method, uri, host string) *http.Response {
 }
 
 // An injection limited to /api/* adds nothing to a path a target may
-// resolve outside it (a dot segment, encoded or not, an encoded slash):
+// resolve outside it (a dot segment, encoded or not, an encoded slash,
+// dots with a space or a NUL, overlong UTF-8, a fullwidth dot):
 // the request goes out as the agent wrote it, without the credential.
 func TestInjectAmbiguousPathNotInjected(t *testing.T) {
 	e := scanEnv(t)
 	var s pathSeen
 	e.backend("scoped", false, http.HandlerFunc(s.handler))
 	e.remap("scoped", "8124")
-	for _, p := range []string{"/api/../admin", "/api/%2e%2e/admin", "/api/%2E%2E%2Fadmin"} {
+	for _, p := range []string{"/api/../admin", "/api/%2e%2e/admin", "/api/%2E%2E%2Fadmin",
+		"/api/..%20/admin", "/api/.%20/admin", "/api/..%00/admin", "/api/...", "/api/..%3f/admin",
+		"/api/%c0%ae%c0%ae/admin", "/api/%e0%80%ae%e0%80%ae/admin", "/api/%ef%bc%8e%ef%bc%8e/admin", "/api/%ff/x", "/api/x%41"} {
 		resp := rawGet(t, e, "GET", "http://scoped:8124"+p, "scoped:8124")
 		if resp.StatusCode != 200 {
 			t.Fatalf("%s: %s", p, resp.Status)
@@ -73,11 +76,13 @@ func TestInjectAmbiguousPathNotInjected(t *testing.T) {
 			t.Fatalf("%s reached the backend with the credential", p)
 		}
 	}
-	resp := rawGet(t, e, "GET", "http://scoped:8124/api/states", "scoped:8124")
-	if a, _ := s.get("/api/states"); resp.StatusCode != 200 || a != haSecret {
-		t.Fatalf("/api/states: %s, credential %v", resp.Status, a == haSecret)
+	for _, p := range []string{"/api/states", "/api/caf%C3%A9", "/api/a%3Ab"} {
+		resp := rawGet(t, e, "GET", "http://scoped:8124"+p, "scoped:8124")
+		if a, _ := s.get(p); resp.StatusCode != 200 || a != haSecret {
+			t.Fatalf("%s: %s, credential %v", p, resp.Status, a == haSecret)
+		}
 	}
-	if a := e.auditText(); !strings.Contains(a, "inject scoped skipped: the path has a dot segment") || strings.Contains(a, haSecret) {
+	if a := e.auditText(); !strings.Contains(a, "inject scoped skipped: the path is not canonical") || strings.Contains(a, haSecret) {
 		t.Fatalf("audit:\n%s", a)
 	}
 }

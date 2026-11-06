@@ -3,11 +3,12 @@ package policy
 import (
 	"fmt"
 	"net/textproto"
-	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	kconfig "github.com/DavidGodefroid/lockkit/config"
 
@@ -225,46 +226,114 @@ func (i Inject) MatchesRequest(method, path string) bool {
 	return false
 }
 
-// pathDecodeRounds bounds how many times AmbiguousPath decodes a path:
-// one still changing after them is ambiguous.
-const pathDecodeRounds = 3
-
 // AmbiguousPath reports whether an escaped path may name, at a target,
-// another path than its string: a dot segment ("." or "..", also with
-// ";" parameters), a backslash, an encoded dot, slash or backslash
-// (%2E, %2F, %5C, in any case), an invalid escape, or any of them after
-// up to pathDecodeRounds rounds of percent-decoding ("%252e"). A target
-// that resolves dot segments or decodes the path would route it outside
-// the prefix it matched as a string.
+// another path than its string, so that a path-scoped credential must
+// not be added to it. Only a canonical path is unambiguous (an
+// allowlist, not a list of known tricks):
+//
+//   - its bytes are RFC 3986 unreserved characters (ALPHA, DIGIT, '-',
+//     '.', '_', '~') and '/', or percent-escapes;
+//   - an escape of an ASCII byte names a reserved character other than
+//     '/' (":?#[]@!$&'()*+,;="): never '.', '/', '\', '%', a space, a
+//     control byte or an unreserved character ("%2e", "%2f", "%5c",
+//     "%25", "%20", "%00", "%41");
+//   - escapes of bytes >= 0x80 decode to valid, shortest-form UTF-8 of
+//     letters, marks or decimal digits ("%c3%a9"): never an overlong form
+//     ("%c0%ae"), a stray byte, a space, a punctuation sign or a symbol
+//     (a fullwidth dot or slash a target may normalise to '.' or '/');
+//   - no segment, decoded and cut at its first reserved character
+//     (";", "?", ":", ...), is made only of dots ("." "..", "...",
+//     "..;x", "..%3f").
+//
+// Anything else (literal sub-delims or spaces, a backslash, an invalid
+// escape, a twice escaped byte) is ambiguous: a target that resolves dot
+// segments, trims dots, spaces or NULs, decodes the path or reads
+// overlong UTF-8 would route it outside the prefix it matched as a
+// string.
 func AmbiguousPath(path string) bool {
-	p := path
-	for round := 0; round < pathDecodeRounds; round++ {
-		if strings.ContainsRune(p, '\\') {
+	for _, seg := range strings.Split(path, "/") {
+		d, ok := canonicalSegment(seg)
+		if !ok {
 			return true
 		}
-		for _, seg := range strings.Split(p, "/") {
-			seg, _, _ = strings.Cut(seg, ";")
-			if seg == "." || seg == ".." {
-				return true
-			}
+		if i := strings.IndexAny(d, pathReserved); i >= 0 {
+			d = d[:i]
 		}
-		if !strings.Contains(p, "%") {
-			return false
-		}
-		low := strings.ToLower(p)
-		if strings.Contains(low, "%2e") || strings.Contains(low, "%2f") || strings.Contains(low, "%5c") {
+		if d != "" && strings.Trim(d, ".") == "" {
 			return true
 		}
-		d, err := url.PathUnescape(p)
-		if err != nil {
-			return true
-		}
-		if d == p {
-			return false
-		}
-		p = d
 	}
-	return true
+	return false
+}
+
+// pathReserved are the RFC 3986 reserved characters a path segment may
+// carry escaped ('/' never: an encoded slash is ambiguous).
+const pathReserved = ":?#[]@!$&'()*+,;="
+
+// canonicalSegment decodes one segment of an escaped path, and reports
+// whether it is canonical (see AmbiguousPath).
+func canonicalSegment(seg string) (string, bool) {
+	var b strings.Builder
+	var high []byte // a run of escaped bytes >= 0x80
+	flush := func() bool {
+		if len(high) == 0 {
+			return true
+		}
+		ok := utf8.Valid(high)
+		for s := string(high); ok && s != ""; {
+			r, n := utf8.DecodeRuneInString(s)
+			ok = r != utf8.RuneError && (unicode.IsLetter(r) || unicode.IsMark(r) || unicode.IsDigit(r))
+			s = s[n:]
+		}
+		b.Write(high)
+		high = high[:0]
+		return ok
+	}
+	for i := 0; i < len(seg); i++ {
+		c := seg[i]
+		if c != '%' {
+			if !flush() || !unreserved(c) {
+				return "", false
+			}
+			b.WriteByte(c)
+			continue
+		}
+		if i+2 >= len(seg) || !ishex(seg[i+1]) || !ishex(seg[i+2]) {
+			return "", false
+		}
+		v := unhex(seg[i+1])<<4 | unhex(seg[i+2])
+		i += 2
+		if v >= 0x80 {
+			high = append(high, v)
+			continue
+		}
+		if !flush() || !strings.ContainsRune(pathReserved, rune(v)) {
+			return "", false
+		}
+		b.WriteByte(v)
+	}
+	if !flush() {
+		return "", false
+	}
+	return b.String(), true
+}
+
+func unreserved(c byte) bool {
+	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '-' || c == '.' || c == '_' || c == '~'
+}
+
+func ishex(c byte) bool {
+	return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
+}
+
+func unhex(c byte) byte {
+	switch {
+	case '0' <= c && c <= '9':
+		return c - '0'
+	case 'a' <= c && c <= 'f':
+		return c - 'a' + 10
+	}
+	return c - 'A' + 10
 }
 
 // InjectFor returns the injections that apply to a request of container

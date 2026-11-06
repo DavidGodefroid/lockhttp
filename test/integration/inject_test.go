@@ -349,7 +349,8 @@ paths      = ["/api/*"]`, 1)
 	if resp, body := get(t, c, "GET", "http://homeassistant:8123/api/states", ""); resp.StatusCode != 200 || body != "authenticated" {
 		t.Fatalf("/api/states: %s %q", resp.Status, body)
 	}
-	for _, p := range []string{"/api/../admin", "/api/%2e%2e/admin", "/api/%2E%2E%2Fadmin"} {
+	for _, p := range []string{"/api/../admin", "/api/%2e%2e/admin", "/api/%2E%2E%2Fadmin",
+		"/api/..%20/admin", "/api/..%00/admin", "/api/%c0%ae%c0%ae/admin", "/api/%ef%bc%8e%ef%bc%8e/admin"} {
 		resp, _ := get(t, c, "GET", "http://homeassistant:8123"+p, "")
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Fatalf("%s: %s (the API authenticated it)", p, resp.Status)

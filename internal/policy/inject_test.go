@@ -261,6 +261,16 @@ func TestInjectAmbiguousPathsAndTraceCase(t *testing.T) {
 		"/api/../admin", "/api/%2e%2e/admin", "/api/%2E%2E%2Fadmin",
 		"/api/./x", "/api/..;/admin", "/api/x/..", "/api/%2fadmin", "/api/..%5cadmin", `/api/..\admin`,
 		"/api/%252e%252e/admin", "/api/%25252e%25252e/admin", "/api/%zz", "/api/%2",
+		// Dots with spaces or NULs a target trims, a lone dot run, overlong
+		// or invalid UTF-8, a fullwidth dot, a reserved char a target may
+		// cut at, escapes of unreserved or non-reserved bytes, literal
+		// sub-delims and non-ASCII bytes.
+		"/api/..%20/admin", "/api/.%20/admin", "/api/..%00/admin", "/api/.%00", "/api/..%09/admin",
+		"/api/%20../admin", "/api/...", "/api/..../admin", "/api/..%3f/admin", "/api/..%3B/admin", "/api/.%3Ax",
+		"/api/%c0%ae%c0%ae/admin", "/api/%c0%ae./admin", "/api/%e0%80%ae%e0%80%ae/admin", "/api/%c0%af",
+		"/api/%c0", "/api/%ff", "/api/%c3", "/api/%ed%a0%80", "/api/%ef%bc%8e%ef%bc%8e/admin", "/api/%ef%bc%8fadmin",
+		"/api/%e3%80%82", "/api/x%41", "/api/%20x", "/api/%25", "/api/%7e", "/api/a;b", "/api/a b", "/api/\xe9",
+		"/api/a,b", "/api/x@y", "/api/%e2%82%81", "/api/%e2%80%a4%e2%80%a4",
 	} {
 		if !AmbiguousPath(path) {
 			t.Errorf("%q is not ambiguous", path)
@@ -269,7 +279,8 @@ func TestInjectAmbiguousPathsAndTraceCase(t *testing.T) {
 			t.Errorf("GET %s got the credential", path)
 		}
 	}
-	for _, path := range []string{"/api/states", "/api/a.b/..c", "/api/%20x", "/api/...", "/api/x%41"} {
+	for _, path := range []string{"/api/states", "/api/a.b/..c", "/api/x..", "/api/.x", "/api/a-b_c~d.e", "/api/", "/api//x",
+		"/api/a%3Ab", "/api/a%3bb", "/api/q%3F", "/api/caf%C3%A9", "/api/%ce%b1%e0%a5%a7", "/api/%ce%b1%cc%81", "/api/a%40b%2C%3d"} {
 		if AmbiguousPath(path) {
 			t.Errorf("%q is ambiguous", path)
 		}
