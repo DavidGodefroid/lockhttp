@@ -252,7 +252,7 @@ lockhttp gate --listen ADDR --hub URL --hub-key-file FILE --instance NAME
               [--devices-file FILE [--require-device RISKS] [--seal-clear]]
               [--facade-keys-file FILE]
               [--upstream URL] [--profile P] [--sources FILE]
-              [--credentials FILE] [--audit-dir DIR] [--status-file FILE]
+              [--credentials FILE] [--secrets FILE] [--audit-dir DIR] [--status-file FILE]
               [--ca-cert FILE --signer SOCKET]
 lockhttp gate --check [--listen ADDR]
 ```
@@ -276,6 +276,7 @@ with the socket volume, publishes its port on `LOCKHTTP_PUBLISH`
 | `--profile P` | `LOCKHTTP_PROFILE` | `default` | Console profile to dial. |
 | `--sources FILE` | `LOCKHTTP_SOURCES` | none | `sources.json` written by lea. Empty: every connection is container `local`. An unreadable or invalid file at start is a configuration error; later, it refuses every connection until fixed. |
 | `--credentials FILE` | `LOCKHTTP_CREDENTIALS` | none | `credentials.json` written by lea: hashes of each container's Claude credentials. Empty: the check is off. Unreadable or invalid: every credential is unknown (denied). |
+| `--secrets FILE` | `LOCKHTTP_SECRETS` | none | The gate's secrets file: the values the policy's `inject` entries name ([policy.md](policy.md#credential-injection)). JSON `{"version": 1, "secrets": {"name": "value"}}`, mode `0600` (refused if group- or world-readable), in the gate's container only, never an agent's. Reloaded when it changes. Invalid at start: a configuration error; later, every injection is refused (`E_INJECT`). |
 | `--audit-dir DIR` | `LOCKHTTP_AUDIT_DIR` | none (stderr) | Directory (created `0700`) of the JSONL audit: `gate-YYYY-MM-DD.jsonl` (UTC), files `0600`, kept 30 days. |
 | `--status-file FILE` | `LOCKHTTP_STATUS_FILE` | none | Status file for lea, rewritten atomically on change: `version`, `console` (`up`/`down`), `pending`, `pending_by_container`, `policy_fp`, `updated`. |
 | `--ca-cert FILE` | `LOCKHTTP_CA_CERT` | none | CA certificate. Enables decryption, with `--signer`. |
@@ -362,7 +363,7 @@ The gate finds the console's socket as a lockkit client, in the socket
 directory of the image's `/etc/lockhttp/system.toml`: `/run/lockhttp`, the
 console's socket volume (`lox up`'s `<project>_<instance>-run`) it shares
 with the console.
-It polls the policy every 2 s and reloads `--sources` and `--credentials`
+It polls the policy every 2 s and reloads `--sources`, `--credentials` and `--secrets`
 when they change.
 
 Clients reach the gate as an HTTP proxy: `CONNECT host:port` for HTTPS,

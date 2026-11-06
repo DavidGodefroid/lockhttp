@@ -47,8 +47,10 @@ type Config struct {
 	Upstream *url.URL
 	Sources  *Sources
 	Creds    *Credentials
-	Console  Console
-	Audit    *AuditLog
+	// Secrets holds the values the policy's injections name (nil: none).
+	Secrets *Secrets
+	Console Console
+	Audit   *AuditLog
 	// StatusFile is rewritten when the console state or the pending
 	// counts change ("" for none).
 	StatusFile string
@@ -102,6 +104,9 @@ func New(cfg Config) *Gate {
 	}
 	if cfg.Creds == nil {
 		cfg.Creds = NewCredentials("")
+	}
+	if cfg.Secrets == nil {
+		cfg.Secrets = NewSecrets("")
 	}
 	if cfg.Log == nil {
 		cfg.Log = io.Discard
@@ -180,6 +185,7 @@ func (g *Gate) Run(ctx context.Context) {
 		g.poll(ctx)
 		g.cfg.Sources.Reload()
 		g.cfg.Creds.Reload()
+		g.cfg.Secrets.Reload()
 		g.grants.Sweep()
 		select {
 		case <-ctx.Done():
@@ -281,8 +287,12 @@ func (g *Gate) handle(ctx context.Context, c net.Conn) {
 		}
 		if err != nil {
 			id := newRequestID()
+			h := hostOnly(req.Host)
+			if name, why := g.cfg.Secrets.LeakNames([]string{req.Host}, nil); name != "" || why != "" {
+				h = redactedTarget
+			}
 			g.audit(wire.Record{Base: audit.Base{Event: "refused", Decision: "refused", Code: string(product.CodeSourceUnknown), Error: err.Error()},
-				RequestID: id, Target: wire.Target{Method: req.Method, Host: hostOnly(req.Host)}, Rule: "source"})
+				RequestID: id, Target: wire.Target{Method: req.Method, Host: h}, Rule: "source"})
 			writeRefusal(c, id, string(product.CodeSourceUnknown), "the gate cannot tell which container sent this request", req.Method == http.MethodConnect)
 			return
 		}
@@ -447,6 +457,23 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 	pol, _ := g.Policy()
 	r := decide.Request{Phase: decide.PhaseConnect, Container: src.Container, Via: src.Via, Method: http.MethodConnect, Host: host, Port: port}
 	t := wire.Target{Phase: "connect", TLS: "connect", Method: http.MethodConnect, Host: host, Port: port}
+	// A value in the authority (or a header name) is refused first: the
+	// floor and the hub would audit it, and the hub's check resolves it.
+	if name, why := g.cfg.Secrets.LeakNames([]string{req.Host, req.RequestURI}, rawHeaderNames(req.Header)); name != "" || why != "" {
+		t.Host = redactedTarget
+		d := decide.Decision{Verdict: decide.Deny, Rule: "secret:injected", Code: product.CodeSecretEgress,
+			Reason: "the CONNECT authority or a header name carries the value of the secret " + name + ", which only the gate adds: never send it yourself"}
+		if why != "" {
+			d.Rule, d.Reason = "secret:unscannable", why+": the gate cannot check it for the value of an injected secret"
+		}
+		g.refuse(c, d, id, src, t, true)
+		return
+	}
+	if name, ok := g.cfg.Secrets.Leak(headerValues(req.Header)...); ok {
+		g.refuse(c, decide.Decision{Verdict: decide.Deny, Rule: "secret:injected", Code: product.CodeSecretEgress,
+			Reason: "a header of the CONNECT carries the value of the secret " + name + ", which only the gate adds: never send it yourself"}, id, src, t, true)
+		return
+	}
 	if d, stop := decide.Floor(pol, r); stop {
 		g.refuse(c, d, id, src, t, true)
 		return
@@ -513,13 +540,26 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 		return
 	}
 	defer up.Close()
-	if _, err := up.Write(hello); err != nil {
-		return
+	// The gate holds secrets: what the client sends is matched as it
+	// streams (a TLS tunnel's ciphertext cannot be: see the security
+	// model), and a value of one closes the tunnel.
+	fs := g.cfg.Secrets.Forms()
+	leak, _ := fs.find(hello)
+	var in, out int64
+	if leak == "" {
+		if _, err := up.Write(hello); err != nil {
+			return
+		}
+		in, out, leak = splice(c, br, up, fs)
 	}
-	in, out := splice(c, br, up)
 	rec.Base.Event, rec.Base.Decision = "free", decisionOf(d)
 	if rec.Base.Approval != "" {
 		rec.Base.Event, rec.Base.Decision = "approved", "approved"
+	}
+	if leak != "" {
+		rec.Base = audit.Base{Event: "refused", Decision: "refused", Code: string(product.CodeSecretEgress),
+			Reason: "the tunnel carries the value of the secret " + leak + ", which only the gate adds: the tunnel is closed"}
+		rec.Rule = "secret:injected"
 	}
 	rec.ReqBytes, rec.RespBytes = in+int64(len(hello)), out
 	rec.DurationMS = g.cfg.Now().Sub(start).Milliseconds()
@@ -762,8 +802,10 @@ var nonPublic = []netip.Prefix{
 }
 
 // splice copies both ways until either side closes; it returns the
-// bytes sent and received.
-func splice(client net.Conn, br *bufio.Reader, up net.Conn) (in, out int64) {
+// bytes sent and received. With fs, what the client sends is matched as
+// it streams: a value of a secret closes both sides before the read that
+// completes it goes out, and splice returns the secret's name.
+func splice(client net.Conn, br *bufio.Reader, up net.Conn, fs *formSet) (in, out int64, leak string) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -775,14 +817,19 @@ func splice(client net.Conn, br *bufio.Reader, up net.Conn) (in, out int64) {
 			_ = client.Close()
 		}
 	}()
-	in, _ = io.Copy(up, br)
+	if fs.empty() {
+		in, _ = io.Copy(up, br)
+	} else if in, leak = copyScanned(up, br, fs); leak != "" {
+		_ = up.Close()
+		_ = client.Close()
+	}
 	if cw, ok := up.(interface{ CloseWrite() error }); ok {
 		_ = cw.CloseWrite()
 	} else {
 		_ = up.Close()
 	}
 	wg.Wait()
-	return in, out
+	return in, out, leak
 }
 
 // mitm terminates the client's TLS with a leaf for host and decides each

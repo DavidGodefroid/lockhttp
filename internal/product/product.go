@@ -35,6 +35,7 @@ const (
 	CodeClaudeParam   refusal.Code = "E_CLAUDE_API_PARAM"
 	CodeSourceUnknown refusal.Code = "E_SOURCE_UNKNOWN"
 	CodeRule          refusal.Code = "E_RULE"
+	CodeInject        refusal.Code = "E_INJECT"
 )
 
 func init() {
@@ -66,4 +67,6 @@ func init() {
 		"the gate cannot tell which container sent the request", "connect through the proxy address lea gave you")
 	refusal.Register(CodeRule, refusal.RetryAskUser,
 		"a policy rule denies the request", "ask the user to change the rule")
+	refusal.Register(CodeInject, refusal.RetryAskUser,
+		"the gate cannot add the credential the policy injects (its secret is missing or unreadable)", "ask the user to check the gate's secrets file; never send the credential yourself")
 }

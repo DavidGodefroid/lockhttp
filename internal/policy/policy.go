@@ -77,6 +77,11 @@ type Policy struct {
 	RedirectCDN []string       `json:"redirect_cdn"`
 	Internal    []InternalHost `json:"internal_hosts"`
 	Rules       []Rule         `json:"rules"`
+	// Inject lists the credential injections: headers the gate adds, from
+	// its own secrets file, to the requests of one host and port. Omitted
+	// when empty, so that a policy without injection keeps its
+	// fingerprint.
+	Inject []Inject `json:"inject,omitempty"`
 }
 
 // InternalHost is a host of the user's internal-hosts list: it may resolve
@@ -108,20 +113,21 @@ type Rule struct {
 
 // raw is the TOML shape of a profile.
 type raw struct {
-	Production   bool      `toml:"production"`
-	Mode         string    `toml:"mode"`
-	Heuristics   string    `toml:"heuristics"`
-	BufferLimit  string    `toml:"buffer_limit"`
-	Hold         string    `toml:"hold"`
-	ConnectGrant string    `toml:"connect_grant"`
-	IdleTimeout  string    `toml:"idle_timeout"`
-	MaxSession   string    `toml:"max_session"`
-	Trusted      []string  `toml:"trusted"`
-	Splice       []string  `toml:"splice"`
-	Deny         []string  `toml:"deny"`
-	RedirectCDN  []string  `toml:"redirect_cdn"`
-	Internal     []rawIH   `toml:"internal_hosts"`
-	Rules        []rawRule `toml:"rules"`
+	Production   bool        `toml:"production"`
+	Mode         string      `toml:"mode"`
+	Heuristics   string      `toml:"heuristics"`
+	BufferLimit  string      `toml:"buffer_limit"`
+	Hold         string      `toml:"hold"`
+	ConnectGrant string      `toml:"connect_grant"`
+	IdleTimeout  string      `toml:"idle_timeout"`
+	MaxSession   string      `toml:"max_session"`
+	Trusted      []string    `toml:"trusted"`
+	Splice       []string    `toml:"splice"`
+	Deny         []string    `toml:"deny"`
+	RedirectCDN  []string    `toml:"redirect_cdn"`
+	Internal     []rawIH     `toml:"internal_hosts"`
+	Rules        []rawRule   `toml:"rules"`
+	Inject       []rawInject `toml:"inject"`
 }
 
 type rawIH struct {
@@ -265,6 +271,9 @@ func fromRaw(name string, r raw) (Policy, error) {
 		}
 		p.Internal = append(p.Internal, InternalHost{Host: h, Ports: ih.Ports, Read: ih.Read})
 	}
+	if p.Inject, err = injectsFromRaw(r.Inject, p); err != nil {
+		return Policy{}, err
+	}
 	seen := map[string]bool{}
 	for _, rr := range r.Rules {
 		rule, err := ruleFromRaw(rr)
@@ -375,6 +384,12 @@ func Canonical(p Policy) Policy {
 	}
 	slices.SortFunc(rules, func(a, b Rule) int { return strings.Compare(a.ID, b.ID) })
 	p.Rules = rules
+	if len(p.Inject) == 0 {
+		p.Inject = nil
+	} else {
+		p.Inject = slices.Clone(p.Inject)
+		slices.SortFunc(p.Inject, func(a, b Inject) int { return strings.Compare(a.ID, b.ID) })
+	}
 	return p
 }
 
@@ -394,6 +409,11 @@ func (p Policy) Clone() Policy {
 	for _, r := range p.Rules {
 		r.Methods = slices.Clone(r.Methods)
 		q.Rules = append(q.Rules, r)
+	}
+	q.Inject = nil
+	for _, i := range p.Inject {
+		i.Methods, i.Paths = slices.Clone(i.Methods), slices.Clone(i.Paths)
+		q.Inject = append(q.Inject, i)
 	}
 	return q
 }
