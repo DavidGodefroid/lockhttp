@@ -33,8 +33,9 @@
 
 ---
 
-LockHTTP is the proxy every outbound HTTP(S) request of an AI agent goes
-through. Reads of hosts you trust pass. Anything that sends data, triggers an
+A Lock of the [Lock Family](https://github.com/DavidGodefroid/lockfamily),
+harness security for AI agents: LockHTTP is the proxy every outbound HTTP(S)
+request of an AI agent goes through. Reads of hosts you trust pass. Anything that sends data, triggers an
 action or reaches an unknown host waits for **your** approval, on
 [lockhub](https://github.com/DavidGodefroid/lockhub) (`lox approve`, the lea
 deck or a paired phone), where the agent cannot reach it. Every decision is traced to the container, the agent and the session
