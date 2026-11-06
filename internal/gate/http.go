@@ -70,6 +70,14 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 	if req.URL.RawQuery != "" {
 		t.QueryHash = "sha256:" + sum([]byte(req.URL.RawQuery))
 	}
+	// A secret the gate injects never comes from the agent. The check runs
+	// first so that every refusal below, the floor's and the hub's too,
+	// audits a target with none of the value: it may be in the path or
+	// the query.
+	leakName, leak := g.cfg.Secrets.Leak(agentParts(req, path, body)...)
+	if leak {
+		t.Path, t.QueryLen, t.QueryHash, t.BodyFP = "(redacted: carries an injected secret)", 0, "", ""
+	}
 	if d, stop := decide.Floor(pol, r); stop {
 		g.refuse(w, d, id, src, t, true)
 		return false
@@ -78,13 +86,11 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 		g.refuse(w, d, id, src, t, true)
 		return false
 	}
-	// A secret the gate injects never comes from the agent: one in its
-	// request is refused, whatever the host (no grant or shadow lifts it).
-	if name, leak := g.cfg.Secrets.Leak(agentParts(req, path, body)...); leak {
+	// One in its request is refused, whatever the host (no grant or
+	// shadow lifts it).
+	if leak {
 		d := decide.Decision{Verdict: decide.Deny, Rule: "secret:injected", Code: product.CodeSecretEgress,
-			Reason: "the request carries the value of the secret " + name + ", which only the gate adds: never send it yourself"}
-		// The value may be in the path: the audit keeps none of it.
-		t.Path, t.QueryLen, t.QueryHash, t.BodyFP = "(redacted: carries an injected secret)", 0, "", ""
+			Reason: "the request carries the value of the secret " + leakName + ", which only the gate adds: never send it yourself"}
 		g.refuse(w, d, id, src, t, false)
 		return rest == nil
 	}

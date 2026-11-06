@@ -248,3 +248,46 @@ func TestInjectMITM(t *testing.T) {
 		t.Fatal("the audit holds the secret's value")
 	}
 }
+
+// A request refused before the leak check (the floor, the hub's address)
+// still audits none of an injected secret's value.
+func TestInjectLeakRedactedOnEarlyRefusal(t *testing.T) {
+	e := injectEnv(t, false)
+	e.gate.cfg.Hub.Hosts = []string{"lockhub.test"}
+	c := e.client("dev-5", false)
+	q := "?k=" + url.QueryEscape(apiSecret)
+	for _, tc := range []struct{ name, method, url, rule string }{
+		{"ip literal path", "GET", "http://10.1.2.3/" + haSecret, "floor:ip-literal"},
+		{"ip literal query", "GET", "http://10.1.2.3/x" + q, "floor:ip-literal"},
+		{"metadata", "GET", "http://metadata.google.internal/" + haSecret + q, "floor:metadata"},
+		{"port", "GET", "http://trusted.test:9999/" + haSecret, "floor:port"},
+		{"single label", "GET", "http://nolabel/x" + q, "floor:single-label"},
+		{"hub", "GET", "http://lockhub.test/" + haSecret + q, "floor:hub"},
+	} {
+		resp := do(t, c, tc.method, tc.url, nil, "")
+		if resp.StatusCode != 403 || resp.Header.Get("X-LockHTTP-Code") != "E_FLOOR" {
+			t.Errorf("%s: %s %v", tc.name, resp.Status, resp.Header)
+		}
+		if a := e.auditText(); !strings.Contains(a, `"rule":"`+tc.rule+`"`) {
+			t.Errorf("%s: audit lacks %s:\n%s", tc.name, tc.rule, a)
+		}
+	}
+	// h2c, with the secret in the path.
+	resp := do(t, c, "GET", "http://trusted.test/"+haSecret, http.Header{"Upgrade": {"h2c"}, "Connection": {"Upgrade"}}, "")
+	if resp.StatusCode != 403 || resp.Header.Get("X-LockHTTP-Code") != "E_FLOOR" {
+		t.Errorf("h2c: %s %v", resp.Status, resp.Header)
+	}
+	a := e.auditText()
+	if !strings.Contains(a, `"rule":"floor:h2c"`) {
+		t.Errorf("audit lacks floor:h2c:\n%s", a)
+	}
+	if strings.Contains(a, haSecret) || strings.Contains(a, apiSecret) || strings.Contains(a, url.QueryEscape(apiSecret)) {
+		t.Fatalf("the audit holds a secret's value:\n%s", a)
+	}
+	if !strings.Contains(a, "(redacted: carries an injected secret)") {
+		t.Errorf("the audit does not mark the redaction:\n%s", a)
+	}
+	if len(e.Calls()) != 0 {
+		t.Fatal("an early refusal asked the hub")
+	}
+}
