@@ -3,29 +3,33 @@
 docs/docker.md.
 
 The console runs in a pseudo-terminal this script answers (y to every
-prompt); the gate runs in its own container, sharing only the socket
-volume with the console; curl on the runner sends requests through the
-gate's published port. Needs docker, curl and network access to
-example.com. Uses the launcher's real names (lockhttp-console,
-lockhttp-gate, volumes lockhttp-run and lockhttp-home) and removes them:
-run it on a CI runner, not on a machine with a lockhttp setup.
+prompt). The console is lockkit's policy-only console: it starts without
+hub flags, as `lox run` runs it (`console`, or `console --profile P`), and
+refuses them. The gate is hub-attached only: without its hub flags the
+launcher's gate refuses to start ("launched by `lox run` only"). A request
+through a gate that asks a hub is tested end to end by lockhub's e2e,
+which runs the lockhttp lock under `lox run`. Needs docker. Uses the
+launcher's real names (lockhttp-console, lockhttp-gate, volumes
+lockhttp-run and lockhttp-home) and removes them: run it on a CI runner,
+not on a machine with a lockhttp setup.
 
     LOCKHTTP_IMAGE=lockhttp python3 test/docker/e2e.py
 
 Standard library only.
 """
 
+import json
 import os
 import pty
 import select
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LAUNCHER = os.path.join(ROOT, "scripts", "lockhttp")
-PROXY = "http://127.0.0.1:3130"
 
 failures = []
 
@@ -45,10 +49,10 @@ def sh(*args, check_=True, **kw):
     return r
 
 
-def launcher(*args, env=None, check_=True):
+def launcher(*args, env=None, check_=True, cwd=None):
     e = dict(os.environ)
     e.update(env or {})
-    return sh("sh", LAUNCHER, *args, check_=check_, env=e, stdin=subprocess.DEVNULL)
+    return sh("sh", LAUNCHER, *args, check_=check_, env=e, stdin=subprocess.DEVNULL, cwd=cwd)
 
 
 def cleanup():
@@ -59,13 +63,13 @@ def cleanup():
 class Console:
     """The console in a pseudo-terminal, approving every prompt."""
 
-    def __init__(self):
+    def __init__(self, *args):
         self.out = b""
         self.lock = threading.Lock()
         self.answered = 0
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
-            os.execvp("sh", ["sh", LAUNCHER, "console"])
+            os.execvp("sh", ["sh", LAUNCHER, "console", *args])
         threading.Thread(target=self.pump, daemon=True).start()
 
     def pump(self):
@@ -99,16 +103,6 @@ class Console:
         return False
 
 
-def curl(*args):
-    r = subprocess.run(["curl", "-sS", "-o", "/dev/null", "-D", "-", "-x", PROXY, "--max-time", "90", *args],
-                       capture_output=True, text=True)
-    return r.returncode, r.stdout + r.stderr
-
-
-def gate_logs():
-    return sh("docker", "logs", "lockhttp-gate", check_=False).stderr
-
-
 def main():
     image = os.environ.get("LOCKHTTP_IMAGE", "lockhttp")
     cleanup()
@@ -126,39 +120,56 @@ def main():
         check("lockhttp launcher dev (image " + image + ")" in r.stdout or "(image " + image + ")" in r.stdout, "version names the image", r.stdout)
         r = launcher("install", check_=False)
         check(r.returncode != 0 and "runs in Docker" in r.stderr, "install is refused", r.stderr)
-        launcher("init", "--trusted", "example.com")
+        # The launcher verbs lox add runs, as the invoking user on the
+        # project (lockkit GUIDE.md section 14).
+        project = tempfile.mkdtemp(prefix="lockhttp-e2e-")
+        sub = os.path.join(project, "sub")
+        os.makedirs(os.path.join(project, ".git"))
+        os.makedirs(sub)
+        r = launcher("profile", "add", "--non-interactive", "--json", "--trusted", "example.com", cwd=sub, check_=False)
+        out = json.loads(r.stdout) if r.returncode == 0 else {}
+        config = os.path.join(project, ".lockhttp", "config.toml")
+        check(out == {"lock": "lockhttp", "profile": "default", "config": config, "production": False},
+              "profile add writes the project's policy and prints one verbs.Profile", r.stdout + r.stderr)
+        with open(config) as f:
+            policy = f.read()
+        check('"example.com",' in policy, "profile add imports --trusted", policy)
+        check(os.stat(config).st_uid == os.getuid(), "the policy is the invoking user's", str(os.stat(config)))
+        r = launcher("profile", "add", "--non-interactive", "--json", cwd=sub, check_=False)
+        check(r.returncode != 0 and json.loads(r.stdout or "{}").get("code") == "exists", "an existing profile is kept (exists)", r.stdout + r.stderr)
+        r = launcher("profile", "add", "--non-interactive", "--json", "--profile", "web", "--password", "x", cwd=sub, check_=False)
+        check(r.returncode != 0 and json.loads(r.stdout or "{}").get("code") == "secret", "profile add refuses a secret", r.stdout + r.stderr)
+        r = launcher("init", "claude", cwd=sub, check_=False)
+        check(r.returncode == 0 and "nothing to write" in r.stdout, "init claude writes nothing", r.stdout + r.stderr)
+        r = launcher("doctor", "--fix", "--yes", "--json", cwd=sub, check_=False)
+        out = json.loads(r.stdout) if r.stdout.startswith("{") else {}
+        check(r.returncode == 0 and out.get("ok") is True and "checks" in out, "doctor --fix --yes --json passes on the project", r.stdout + r.stderr)
+
+        # lox run copies the project's policy into the console's volume; do
+        # the same for the launcher's console.
+        sh("docker", "run", "-i", "--rm", "--user", "lockhttp", "-v", "lockhttp-home:/home/lockhttp", "--entrypoint", "sh", image,
+           "-c", "umask 077 && mkdir -p /home/lockhttp/.config/lockhttp && cat > /home/lockhttp/.config/lockhttp/config.toml", input=policy)
         r = launcher("policy", "show")
-        check('"example.com",' in r.stdout, "init wrote the policy in the console's volume", r.stdout)
-        r = launcher("doctor", check_=False)
-        check(r.returncode == 0 and "separated setup" in r.stdout, "doctor passes as the console account", r.stdout + r.stderr)
+        check('"example.com",' in r.stdout, "the policy is in the console's volume", r.stdout)
 
-        # The console approves its first policy, then the gate connects.
-        console = Console()
-        check(console.wait_for("Listening on"), "the console listens", console.text())
-        sh("sh", LAUNCHER, "gate", env=dict(os.environ, LOCKHTTP_DOCKER_ARGS="-d"), stdin=subprocess.DEVNULL)
-        deadline = time.time() + 60
-        while time.time() < deadline and "console up" not in gate_logs():
-            time.sleep(0.5)
-        check("console up" in gate_logs(), "the gate reaches the console through the socket volume", gate_logs())
+        # The console starts without hub flags, as lox run runs it (lockhub
+        # internal/family/compose.go gives a gate kind's console `console`,
+        # plus `--profile P` when the lock names one): it approves its first
+        # policy, listens, and asks no hub.
+        for args in ([], ["--profile", "default"]):
+            console = Console(*args)
+            check(console.wait_for("Listening on"), f"the console listens without hub flags ({' '.join(['console', *args])})", console.text())
+            check(console.wait_for("Policy only"), "the console is policy-only", console.text())
+            check("lockhub at" not in console.text(), "the console asks no hub", console.text())
+            sh("docker", "rm", "-f", "lockhttp-console", check_=False)
 
-        code, head = curl("http://example.com/")
-        check(code == 0 and " 200 " in head.split("\n")[0] and "X-Lockhttp-Request" in head.title(), "a trusted read is free", head)
-        code, head = curl("https://example.com/")
-        check(code == 0 and "200" in head, "a trusted CONNECT is free", head)
-        code, head = curl("-X", "POST", "-H", "Content-Type: application/json", "-d", '{"e2e":1}', "http://example.com/")
-        check(code == 0 and "X-Lockhttp-Code" not in head.title() and console.wait_for("POST example.com"),
-              "a write asks the console and goes through once approved", head + console.text()[-2000:])
-        check("container local" in console.text(), "the screen names the source", console.text()[-2000:])
+        # The hub flags lox run gives the other locks' consoles are refused.
+        r = launcher("console", "--hub", "http://lockhub:8443", "--hub-plain-http", "--hub-key-file", "/run/lockfamily/hub.pub", "--instance", "web", check_=False)
+        check(r.returncode != 0 and "-hub" in r.stderr, "the console takes no hub flags", r.stdout + r.stderr)
 
-        # Without a console, asks are refused at once; trusted reads go on.
-        sh("docker", "rm", "-f", "lockhttp-console", check_=False)
-        deadline = time.time() + 30
-        while time.time() < deadline and "console lost" not in gate_logs():
-            time.sleep(0.5)
-        code, head = curl("-X", "POST", "-d", "x", "http://example.com/")
-        check("E_NO_CONSOLE" in head, "no console: E_NO_CONSOLE", head)
-        code, head = curl("http://example.com/")
-        check(" 200 " in head.split("\n")[0], "no console: trusted reads go on", head)
+        # The gate does not start without the hub: lox run gives its flags.
+        r = launcher("gate", check_=False)
+        check(r.returncode != 0 and "launched by `lox run` only" in r.stderr, "the gate needs the hub", r.stdout + r.stderr)
     finally:
         cleanup()
     if failures:

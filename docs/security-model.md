@@ -15,8 +15,8 @@ image, through the launcher.
    file and cannot approve anything.
 2. **The network is the boundary.** In lea the agent's container has no
    route out except the proxy container; proxy variables are a convenience.
-3. **NeverAuto by default.** A human answers every ASK, unless an approved,
-   active, container-scoped `auto` rule matches and the console agrees.
+3. **NeverAuto.** A human answers every ASK: every hub ticket of the gate is
+   `NeverAuto`, and an `auto` rule asks like `ask`.
 4. **The AI tightens, the human loosens.** A policy change that widens what
    passes without a human waits for the human's `:review`.
 5. **Fail closed.** No console, an unknown source, an unreadable source map,
@@ -34,8 +34,7 @@ image, through the launcher.
   dependency it runs), and hostile web content that steers it.
 - **Out of scope:** a compromised host or console account, root, any
   account that may run `docker` on the host (see
-  [Docker](#what-docker-does-and-does-not-separate)), Anthropic itself, an attacker on the network upstream of the proxy container. A
-  standalone gate whose agent can reach the network directly.
+  [Docker](#what-docker-does-and-does-not-separate)), Anthropic itself, an attacker on the network upstream of the proxy container.
 
 ## Boundaries
 
@@ -53,16 +52,16 @@ image, through the launcher.
 
 | # | Threat | Parade | Residual |
 |---|---|---|---|
-| T1 | The agent goes out directly, around the gate. | lea's `--internal` networks; squid on loopback only; keyproxy chained through the gate; SSH git forwarders refused with LockHTTP on (lea side). Direct mode refuses non-public addresses except internal hosts. | Depends on lea's network setup (rootless Podman without an isolated gateway: lea's isolation test, decision D2). Standalone mode has no such boundary. |
+| T1 | The agent goes out directly, around the gate. | lea's `--internal` networks; squid on loopback only; keyproxy chained through the gate; SSH git forwarders refused with LockHTTP on (lea side). Direct mode refuses non-public addresses except internal hosts. | Depends on lea's network setup (rootless Podman without an isolated gateway: lea's isolation test, decision D2). |
 | T2 | Exfiltration through DNS (`<secret>.evil.com`). | The gate resolves a name only after the decision (direct mode), squid resolves after the gate; heuristics score long, deep and high-entropy labels. | The container's resolver is lea's (non-forwarding DNS is a lea requirement). Heuristics run in shadow by default. |
 | T3 | DNS over HTTPS, IP literals, metadata endpoints, odd ports, `h2c`, nested `CONNECT`, SNI and Host spoofing. | The floor, which no policy loosens and shadow mode does not lift; a full ClientHello naming the `CONNECT` host is required on 443; the `Host` sent upstream is the decided host. | DoH hosts not on the list and not named `doh.*`/`dns.*` are decided like any host (unknown: ASK). |
 | T4 | Exfiltration in reads to a trusted host (data in the URL or headers). | Decryption lets the gate see URLs and headers; secret formats are denied outside their hosts; the exfiltration score asks in `enforce`. | Without decryption the gate sees only the host. Low-bandwidth channels stay under the threshold. Heuristics are shadow by default. Spliced hosts are opaque. |
 | T5 | A write to a trusted host (a webhook, an issue, a push). | Trusted means reads only: with decryption every non-read asks (`NeverAuto`, red for messaging, publishing, pushes), and a git push shows its refs. | **Without decryption, a trusted host is free at the domain, reads and writes**, and an approved `CONNECT` opens its host for `connect_grant`; the screen and the doctor say so. |
 | T6 | The Claude API as a relay: `mcp_servers`, server tools, code execution containers, Files, a third-party key. | With decryption: the `/v1/messages` parameter allowlist, `/v1/files` asks, any other path or Anthropic host asks, credentials checked against the caller's list. | Without decryption the four Claude hosts are free at the domain. Prompt content sent to Anthropic is intended traffic. With no `credentials.json` the key check is off. |
 | T7 | A secret leaving with a request. | Known formats (GitHub, Anthropic, AWS, Slack, OpenAI, Google, npm, GitLab, private keys) in the URL, headers or held body are denied outside their hosts, in shadow mode too. | Unknown formats, encoded or split secrets, and bodies over `buffer_limit` streamed by a `free` rule are not matched. Cookies are not scanned. |
-| T8 | Approval fatigue. | Container-scoped `auto` rules for routine calls; identical requests share one screen; the pending count per container, method, host and path; a single-use authorisation after `E_PENDING` instead of a second screen. | The human factor. Requests with another body are separate screens, by design. |
-| T9 | The agent manipulates the policy. | The policy lives in the console account's home; the gate only receives it; every loosening waits for `:review`; `auto` is refused on forbidden classes at parse time and re-checked by the console at approval time. | A human who approves a bad `:review`. |
-| T10 | A compromised gate. | Dedicated non-root uid; no decision authority (the console re-checks auto claims and is the only one to approve); no CA key. | It sees and can alter FREE traffic and decrypted content; it can ask the signer for leaves for any valid host name while it runs; it can lie to the human about a request's content within the screen's bounds. |
+| T8 | Approval fatigue. | Container-scoped `free` rules for routine calls (confirmed with `:review`); identical requests share one screen; the pending count per container, method, host and path; a single-use authorisation after `E_PENDING` instead of a second screen. | The human factor. Requests with another body are separate screens, by design. |
+| T9 | The agent manipulates the policy. | The policy lives in the console account's home; the gate only receives it; every loosening waits for `:review`; `auto` is refused on forbidden classes at parse time, and an `auto` rule only asks. | A human who approves a bad `:review`. |
+| T10 | A compromised gate. | Dedicated non-root uid; no decision authority (every hub ticket it makes is `NeverAuto`; only a human approves on lockhub); no CA key. | It sees and can alter FREE traffic and decrypted content; it can ask the signer for leaves for any valid host name while it runs; it can lie to the human about a request's content within the screen's bounds. |
 | T11 | Theft of the CA key. | Only the signer reads it (`0600`, its own uid); CA `pathlen:0`, 90 days, trusted only in lea's containers; `lockhttp ca init --force` rotates. | Whoever holds the key can intercept traffic of containers that trust the CA until it expires or is rotated. |
 | T12 | One agent impersonates another. | Rules apply to containers, never to agents; an agent token from another container is marked `ambiguous`. | Agents in one container share a uid: attribution within a container is declarative. |
 | T13 | Replay or forgery of an approval. | A decision covers one fingerprint (container, method, URL, media type, every end-to-end header value hashed, normalised body); a single-use authorisation is consumed once and lives 10 minutes; a connect grant is per container × host × port. | During `connect_grant`, a `CONNECT` grant opens the host for any traffic of that container. |
@@ -70,7 +69,8 @@ image, through the launcher.
 | T15 | The console is absent or killed. | Every ASK is refused at once (`E_NO_CONSOLE`); FREE continues on the last approved policy. | Reduced availability, by design. |
 | T16 | The console socket reachable by agents. | Besides the console, the volume `lockhttp-run` is mounted in the gate's container only, never in an agent's; the clients group exists only in the image, where it holds the `gate` account; the agent gets neither the socket nor the Docker socket. | Any account that may run `docker` on the host can mount `lockhttp-run`, and more ([below](#what-docker-does-and-does-not-separate)). |
 | T18 | In hub mode, a forged, replayed or misdirected decision; the agent reaching the hub. | A decision verifies under the pinned hub key only, must name this instance, the instance key and the ticket's plan hash (the request fingerprint), under the policy fingerprint in force; its nonce is consumed once and its pass once. The instance key lives in the gate's volume only. The gate refuses the hub's host name and its networks as targets, even with `internal_hosts`. A ticket's clear screen stays in the gate's volume and leaves only sealed: to a facade key pinned with `--facade-keys-file` (a reveal), or, with `--seal-clear`, to every device pinned with `--devices-file`; the hub relays ciphertext. A renewal of an expired ticket is re-checked against the policy in force, and a changed policy is a new ticket. | With `--upstream`, squid resolves names again after the gate: a name re-pointed into the hub's network between the gate's check and squid's lookup is not seen by the gate (squid's own rules and lea's networks still apply). |
-| T17 | The agent edits the policy or the approved policy. | Both live in `lockhttp-home`, mounted only by the console account's commands (`console`, `init`, `policy`, `doctor`), never by the gate or an agent; a loosening still waits for `:review`. | An account that may run `docker` can open `lockhttp-home` in a container of its own and change the approved policy. |
+| T17 | The agent edits the policy or the approved policy. | Both live in `lockhttp-home`, mounted only by the console account's commands (`console`, `policy`), never by the gate or an agent; the project's `.lockhttp/config.toml`, which `profile add` writes and `lox run` copies, is only a proposal: any loosening in it still waits for `:review`. | An account that may run `docker` can open `lockhttp-home` in a container of its own and change the approved policy. |
+| T19 | A credential the agent holds leaks (its commands, logs, files, a request to another host). | Credential injection: the secret lives in the gate's secrets file (`0600`, the gate's container only), the policy names it only, and the gate adds the header after the verdict to one host and port, on a decrypted request or plain HTTP to an internal host; a request of the agent carrying the value (as is, URL-escaped, hex, base64 at any alignment), in its URL, headers, body, host (absolute URL, `Host`, `CONNECT` authority) or header names, is `E_SECRET_EGRESS` for every host (a value in a host or header name is refused before the floor, the hub's DNS check and the hub), with streamed and `gzip`/`deflate` bodies, WebSocket frames and plain tunnels scanned too (an encoding the gate cannot decode is refused); every response from a host and port with an injection (any path, any container) has the values redacted from its status, headers and body, with `Range`/`If-Range` removed and a partial response refused; TRACE to such a host is refused and no request to it upgrades; injections may be limited to methods and paths; the audit and the hub get the injection's name, never the value. | A compromised gate holds the values (T10). A value split across requests, frames or reads, or otherwise encoded by the agent, is not matched; a tunnel the gate does not decrypt is ciphertext; a target that transforms the credential before echoing it, or serves parts of it in separate responses through its own API, is not redacted; a value split over host names or written in punycode is not matched in the host ([policy.md](policy.md#credential-injection)). |
 
 ## Security requirements
 
@@ -79,10 +79,8 @@ These do not change with the policy ([decisions.md](decisions.md)):
 - The console runs as its own account, in its own container, the only one
   with the console's home volume; the agent never gets the console's socket
   or the Docker socket.
-- Every screen is `NeverAuto` unless an approved `auto` rule matches; the
-  console re-checks that claim against its own approved policy (rule id,
-  active, `auto`, allowed for its host and the profile, host, method, path,
-  container, `max_body`, not spliced, not red, not a `CONNECT`).
+- Every screen is `NeverAuto`: the gate runs hub-attached only, every hub
+  ticket it makes is `NeverAuto`, and an `auto` rule asks like `ask`.
 - A human decision is shared only by requests of identical fingerprint.
 - The Claude API is checked per path and parameter once decrypted.
 - Fail closed: no console means every ASK is refused; an unknown source, an
@@ -109,11 +107,9 @@ These do not change with the policy ([decisions.md](decisions.md)):
   exemption is FREE without the rule and heuristic checks (the floor, the
   deny list and the secret check still apply); both are bound to one exact
   request or URL, one container, and a short life.
-- **Serial approvals, one human.** The console answers one screen at a
-  time; the gate queues the rest.
+- **Approvals on the hub.** Each held request is a hub ticket a human
+  answers on a facade; the gate never falls back to another approver.
 - **The agent name is declarative**, for the audit only.
-- **Standalone mode** (no `--sources`) attributes every connection to
-  `local` and depends on the agent honouring the proxy variables.
 - **Docker is the separation**: see the next section.
 - **No external review** of LockHTTP has been done yet
   ([SECURITY.md](../SECURITY.md)).

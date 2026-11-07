@@ -3,38 +3,42 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>How it works — lockhttp</title>
-  <meta name="description" content="How lockhttp decides: the gate in lea's proxy container, the console on the host, FREE, ASK and DENY, HTTPS with or without decryption.">
+  <title>How lockhttp works: gate, console, hub</title>
+  <meta name="description" content="How lockhttp works: the gate decides each outbound request with the policy the console serves, and requests that need a human become signed tickets on lockhub.">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f4efe4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16140f" media="(prefers-color-scheme: dark)">
   <link rel="canonical" href="https://lockhttp.com/how-it-works/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="lockhttp">
-  <meta property="og:title" content="How it works — lockhttp">
-  <meta property="og:description" content="How lockhttp decides: the gate in lea's proxy container, the console on the host, FREE, ASK and DENY, HTTPS with or without decryption.">
+  <meta property="og:title" content="How lockhttp works: gate, console, hub">
+  <meta property="og:description" content="How lockhttp works: the gate decides each outbound request with the policy the console serves, and requests that need a human become signed tickets on lockhub.">
   <meta property="og:url" content="https://lockhttp.com/how-it-works/">
   <meta property="og:image" content="https://lockhttp.com/assets/og.png">
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="lockhttp — Your AI browses. You hold the key.">
+  <meta property="og:image:alt" content="lockhttp: your agent browses, you hold the key.">
   <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="How it works — lockhttp">
-  <meta name="twitter:description" content="How lockhttp decides: the gate in lea's proxy container, the console on the host, FREE, ASK and DENY, HTTPS with or without decryption.">
+  <meta name="twitter:title" content="How lockhttp works: gate, console, hub">
+  <meta name="twitter:description" content="How lockhttp works: the gate decides each outbound request with the policy the console serves, and requests that need a human become signed tickets on lockhub.">
   <meta name="twitter:image" content="https://lockhttp.com/assets/og.png">
-  <meta name="twitter:image:alt" content="lockhttp — Your AI browses. You hold the key.">
+  <meta name="twitter:image:alt" content="lockhttp: your agent browses, you hold the key.">
   <link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
-  <link rel="stylesheet" href="../assets/style.css">
+  <link rel="preload" href="../assets/fonts/zilla-slab-700.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../assets/fonts/source-serif-4-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../assets/tokens.css">
+  <link rel="stylesheet" href="../assets/lock-site.css">
   <script src="../assets/anchors.js" defer></script>
+  <script src="../assets/copy.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <div class="wrap">
-      <a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="32" height="32"><span class="wordmark">lock<span>http</span></span></a>
+      <a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="32" height="32"><span class="wordmark">lockhttp</span></a>
       <nav class="site-nav" aria-label="Main">
         <ul>
           <li><a href="../">Home</a></li>
@@ -49,19 +53,20 @@
   </header>
   <main id="main" tabindex="-1">
     <div class="wrap">
+
+<p class="eyebrow">How it works</p>
 <h1>How lockhttp works</h1>
 <div class="prose">
   <p class="lead">Two planes on two sides of a boundary. Only the human side can say yes.</p>
-  <p>The data plane, <code>lockhttp gate</code>, is a proxy in lea’s proxy container. The control plane, <code>lockhttp console</code>, is the standard lockkit console on the host, in its own account. The gate asks the console only about requests that need a human.</p>
+  <p>The data plane, <code>lockhttp gate</code>, is a proxy beside lea’s proxy container. The control plane, <code>lockhttp console</code>, runs in a container of its own, under its own account: it serves the policy and asks you about every loosening.</p>
+  <p>Requests that need a human become signed tickets on <a href="https://github.com/DavidGodefroid/lockhub">lockhub</a>. You answer them in <code>lox run</code>, <code>lox approve</code>, lea’s deck or a paired phone.</p>
 </div>
-
-<div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.5.0</code> is out as a pre-release and runs in Docker only (one <code>lockhttp</code> launcher, a cosign-signed image): command names are fixed, flags may still move. TLS decryption ships in it and is optional, wired by lea: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
 
 <section aria-labelledby="layout">
   <h2 id="layout">Where each piece runs</h2>
-  <pre tabindex="0" class="diagram" role="img" aria-label="Agent containers reach only the lockhttp gate, a container sharing the network namespace of lea's proxy container; the gate forwards to squid on loopback and the Internet; for requests that need a human it asks the lockhttp console, in its own container, over a Unix socket in a volume only the gate and the console mount."><code> agent container  (internal network, no other route)
+  <pre tabindex="0" class="diagram" role="img" aria-label="Agent containers reach only the lockhttp gate, a container sharing the network namespace of lea's proxy container; the gate forwards to squid on loopback and the Internet; it reads the policy from the lockhttp console, which lox run runs in its own container, over a Unix socket in a volume only the gate and the console mount; for requests that need a human it asks lockhub, where you answer on a facade."><code> agent container  (internal network, no other route)
  ┌──────────────────────────────────────────────────────┐
- │ claude code · curl · git · npm · chromium            │
+ │ your agent · curl · git · npm · chromium             │
  │ HTTP(S)_PROXY=http://&lt;agent&gt;:&lt;token&gt;@lea-proxy:3130 │
  └──────────────────────────┬───────────────────────────┘
                             │ the only way out
@@ -74,39 +79,48 @@
  └──────────────────────────┬───────────────────────────┘
                             │ Unix socket, volume lockhttp-run:
                             │ the gate and the console only
- console container          ▼
+ console container (lox run)▼
  ┌──────────────────────────────────────────────────────┐
  │ lockhttp console --profile default                   │
  │   account lockhttp, volume lockhttp-home (policy)    │
- │   approvals · policy review · auto mode · audit      │
- └──────────────────────────────────────────────────────┘</code></pre>
-  <p class="prose">The agent containers never see the console socket. The console authenticates the gate by its uid (<code>SO_PEERCRED</code>) and never goes on the network itself.</p>
+ │   serves the policy · policy review · audit          │
+ └──────────────────────────────────────────────────────┘
+ gate ──▶ lockhub (hub network: lea's proxy only)
+   held request → signed ticket → you, on a facade</code></pre>
+  <div class="prose">
+    <p>The agent containers never see the console socket, and never join the hub’s network. The gate refuses the hub’s addresses as targets.</p>
+    <p>The console authenticates the gate by its uid (<code>SO_PEERCRED</code>) and never goes on the network itself.</p>
+  </div>
 </section>
 
 <section aria-labelledby="order">
   <h2 id="order">How a request is decided</h2>
   <p class="prose">The first step that decides wins:</p>
   <ol class="steps prose">
-    <li><strong>Network floor (DENY, cannot be loosened):</strong> IP literals, DNS over HTTPS, private ranges and metadata addresses, ports other than 80/443, an SNI that differs from the host, <code>Upgrade: h2c</code>, nested CONNECT.</li>
-    <li><strong>Internal hosts</strong> you declared (CI, registry): decided at the domain, FREE only when you marked them <code>read</code>, only on their declared ports.</li>
-    <li><strong>A single-use authorisation</strong> left by an approval whose client had already given up.</li>
-    <li><strong>Exfiltration heuristics</strong> (data in the URL, high-entropy values and labels, unusual headers, known secrets, PII): logged only by default (<code>heuristics = "shadow"</code>); with <code>heuristics = "enforce"</code> a score of 3 or more asks, never in auto mode.</li>
+    <li><strong>Network floor</strong> (deny, cannot be loosened): IP literals, DNS over HTTPS, private ranges and metadata addresses, ports other than 80 and 443, an SNI that differs from the host, <code>Upgrade: h2c</code>, nested <code>CONNECT</code>.</li>
+    <li><strong>Internal hosts</strong> you declared (CI, registry): decided at the domain, on their declared ports. Free only when you marked them <code>read</code>.</li>
+    <li><strong>A single-use authorisation</strong>, left by an approval whose client had already given up.</li>
+    <li><strong>Exfiltration heuristics</strong> (data in the URL, high-entropy values, unusual headers, known secrets, PII). Logged only by default; with <code>heuristics = "enforce"</code> a score of 3 or more asks.</li>
     <li><strong>Policy rules</strong>, from the most specific to the least.</li>
-    <li><strong>Defaults:</strong> body-less reads of trusted hosts are FREE; reads of unknown hosts, writes, uploads, messaging and WebSockets ASK; a body over the buffer limit (10 MiB) is denied.</li>
+    <li><strong>Defaults:</strong> body-less reads of trusted hosts are free. Reads of unknown hosts, writes, uploads, messaging and WebSockets ask. A body over the buffer limit (10 MiB) is denied.</li>
   </ol>
+  <p class="prose">The full evaluation order: the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/policy.md#evaluation-order">policy reference</a>.</p>
 </section>
 
 <section aria-labelledby="life">
   <h2 id="life">The life of a held request</h2>
   <ol class="prose">
     <li>Agent → gate: <code>POST https://api.unknown.io/v1/upload</code></li>
-    <li>Gate: source → container; policy → ASK; body buffered (up to the limit); local queue</li>
-    <li>Gate → console: summary, masked preview, warnings, correlation (container, agent, task, session)</li>
-    <li>Console → you: approval screen</li>
-    <li>You → console: <code>y</code>, or <code>n &lt;reason&gt;</code></li>
-    <li>Gate → upstream: the held request (on <code>y</code>), or <code>403 E_DENIED</code> with your reason</li>
+    <li>Gate: source → container; policy → ask; body buffered (up to the limit)</li>
+    <li>Gate → hub: a signed <code>NeverAuto</code> ticket with the summary, a masked preview, warnings and who asked (container, agent, task, session)</li>
+    <li>Hub → you: the approval screen in <code>lox run</code> (or <code>lox approve</code>, lea’s deck, a paired phone)</li>
+    <li>You → hub: <code>y</code>, or <code>n &lt;reason&gt;</code>. The hub signs the decision and the gate checks it.</li>
+    <li>Gate → upstream: the held request on <code>y</code>, or <code>403 E_DENIED</code> with your reason</li>
   </ol>
-  <p class="prose">The gate holds a request for 60 s. If nobody answered by then, the agent gets <code>403 E_PENDING</code> and the item stays on the console; once you approve, the same request (same fingerprint) goes through within 10 minutes, once. Without a console, an ASK is refused at once with <code>E_NO_CONSOLE</code>, while FREE traffic continues on the last approved policy.</p>
+  <div class="prose">
+    <p>The gate holds a request for 60 s. If nobody answered by then, the agent gets <code>403 E_PENDING</code> and the ticket stays pending. Once you approve, the same request (same fingerprint) goes through once, within 10 minutes.</p>
+    <p>Without a console, an ask is refused at once with <code>E_NO_CONSOLE</code>. Free traffic continues on the last approved policy.</p>
+  </div>
 </section>
 
 <section aria-labelledby="tls">
@@ -115,30 +129,51 @@
   <table>
   <thead><tr><th scope="col">Mode</th><th scope="col">What the gate sees</th><th scope="col">What you approve</th></tr></thead>
   <tbody>
-  <tr><th scope="row">CONNECT + SNI (no CA)</th><td>host, port, SNI</td><td>A host for a container: <code>y</code> opens container × host × port for 10 minutes, <strong>reads and writes</strong>, content invisible. The screen says so.</td></tr>
-  <tr><th scope="row">TLS decryption</th><td>method, path, headers, body</td><td>One request. A local CA, trusted only inside lea’s containers, is issued per installation; <code>lockhttp signer</code> holds its key.</td></tr>
+  <tr><th scope="row">CONNECT + SNI (no CA)</th><td>host, port, SNI</td><td>A host for a container: <code>y</code> opens container × host × port for 10 minutes, <strong>reads and writes</strong>, content unseen. The screen says so.</td></tr>
+  <tr><th scope="row">TLS decryption</th><td>method, path, headers, body</td><td>One request. A local CA, trusted only inside lea’s containers, is made per installation; <code>lockhttp signer</code> holds its key.</td></tr>
   </tbody>
   </table>
   </div>
-  <p class="prose">Hosts in the policy’s <code>splice</code> list (clients that pin their certificates) and internal hosts are never decrypted: they are decided at the domain, and never in auto mode.</p>
+  <p class="prose">Hosts in the policy’s <code>splice</code> list (clients that pin their certificates) and internal hosts are never decrypted. They are decided at the domain, and never answered without a human.</p>
 </section>
 
-<section aria-labelledby="claude">
-  <h2 id="claude">The Claude API is a relay</h2>
+<section aria-labelledby="relay">
+  <h2 id="relay">LLM APIs as a relay</h2>
   <div class="prose">
-    <p><code>api.anthropic.com</code> is not only the model’s channel: <code>mcp_servers</code> makes Anthropic call any remote MCP server, and some server tools fetch or run things outside your machine. Once TLS is decrypted:</p>
+    <p>A model API can reach far beyond the model. On the Claude API, <code>mcp_servers</code> makes the provider call any remote MCP server, and some server tools fetch or run things outside your machine.</p>
+    <p>lockhttp checks the Claude API per request once TLS is decrypted:</p>
     <ul>
-      <li><code>POST /v1/messages</code> and <code>/v1/messages/count_tokens</code> are free only without <code>mcp_servers</code> and with no server tool other than <code>web_search</code>;</li>
+      <li><code>POST /v1/messages</code> and <code>/v1/messages/count_tokens</code> pass only without <code>mcp_servers</code> or <code>container</code>, and with no server tool other than <code>web_search</code>;</li>
       <li><code>/v1/files*</code> asks;</li>
       <li>a credential that is not one of the container’s own is denied (<code>E_SECRET_EGRESS</code>);</li>
-      <li>any other path or host under the Anthropic domains asks, never in auto mode.</li>
+      <li>any other path or host under the Anthropic domains asks, never answered without a human.</li>
     </ul>
+    <p>Every rule: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/policy.md#claude-api">the policy reference</a>.</p>
   </div>
 </section>
 
+<section aria-labelledby="inject">
+  <h2 id="inject">Credentials the agent never holds</h2>
+  <div class="prose">
+    <p>A policy <code>inject</code> entry has the gate add a header, such as <code>Authorization: Bearer …</code>, for one exact host and port. The secret comes from the gate’s own secrets file.</p>
+    <p>The agent sends its request without the credential. A request that carries the injected secret itself is refused with <code>E_SECRET_EGRESS</code>; a missing secret, with <code>E_INJECT</code>.</p>
+  </div>
+  <pre tabindex="0"><code>[[profiles.default.inject]]
+id         = "home-assistant"
+host       = "homeassistant"
+port       = 8123
+header     = "Authorization"
+scheme     = "Bearer"
+credential = "ha-token"   # its name in the gate's secrets file</code></pre>
+  <p class="prose">Paths, methods and containers: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/policy.md#credential-injection">credential injection</a>.</p>
+</section>
+
 <section aria-labelledby="policy">
-  <h2 id="policy">Rules and auto mode</h2>
-  <p class="prose">The policy lives with the console, never in the project: the gate reads no policy file, it uses what the console serves. A rule applies to all containers or to one, never to an agent (an agent name is a claim, not an identity).</p>
+  <h2 id="policy">Rules</h2>
+  <div class="prose">
+    <p>The policy lives with the console, never in the project. The gate reads no policy file: it uses what the console serves.</p>
+    <p>A rule applies to all containers or to one, never to an agent: an agent name is a claim, not an identity.</p>
+  </div>
   <pre tabindex="0"><code>[[profiles.default.rules]]
 id      = "github-api-read"
 host    = "api.github.com"
@@ -151,48 +186,75 @@ container = "lea-ab12cd34ef"
 host      = "registry.npmjs.org"
 methods   = ["POST"]
 path      = "/-/npm/v1/security/advisories/bulk"
-verdict   = "auto"        # asks, but auto mode may answer
+verdict   = "ask"
 max_body  = "256KiB"</code></pre>
-  <p class="prose">A rule shape from the design document; the exact schema is settled with <code>v0.1.0</code>. Any loosening (a new host, a wider method or path, <code>ask → auto → free</code>, a wider scope) is confirmed by you in the console’s review. An <code>auto</code> rule is refused for uploads, messaging, registry publishing, <code>git-receive-pack</code>, spliced hosts, heuristic hits, secrets and production profiles.</p>
+  <div class="prose">
+    <p>Any loosening (a new host, a wider method or path, <code>ask</code> to <code>free</code>, a wider scope) waits for your confirmation in the console’s <code>:review</code>.</p>
+    <p>An <code>auto</code> rule stays valid but asks like <code>ask</code>: every held request is a <code>NeverAuto</code> ticket. Uploads, messaging, registry publishing, <code>git-receive-pack</code>, spliced hosts, heuristic hits, secrets and production profiles can never be <code>auto</code>.</p>
+  </div>
 </section>
 
 <section aria-labelledby="refusals">
   <h2 id="refusals">Refusal codes</h2>
-  <p class="prose">A refusal is a <code>403</code> with <code>X-LockHTTP-Code</code> and <code>X-LockHTTP-Request</code> headers and a text body saying why and what to ask. The codes are part of the protocol and never renamed.</p>
+  <p class="prose">A refusal is a <code>403</code> with <code>X-LockHTTP-Code</code> and <code>X-LockHTTP-Request</code> headers, and a text body saying why and what to ask. The codes are part of the protocol and never renamed.</p>
   <div class="table-wrap" role="region" aria-label="Refusal codes" tabindex="0">
   <table>
   <thead><tr><th scope="col">Code</th><th scope="col">Meaning</th><th scope="col">Agent should</th></tr></thead>
   <tbody>
-  <tr><th scope="row"><code>E_DENIED</code></th><td>the human denied the request</td><td>ask the user</td></tr>
-  <tr><th scope="row"><code>E_TIMEOUT</code></th><td>nobody answered the approval in time</td><td>ask the user</td></tr>
-  <tr><th scope="row"><code>E_PENDING</code></th><td>the request waits for the human</td><td>retry the same request in a moment</td></tr>
-  <tr><th scope="row"><code>E_NO_CONSOLE</code></th><td>no lockhttp console is running</td><td>ask the user to run <code>lockhttp console</code></td></tr>
-  <tr><th scope="row"><code>E_HOST_UNKNOWN</code></th><td>the host is not trusted and needs a human</td><td>ask the user</td></tr>
-  <tr><th scope="row"><code>E_METHOD</code></th><td>the method is not allowed for this host</td><td>ask the user</td></tr>
-  <tr><th scope="row"><code>E_RULE</code></th><td>a policy rule denies the request</td><td>ask the user</td></tr>
-  <tr><th scope="row"><code>E_BODY_TOO_LARGE</code></th><td>the body is larger than the buffer limit</td><td>send less, or ask the user</td></tr>
-  <tr><th scope="row"><code>E_EXFIL_SUSPECT</code></th><td>the request looks like data exfiltration</td><td>send less data, or ask the user</td></tr>
-  <tr><th scope="row"><code>E_CLAUDE_API_PARAM</code></th><td>a Claude API parameter needs a human</td><td>ask the user</td></tr>
-  <tr><th scope="row"><code>E_FLOOR</code></th><td>IP literal, DoH, private range, port, SNI mismatch, h2c</td><td>stop</td></tr>
-  <tr><th scope="row"><code>E_SECRET_EGRESS</code></th><td>a credential is leaving its legitimate host</td><td>stop</td></tr>
-  <tr><th scope="row"><code>E_PINNED</code></th><td>the client refused the gate’s certificate</td><td>stop</td></tr>
-  <tr><th scope="row"><code>E_SOURCE_UNKNOWN</code></th><td>the gate cannot tell which container sent the request</td><td>stop</td></tr>
+  <tr><th scope="row"><code>E_PENDING</code></th><td>the request waits for the human past the hold time</td><td>retry the same request in a moment</td></tr>
+  <tr><th scope="row"><code>E_DENIED</code></th><td>the human denied the request (the reason is in the body)</td><td>not retry; ask the user</td></tr>
+  <tr><th scope="row"><code>E_TIMEOUT</code></th><td>the hub ticket expired before anyone answered</td><td>send the same request again: it is asked again</td></tr>
+  <tr><th scope="row"><code>E_NO_CONSOLE</code></th><td>no lockhttp console is running</td><td>ask the user to start it</td></tr>
+  <tr><th scope="row"><code>E_RULE</code></th><td>a deny rule or the deny list refuses it</td><td>ask the user to change the rule</td></tr>
+  <tr><th scope="row"><code>E_FLOOR</code></th><td>IP literal, DoH, cloud metadata, port, SNI or Host mismatch, h2c, nested <code>CONNECT</code></td><td>use a named public host on 80 or 443</td></tr>
+  <tr><th scope="row"><code>E_SECRET_EGRESS</code></th><td>a credential leaving its own hosts, or the value of a secret the gate injects</td><td>never send a credential to another host</td></tr>
+  <tr><th scope="row"><code>E_BODY_TOO_LARGE</code></th><td>the body is over the buffer limit</td><td>send less, or ask for a rule</td></tr>
+  <tr><th scope="row"><code>E_SOURCE_UNKNOWN</code></th><td>the gate cannot tell which container sent the request</td><td>use the proxy address lea gave</td></tr>
+  <tr><th scope="row"><code>E_INJECT</code></th><td>the policy injects a credential for this host, and the gate lacks it</td><td>ask the user; never send the credential itself</td></tr>
   </tbody>
   </table>
   </div>
+  <p class="prose">Also registered: <code>E_HOST_UNKNOWN</code>, <code>E_METHOD</code>, <code>E_EXFIL_SUSPECT</code>, <code>E_CLAUDE_API_PARAM</code> and <code>E_PINNED</code> (in the gate’s audit only).</p>
 </section>
+
     </div>
   </main>
   <footer class="site-footer">
-    <div class="wrap">
-      <ul>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp">Source on GitHub</a></li>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/README.md">README</a></li>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">lea integration contract</a></li>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">Design decisions</a></li>
-        <li><a href="https://lockfamily.dev/">The Lock family</a></li>
-      </ul>
-      <p>Pre-release: <a href="https://github.com/DavidGodefroid/lockhttp/releases">v0.5.0</a> is out. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+    <div class="wrap footer-grid">
+      <div class="footer-about">
+        <a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="32" height="32"><span class="wordmark">lockhttp</span></a>
+        <p>Outbound HTTP(S) for AI agents: reads of trusted hosts pass, and anything that sends data or reaches an unknown host waits for you.</p>
+        <p class="family-link">Part of the <a href="https://lockfamily.dev">Lock Family</a>, harness security for AI agents.</p>
+      </div>
+      <nav aria-labelledby="footer-lock">
+        <h2 id="footer-lock">lockhttp</h2>
+        <ul>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp">Source on GitHub</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/README.md">README</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/usage.md">Usage guide</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/security-model.md">Security model</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/CHANGELOG.md">Changelog</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/SECURITY.md">Report a vulnerability</a></li>
+        </ul>
+      </nav>
+      <nav class="family-strip" aria-labelledby="footer-family">
+        <h2 id="footer-family">The Lock Family</h2>
+        <ul>
+          <li data-lock="locksql"><a href="https://github.com/DavidGodefroid/locksql">locksql</a><span>SQL databases, PII masked</span></li>
+          <li data-lock="lockmq"><a href="https://github.com/DavidGodefroid/lockmq">lockmq</a><span>RabbitMQ queues</span></li>
+          <li data-lock="lockfile"><a href="https://github.com/DavidGodefroid/lockfile">lockfile</a><span>Files: S3, SFTP, disk</span></li>
+          <li data-lock="lockhttp" aria-current="true"><a href="https://github.com/DavidGodefroid/lockhttp">lockhttp</a><span>Outbound HTTP(S)</span></li>
+          <li data-lock="locklog"><a href="https://github.com/DavidGodefroid/locklog">locklog</a><span>Logs, masked search</span></li>
+          <li data-lock="lockssh"><a href="https://github.com/DavidGodefroid/lockssh">lockssh</a><span>Commands over SSH</span></li>
+          <li data-lock="lockhub"><a href="https://github.com/DavidGodefroid/lockhub">lockhub</a><span>The approval hub and <code>lox</code></span></li>
+          <li data-lock="lockkit"><a href="https://github.com/DavidGodefroid/lockkit">lockkit</a><span>The shared Go core</span></li>
+          <li data-lock="lea"><a href="https://github.com/DavidGodefroid/lea">lea</a><span>Agents in containers</span></li>
+        </ul>
+      </nav>
+    </div>
+    <div class="wrap footer-bottom">
+      <p>Pre-release (v0.8.x). lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p><a href="https://lockfamily.dev">lockfamily.dev</a> · <a href="https://github.com/DavidGodefroid/lockfamily">the family on GitHub</a></p>
     </div>
   </footer>
 </body>

@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/DavidGodefroid/lockhttp/internal/policy"
 )
 
 func runArgs(t *testing.T, args ...string) (int, string, string) {
@@ -67,8 +69,8 @@ func TestPolicyCommand(t *testing.T) {
 	if code, _, _ := runEnv(t, env{}, "policy", "show", "--config", path); code != exitFail {
 		t.Fatal("show without a file")
 	}
-	if code, _, _ := runEnv(t, env{}, "init", "--config", path); code != exitOK {
-		t.Fatal("init")
+	if err := os.WriteFile(path, []byte(policy.DefaultConfig("default", false, nil)), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	code, out, _ := runEnv(t, env{}, "policy", "show", "--config", path)
 	if code != exitOK || !strings.Contains(out, "[profiles.default]") {
@@ -93,38 +95,13 @@ func TestPolicyCommand(t *testing.T) {
 	}
 }
 
-func TestInitWritesValidPolicy(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cfg", "config.toml")
-	code, out, errs := runEnv(t, env{}, "init", "--config", path, "--trusted", "example.org,.corp.example")
-	if code != exitOK || !strings.Contains(out, "wrote") {
-		t.Fatalf("init: %d %s %s", code, out, errs)
-	}
-	b, _ := os.ReadFile(path)
-	if !strings.Contains(string(b), `"*.corp.example"`) {
-		t.Fatalf("imports missing:\n%s", b)
-	}
-	fi, _ := os.Stat(path)
-	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
-		t.Fatalf("mode %o", fi.Mode().Perm())
-	}
-	if code, _, _ := runEnv(t, env{}, "init", "--config", path); code != exitFail {
-		t.Fatal("overwrote without --force")
-	}
-	if code, _, _ := runEnv(t, env{}, "init", "--config", path, "--force", "--profile", "lab"); code != exitOK {
-		t.Fatal("--force --profile")
-	}
-	code, out, _ = runEnv(t, env{}, "doctor", "--config", path, "--profile", "lab")
-	if !strings.Contains(out, "profile lab") {
-		t.Fatalf("doctor: %d %s", code, out)
-	}
-}
-
 func TestGateRefusesRoot(t *testing.T) {
 	code, _, errs := runEnv(t, env{euid: func() int { return 0 }}, "gate", "--listen", "127.0.0.1:0")
 	if code != exitUsage || !strings.Contains(errs, "refused as root") {
 		t.Fatalf("root gate: %d %s", code, errs)
 	}
-	if code, _, _ := runEnv(t, env{euid: func() int { return 1000 }}, "gate", "--ca-cert", "x"); code != exitUsage {
+	hub := []string{"--hub", "http://127.0.0.1:8443", "--hub-key-file", writeHubPub(t), "--instance", "egress", "--home", t.TempDir()}
+	if code, _, errs := runEnv(t, env{euid: func() int { return 1000 }}, append([]string{"gate", "--ca-cert", "x"}, hub...)...); code != exitUsage || !strings.Contains(errs, "go together") {
 		t.Fatal("--ca-cert without --signer accepted")
 	}
 	if code, _, _ := runEnv(t, env{}, "gate", "--check", "--listen", "127.0.0.1:1"); code != exitFail {
@@ -143,8 +120,8 @@ func TestCAInitAndSignerKeyMode(t *testing.T) {
 	if code != exitUsage || !strings.Contains(errs, "readable by others") {
 		t.Fatalf("signer with a readable key: %d %s", code, errs)
 	}
-	code, out, _ := runEnv(t, env{}, "doctor", "--ca-cert", filepath.Join(dir, "ca.pem"), "--config", filepath.Join(dir, "none.toml"))
-	if !strings.Contains(out, "CA valid until") {
+	code, out, _ := runEnv(t, env{}, "doctor", "--ca-cert", filepath.Join(dir, "ca.pem"))
+	if !strings.Contains(out, "ca: valid until") {
 		t.Fatalf("doctor CA: %d %s", code, out)
 	}
 }
@@ -152,6 +129,18 @@ func TestCAInitAndSignerKeyMode(t *testing.T) {
 func TestConsoleNeedsTTY(t *testing.T) {
 	if code, _, errs := runEnv(t, env{}, "console"); code != exitUsage || !strings.Contains(errs, "terminal") {
 		t.Fatalf("console without tty: %d %s", code, errs)
+	}
+}
+
+// The gate runs hub-attached only: without its hub flags it does not
+// start, and it says that `lox run` (through lea) gives them.
+func TestGateHubOnly(t *testing.T) {
+	gate := env{euid: func() int { return 1000 }}
+	for _, args := range [][]string{nil, {"--upstream", "http://127.0.0.1:3128"}, {"--sources", "s.json", "--profile", "p"}} {
+		code, out, errs := runEnv(t, gate, append([]string{"gate", "--listen", "127.0.0.1:0"}, args...)...)
+		if code != exitUsage || out != "" || !strings.Contains(errs, "launched by `lox run` only") || !strings.Contains(errs, "--hub") {
+			t.Errorf("%v: %d %q %s", args, code, out, errs)
+		}
 	}
 }
 
@@ -204,6 +193,16 @@ func TestGateHubFlags(t *testing.T) {
 		"--facade-keys-file", facades)
 	if code != exitUsage || !strings.Contains(errs, "facades.json") {
 		t.Fatalf("bad facade keys: %d %s", code, errs)
+	}
+	// So is a secrets file that does not load, without echoing it.
+	secrets := filepath.Join(t.TempDir(), "secrets.json")
+	if err := os.WriteFile(secrets, []byte(`{"version":1,"secrets":{"a":"VALUE-not-closed`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errs = runEnv(t, gate, "gate", "--listen", "127.0.0.1:0", "--hub", "http://127.0.0.1:8443", "--hub-key-file", good, "--instance", "egress", "--home", home,
+		"--secrets", secrets)
+	if code != exitUsage || !strings.Contains(errs, "secrets file") || strings.Contains(errs, "VALUE") {
+		t.Fatalf("bad secrets file: %d %s", code, errs)
 	}
 }
 
@@ -283,9 +282,10 @@ func TestFlagErrorsDoNotEchoValues(t *testing.T) {
 	}{
 		{"--hub not a URL", hub("http://user:" + canary + "@"), "--hub"},
 		{"--hub not a URL (raw)", hub(canaryURL + ":x:y"), "--hub"},
-		{"--hub http to a public host", hub("http://hub.example.com:8443/"+canary, "--hub-net", "10.89.0.0/24"), "(--hub)"},
-		{"--hub plain http to a public host", hub("http://hub.example.com:8443/"+canary, "--hub-net", "10.89.0.0/24", "--hub-plain-http"), "(--hub)"},
-		{"--hub does not resolve", hub("https://no-such-hub.invalid:8443/" + canary), "--hub host"},
+		// lockkit refuses a path in the hub URL, without quoting it.
+		{"--hub with a path", hub("http://hub.example.com:8443/"+canary, "--hub-net", "10.89.0.0/24"), "hub URL"},
+		{"--hub plain http with a path", hub("http://hub.example.com:8443/"+canary, "--hub-net", "10.89.0.0/24", "--hub-plain-http"), "hub URL"},
+		{"--hub does not resolve", hub("https://no-such-hub.invalid:8443"), "--hub host"},
 		{"--instance", []string{"gate", "--listen", "127.0.0.1:0", "--hub", "https://hub.example.com", "--hub-key-file", key, "--instance", canary}, "--instance"},
 		{"--hub-net", []string{"gate", "--hub-net", canaryURL}, "-hub-net"},
 		{"--hub-net token", []string{"gate", "--hub-net", canary}, "-hub-net"},
@@ -293,7 +293,7 @@ func TestFlagErrorsDoNotEchoValues(t *testing.T) {
 		{"bool flag value", []string{"gate", "--check=" + canary}, "-check"},
 		{"positional argument", []string{"gate", "--hub-plain-http", canaryURL}, "unexpected argument"},
 		{"--hub with userinfo", hub(`http://user:`+canary+`@hub.example.com:8443/a"b\c`, "--hub-net", "10.89.0.0/24"), "--hub must not carry"},
-		{"--hub quoted by lockkit", hub(`http://hub.example.com:8443/a"b\c/`+canary, "--hub-net", "10.89.0.0/24"), "(--hub)"},
+		{"--hub path with quotes", hub(`http://hub.example.com:8443/a"b\c/`+canary, "--hub-net", "10.89.0.0/24"), "hub URL"},
 		{"--require-device", hub("https://hub.example.com", "--hub-net", "10.89.0.0/24", "--devices-file", key, "--require-device", canary), "--require-device: risk classes"},
 		{"--hub with a query", hub("https://hub.example.com:8443/?token="+canary, "--hub-net", "10.89.0.0/24"), "--hub must not carry"},
 		{"policy subcommand", []string{"policy", canaryURL}, "unknown subcommand"},
@@ -308,8 +308,8 @@ func TestFlagErrorsDoNotEchoValues(t *testing.T) {
 		{"--listen", []string{"gate", "--listen", canary}, "--listen"},
 		{"--listen URL", []string{"gate", "--listen", canaryURL}, "--listen"},
 		{"--check", []string{"gate", "--check", "--listen", canary + ":1"}, "--listen"},
-		{"init --trusted", []string{"init", "--config", filepath.Join(t.TempDir(), "c.toml"), "--trusted", "go.dev " + canary}, "--trusted entry 2"},
-		{"doctor --gate", []string{"doctor", "--config", filepath.Join(t.TempDir(), "none.toml"), "--gate", canary + ":1"}, "--gate"},
+		{"profile add --trusted", []string{"profile", "add", "--non-interactive", "--project", t.TempDir(), "--trusted", "go.dev " + canary}, "--trusted: entry 2"},
+		{"doctor --gate", []string{"doctor", "--gate", canary + ":1"}, "--gate"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			code, out, errs := runEnv(t, gate, c.args...)

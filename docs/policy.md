@@ -1,8 +1,9 @@
 # LockHTTP policy reference
 
 The policy is the profile the human writes in the console account's config
-file, `~/.config/lockhttp/config.toml` (`lockhttp init` writes a first
-one). The console reads it, validates it, has you approve it, and serves
+file, `~/.config/lockhttp/config.toml`: `lockhttp profile add` writes a
+first one in the project's `.lockhttp/config.toml`, which `lox run` reviews
+and copies there. The console reads it, validates it, has you approve it, and serves
 the approved policy to the gate (`policy.get`) with its sha256 fingerprint.
 **The gate never reads a policy file**: it uses what the console serves,
 checks the fingerprint, and keeps the previous policy when they do not
@@ -41,7 +42,7 @@ container = "lea-ab12cd34ef"
 host      = "registry.npmjs.org"
 methods   = ["POST"]
 path      = "/-/npm/v1/security/advisories/bulk"
-verdict   = "auto"
+verdict   = "ask"
 max_body  = "256KiB"
 expires   = "2026-12-31"
 note      = "npm audit in the shop container"
@@ -77,6 +78,7 @@ be named.
 | `redirect_cdn` | list of `"origin>cdn"` | `[]` | A 3xx from `origin` whose `Location` is on `cdn` lets the same container `GET` that exact URL once, without a body, within 60 s. Both sides are host patterns. |
 | `internal_hosts` | array of tables | `[]` | See [Internal hosts](#internal-hosts). |
 | `rules` | array of tables | `[]` | See [Rules](#rules). |
+| `inject` | array of tables | `[]` | See [Credential injection](#credential-injection). |
 
 Built-in `redirect_cdn` pairs, always active:
 
@@ -121,7 +123,7 @@ a `CONNECT` to it is decided at the domain. With `read = true`, a
 | Key | Required | Meaning |
 |---|---|---|
 | `id` | yes | Unique in the profile. 1-64 characters: letters, digits, `_`, `-`, `.`, starting with a letter or digit. |
-| `container` | no | The container it applies to (lea's container name, `local` in standalone mode); empty: every container. |
+| `container` | no | The container it applies to (lea's container name, `local` without a `sources.json`); empty: every container. |
 | `agent` | | **Refused.** An agent name is declarative; rules apply to a container or to all. |
 | `host` | yes | A host pattern, or `*`. |
 | `methods` | no | HTTP methods (upper-cased); empty: every method. |
@@ -134,7 +136,7 @@ a `CONNECT` to it is decided at the domain. With `read = true`, a
 | Verdict | Effect when the rule decides |
 |---|---|
 | `free` | FREE. |
-| `auto` | ASK, and the console's auto mode may answer it (see below). |
+| `auto` | ASK. The gate asks lockhub, which has no auto mode for its asks: an `auto` rule asks like `ask` (see below). |
 | `ask` | ASK, `NeverAuto`. |
 | `deny` | DENY, `E_RULE`. |
 
@@ -148,15 +150,10 @@ webhooks), the rule's methods can publish to a package or image registry
 contains `git-receive-pack`, or the rule allows a write to any path of
 `github.com`, `gitlab.com`, `bitbucket.org` or `codeberg.org`.
 
-At run time, an `auto` rule still gives a `NeverAuto` screen when the
-request is an upload, a message, a publish, a git push, a WebSocket or a
-`CONNECT`, when the screen is red (a heuristic hit, a Claude API parameter),
-or when its body exceeds `max_body`. The console then re-checks, against its
-own approved policy, that the rule exists, is active, says `auto`, may be
-`auto`, and matches the request's host, method, path, container and body
-size; anything else stays `NeverAuto`, whatever the gate claimed. Auto mode
-answers only when you turned it on in the console (Shift+Tab, or
-`lockhttp console --auto`).
+The gate runs hub-attached only, and every hub ticket it makes is
+`NeverAuto`: the hub cannot check an `auto` rule against the console's
+policy, so a human answers every held request, `auto` rule or not. The
+verdict stays valid in a policy file (and keeps the checks above).
 
 ## Evaluation order
 
@@ -216,6 +213,11 @@ For each connection, then each request, the first step that decides wins.
    (`*.amazonaws.com`), Slack tokens (Slack), OpenAI keys
    (`api.openai.com`), Google API keys (`*.googleapis.com`), npm tokens
    (`registry.npmjs.org`), GitLab tokens (GitLab), and private keys (no host).
+   Before this, the value of any secret of the gate's secrets file (as is,
+   URL-escaped or in base64) anywhere in what the agent sent: DENY
+   `E_SECRET_EGRESS` (rule `secret:injected`), whatever the host, in
+   shadow mode too; the audit keeps no path for it. See
+   [Credential injection](#credential-injection).
 9. **Internal hosts.** An internal host with `read = true`: FREE for a
    `CONNECT` or a read. Any other request to an internal host: ASK,
    `NeverAuto`.
@@ -281,7 +283,9 @@ For each connection, then each request, the first step that decides wins.
     `E_BODY_TOO_LARGE`.
 18. A FREE request goes out (through `--upstream`, or dialled directly,
     refusing non-public addresses except for internal hosts). The `Host`
-    sent upstream is the host decided, never the client's.
+    sent upstream is the host decided, never the client's. A FREE or
+    approved request first gets the headers of its
+    [credential injections](#credential-injection).
 19. An ASK request waits in the gate's queue. No console: `E_NO_CONSOLE` at
     once. Past `hold`: `E_PENDING` (the item stays on the console). The
     human's `n` or the console's timeout: `E_DENIED` or `E_TIMEOUT`.
@@ -289,6 +293,158 @@ For each connection, then each request, the first step that decides wins.
 With no policy received yet (the console never answered since the gate
 started), step 7 to 9 and 11 do nothing, nothing is trusted, and only the
 four Claude hosts and their allowlist are free.
+
+## Credential injection
+
+An injection lets the agent call an authenticated API without ever
+holding its credential: the secret stays in the gate's container, the
+agent sends its request without it, and the gate adds the header after
+the verdict, for one host and port only.
+
+```toml
+[[profiles.default.internal_hosts]]
+host  = "homeassistant"
+ports = [8123]
+read  = true
+
+[[profiles.default.inject]]
+id         = "home-assistant"
+host       = "homeassistant"      # an exact host (an internal host may be single-label)
+port       = 8123                 # required
+header     = "Authorization"
+scheme     = "Bearer"             # optional: the value is "Bearer <secret>"
+credential = "ha-token"           # the secret's name in the gate's secrets file
+container  = "lea-ab12cd34ef"     # optional: one container; empty: every one
+methods    = ["GET", "POST"]      # optional: these methods only
+paths      = ["/api/*"]           # optional: these paths only
+note       = "Home Assistant long-lived token"
+```
+
+| Key | Required | Meaning |
+|---|---|---|
+| `id` | yes | Unique among the injections. Same form as a rule id. |
+| `host` | yes | An exact host name, lower-cased; no pattern, no `*`, no IP literal (name the host as an internal host). A spliced host is refused: it is never decrypted. |
+| `port` | yes | 1-65535. Only requests to this port get the header. |
+| `header` | yes | A header name. The gate's own headers are refused: `Host`, `Content-Length`, `Content-Type`, `Content-Encoding`, `Transfer-Encoding`, `Connection`, `Keep-Alive`, `Te`, `Trailer`, `Upgrade`, `Expect`, any `Proxy-*`, `X-Lea-Source` and any `X-LockHTTP-*`. |
+| `scheme` | no | A word (`Bearer`, `Token`) put before the value with a space. |
+| `credential` | yes | The name of the secret in the gate's secrets file: lower-case letters, digits, `_`, `-`, `.`, at most 32 characters, no run of more than 16 letters and digits (a name, not a pasted token). Never the value. |
+| `container` | no | The container it applies to. A container's injection wins over an all-containers one of the same header. |
+| `methods` | no | The methods that get the header (upper-cased); empty: every one. `TRACE`, `TRACK` and `CONNECT` are refused: they never get it, in any case of the method (`trace` too). |
+| `paths` | no | The paths that get the header, each exact or a prefix when it ends with `*` (as a rule's `path`); empty: every one. A request outside them goes out without it (audited `inject <id> skipped`). So does any path that is not canonical, whatever the list (an allowlist): only RFC 3986 unreserved characters (`A-Z a-z 0-9 - . _ ~`) and `/` as is, escapes only of reserved characters other than `/` (`%3A`, `%3B`, `%40`, ...), and escaped bytes >= 0x80 only as valid shortest-form UTF-8 letters, marks or digits (`caf%C3%A9`); no segment made only of dots, even with a reserved suffix (`..`, `...`, `..;x`, `..%3f`). Everything else goes out without the header: `/api/../admin`, `%2e`, `%2F`, `%5c`, `%25`, `%20`, `%00` (`..%20`, `..%00`), an escaped unreserved character (`%41`), overlong or invalid UTF-8 (`%c0%ae`), a fullwidth dot or slash, a literal `;`, `,` or `@`, an invalid escape. |
+| `note` | no | Free text for you. |
+
+Two injections of the same header, host, port and container are refused.
+
+**The secrets file.** The values live in the gate's secrets file
+(`lockhttp gate --secrets FILE`, [usage.md](usage.md#lockhttp-gate)), in
+the gate's container only, never in an agent's, nor in the policy, the
+console or the hub:
+
+```json
+{"version": 1, "secrets": {"ha-token": "eyJhbGciOi..."}}
+```
+
+It must be mode `0600` (refused if group- or world-readable). Each value
+is at least 8 bytes of printable ASCII (inner spaces allowed): no control
+character can split the request. It is reloaded when it changes; a
+rotated-out value stays in the leak check until the gate restarts. A file
+that does not load, or a secret it lacks, refuses every request the
+injection covers (`E_INJECT`): the request never goes out without its
+credential.
+
+**When the gate injects.** After the verdict (FREE, or approved on the
+hub) and only on a request it can read and that does not cross the
+internet in clear text:
+
+- a decrypted HTTPS request (the gate decrypts with `--ca-cert` and
+  `--signer`, and the host is neither spliced nor internal);
+- a plain HTTP request to an internal host (a LAN API such as
+  `http://homeassistant:8123`).
+
+A plain HTTP request to any other host, and a `CONNECT` decided at the
+domain (an internal host on HTTPS, a spliced host, no decryption), get no
+header; the audit says `inject <id> skipped`. An injection never changes
+the verdict: the request is decided as the agent sent it, and the approval
+screen says which header the gate will add, from which secret (by name).
+A header of the same name the agent sent is replaced, never forwarded
+(audited as a warning).
+
+**The secret never goes elsewhere.** The header is added only to the
+request decided for that host and port: the `Host` sent upstream is that
+host, and the gate does not follow redirects (a 3xx goes back to the
+agent, whose next request has no credential). The agent never holds the
+value; if a request of the agent carries it anyway, in the URL, a header or
+the body, as is, URL-escaped (in any case), in hex or in base64 (standard
+or URL alphabet, at any alignment inside a longer blob), each also found
+percent-decoded up to twice (any escape, in any case, `+` as a space or
+not; a stray `%` does not stop the decoding), it is refused with
+`E_SECRET_EGRESS`, whatever its host and whatever rule or grant would let
+it pass. The names the agent writes are checked too, ignoring case, dots
+and percent-escapes: the host of the URL and of the `Host` header, the
+`CONNECT` authority and the header names. A value in one of them is refused
+first (`E_SECRET_EGRESS`), before the floor, the hub's address check (which
+resolves the name) and the hub, and the audit shows the host as redacted.
+While the gate holds a secret, a host (with its port) longer than 263
+bytes or a header name longer than 1024 bytes is refused unscanned
+(`E_SECRET_EGRESS`, rule `secret:unscannable`).
+While the gate holds any secret, it scans every byte it can read of what
+the agent sends, accepting the same forms everywhere (the percent-decoding
+above included):
+
+- a body over the buffer limit is scanned as it streams; the request is
+  aborted before a whole value goes out (`E_SECRET_EGRESS`);
+- a body with a `Content-Encoding` of `gzip` or `deflate` is decoded to be
+  scanned (up to 256 MiB decoded); any other encoding, or an encoded body
+  over the buffer limit, is refused (`E_SECRET_EGRESS`, rule
+  `secret:unscannable`);
+- a WebSocket's frames from the agent are unmasked and scanned (across
+  frames); the frame that completes a value is not sent and the
+  connection closes. The gate removes the agent's
+  `Sec-WebSocket-Extensions` (no compression) and closes a WebSocket whose
+  target chose one anyway; a frame over the buffer limit closes it too;
+- a `CONNECT` tunnel decided at the domain is scanned as it streams, and
+  closed on a value.
+
+**The secret does not come back.** The rules below apply to every request
+to a host and port that has an injection, whatever the injection's
+container, methods and paths, and whether this request got the header or
+not: a credential one request carried may be stored by the target and
+served back on another path, or to another container. Such a request asks
+for an unencoded, whole response (`Accept-Encoding: identity`; its
+`Range` and `If-Range` are removed, since two ranges could join the halves
+of a value each redacted alone) and loses its `Max-Forwards`. A partial
+response (`206`, a `Content-Range`, `multipart/byteranges`) or one that
+switches protocols is refused (`E_INJECT`). Every value the gate has
+loaded (as is, URL-escaped, hex, base64, also percent-decoded as above) is overwritten with `*` in the
+response's status line, header names and values, and body (the length
+stays the same); its trailers are dropped. A `gzip` or `deflate` response
+is decoded first and goes to the agent decoded; any other encoding is
+refused (`E_INJECT`). `TRACE` and `TRACK`, in any case, to the host and port are refused
+(`E_METHOD`, rule `inject:trace`), and no request to it may upgrade to a
+WebSocket (`E_INJECT`). The audit says `redacted the injected secret
+<name>`.
+
+**What is not covered.** A value the agent splits across requests,
+frames or tunnel reads (each part goes out before the last one completes
+it: in a WebSocket or a tunnel, the gate matches the whole value and closes
+the connection, but the parts before it are gone), or encodes otherwise
+(encrypted, compressed in an application format, reversed, any encoding
+not listed above). A `CONNECT` tunnel the gate does not decrypt carries the
+agent's TLS: its ciphertext cannot be scanned (decrypt it, or do not
+splice, to get the scan). A target that transforms the credential before
+reflecting it (hashed, re-encoded) is not redacted, nor one that serves a
+part of it through its own API (an offset or a length in the query, a
+substring): each response is redacted alone, so parts read in separate
+responses are not matched. A value split over several hosts or requests'
+host names, or written as an internationalized (punycode) name, is not
+matched in the host.
+
+**Audit.** A request that got a header is audited with
+`"injected": ["<id>:<Header>"]`: the injection and the header's name,
+never the value.
+
+**Review.** Adding or changing an injection is a loosening (it waits for
+`:review`); removing one tightens.
 
 ## Claude API
 
@@ -379,6 +535,7 @@ force.
 | `internal_hosts` | a host or port added, or `read` set (removing `read` tightens) |
 | a rule added | unless its verdict is `deny` |
 | a rule removed | unless its verdict is `free` (its requests fall back to another rule or the defaults) |
+| `inject` | an entry added or changed (removing one tightens) |
 | a rule changed | its verdict rises (`deny` < `ask` < `auto` < `free`); or it now matches something it did not (another host, a container scope removed or changed, methods added or emptied, a wider path, a larger `max_body`, a later or removed `expires`); or a `deny`, `ask` or `auto` rule now matches less (what it no longer matches falls back elsewhere) |
 
 The comparison is conservative: a rule's host change, for example, counts
@@ -393,8 +550,9 @@ Trusted reads of docs, and their subdomains:
 trusted = ["docs.rs", "readthedocs.io", "*.readthedocs.io"]
 ```
 
-A container-scoped rule auto mode may answer (container names come from
-lea's `sources.json`; `local` in standalone mode):
+A container-scoped rule: the gate asks lockhub and a human answers
+(container names come from lea's `sources.json`). `verdict = "auto"` here
+would ask the same way, so `ask` says what happens:
 
 ```toml
 [[profiles.default.rules]]
@@ -403,7 +561,7 @@ container = "lea-ab12cd34ef"
 host      = "search.example.com"
 methods   = ["POST"]
 path      = "/v1/query"
-verdict   = "auto"
+verdict   = "ask"
 max_body  = "16KiB"
 expires   = "2026-12-31"
 ```

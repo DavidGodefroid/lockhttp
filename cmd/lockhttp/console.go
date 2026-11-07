@@ -29,19 +29,22 @@ func (e env) configPath(flagVal string) (string, error) {
 	return kconfig.UserConfigPath(product.P)
 }
 
-// runConsole is `lockhttp console`: the approval console, in the console
-// account's own session.
+// runConsole is `lockhttp console`: the policy console, in the console
+// account's own session (`lox run` runs it). It serves the approved policy
+// to the gate and asks its human about every loosening; the gate asks
+// lockhub, never this console, about held requests. It is lockkit's
+// policy-only console: it takes no hub flags (lox run passes none) and
+// approves no request.
 func runConsole(e env, args []string) int {
-	const usage = "lockhttp console [--profile P] [--config FILE] [--auto]"
+	const usage = "lockhttp console [--profile P] [--config FILE]"
 	fs := flag.NewFlagSet("console", flag.ContinueOnError)
 	profile := fs.String("profile", "default", "profile to serve")
 	cfgFlag := fs.String("config", "", "policy file (default: ~/.config/lockhttp/config.toml)")
-	auto := fs.Bool("auto", false, "start in auto mode (only rules with verdict \"auto\" are ever auto-approved)")
 	if !parse(e, fs, "console", usage, args) {
 		return exitUsage
 	}
 	if !e.tty {
-		fmt.Fprintln(e.stderr, "lockhttp console: must run in a terminal: it asks the human for approvals")
+		fmt.Fprintln(e.stderr, "lockhttp console: must run in a terminal: it asks the human about policy changes")
 		return exitUsage
 	}
 	path, err := e.configPath(*cfgFlag)
@@ -58,9 +61,13 @@ func runConsole(e env, args []string) int {
 	p := product.P
 	p.Version = strings.TrimPrefix(version, "v")
 	be := httpconsole.New(httpconsole.Options{Profile: *profile, Config: path})
-	err = console.Run(ctx, p, be, console.Options{
-		Profile: *profile, IO: term, TTY: os.Stdin, Auto: *auto,
-		Sanitizer: httpconsole.Sanitizer(),
+	runFn := console.Run
+	if e.consoleRun != nil {
+		runFn = e.consoleRun
+	}
+	err = runFn(ctx, p, be, console.Options{
+		Profile: *profile, IO: term, TTY: os.Stdin,
+		Sanitizer: httpconsole.Sanitizer(), PolicyOnly: true,
 	})
 	if err != nil {
 		fmt.Fprintln(e.stderr, "lockhttp console:", err)
@@ -95,13 +102,13 @@ func runPolicy(e env, args []string) int {
 	case "show":
 		b, err := os.ReadFile(path)
 		if err != nil {
-			fmt.Fprintln(e.stderr, "lockhttp policy:", err, "(create it with: lockhttp init)")
+			fmt.Fprintln(e.stderr, "lockhttp policy:", err, "("+noPolicyHint+")")
 			return exitFail
 		}
 		_, _ = e.stdout.Write(b)
 	case "edit":
 		if _, err := os.Stat(path); err != nil {
-			fmt.Fprintln(e.stderr, "lockhttp policy:", err, "(create it with: lockhttp init)")
+			fmt.Fprintln(e.stderr, "lockhttp policy:", err, "("+noPolicyHint+")")
 			return exitFail
 		}
 		edit := e.editor
@@ -141,52 +148,5 @@ func runPolicy(e env, args []string) int {
 	default:
 		return usageFail(e, "policy", usage, "unknown subcommand (show, edit or path)")
 	}
-	return exitOK
-}
-
-// runInit is `lockhttp init`: the policy file, in the console account.
-func runInit(e env, args []string) int {
-	const usage = `lockhttp init [--profile P] [--config FILE] [--trusted "a.com .corp.example"] [--force]`
-	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	profile := fs.String("profile", "default", "profile name")
-	cfgFlag := fs.String("config", "", "policy file (default: ~/.config/lockhttp/config.toml)")
-	trusted := fs.String("trusted", "", "hosts to trust for reads, space or comma separated (lea's LEA_EGRESS_ALLOW)")
-	force := fs.Bool("force", false, "overwrite an existing file")
-	if !parse(e, fs, "init", usage, args) {
-		return exitUsage
-	}
-	path, err := e.configPath(*cfgFlag)
-	if err != nil {
-		return usageFail(e, "init", usage, err.Error())
-	}
-	if _, err := os.Stat(path); err == nil && !*force {
-		fmt.Fprintf(e.stderr, "lockhttp init: %s exists (edit it, or --force)\n", path)
-		return exitFail
-	}
-	imports := strings.FieldsFunc(*trusted, func(r rune) bool { return r == ' ' || r == ',' || r == '\n' })
-	// Checked here so an error names the --trusted entry, not its place in
-	// the generated file (and never the value).
-	for i, h := range imports {
-		if _, err := policy.CheckHostPattern(fmt.Sprintf("--trusted entry %d", i+1), strings.TrimPrefix(h, "."), false); err != nil {
-			return usageFail(e, "init", usage, err.Error())
-		}
-	}
-	text := policy.DefaultConfig(imports)
-	if *profile != "default" {
-		text = strings.ReplaceAll(text, "profiles.default", "profiles."+*profile)
-	}
-	if _, err := policy.Parse([]byte(text), path, *profile); err != nil {
-		fmt.Fprintln(e.stderr, "lockhttp init:", err)
-		return exitUsage
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		fmt.Fprintln(e.stderr, "lockhttp init:", err)
-		return exitFail
-	}
-	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
-		fmt.Fprintln(e.stderr, "lockhttp init:", err)
-		return exitFail
-	}
-	fmt.Fprintf(e.stdout, "wrote %s (profile %s)\nnext: lockhttp console --profile %s\n", path, *profile, *profile)
 	return exitOK
 }

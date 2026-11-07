@@ -11,25 +11,186 @@ uses [Semantic Versioning](https://semver.org/).
 - Configuration and usage errors no longer repeat the value given, which
   may be a pasted secret or a URL with userinfo: policy errors name the key
   and, for a list, the entry's place in the file (`trusted entry 2`,
-  `internal_hosts entry 1 host`, `rules entry 3`; a rule by its place, not
-  its `id`) with the allowed values; the sources file names a bad
-  `networks` entry by its place; `--hub`, `--instance` (`gate` and
-  `hub-key`), `--hub-net`, `--require-device`, `--allow-uid`, `--listen`
-  (gate, `--check`, signer), `doctor --gate` and `init --trusted` errors,
-  flag parse errors, unknown commands, subcommands and flags (an unknown
-  flag is named only when it looks like a flag name), stray arguments and
-  "no profile of that name" omit the value (lockkit's hub client errors
-  have the `--hub` URL replaced). Profile names are keys and file paths
-  are still named. The `mcp_servers` warning (shown and audited) names the
-  server URL without its userinfo, query or fragment.
+  `internal_hosts entry 1 host`, `rules entry 3`, `inject entry 1`; a rule
+  or an injection by its place, not its `id` or host) with the allowed
+  values; the sources file names a bad `networks` entry by its place;
+  `--hub`, `--instance` (`gate` and `hub-key`), `--hub-net`,
+  `--require-device`, `--allow-uid`, `--listen` (gate, `--check`, signer)
+  and `doctor --gate` errors, flag parse errors, unknown commands,
+  subcommands and flags (an unknown flag is named only when it looks like a
+  flag name), stray arguments and "no profile of that name" omit the value.
+  Profile names are keys and file paths are still named. The `mcp_servers`
+  warning (shown and audited) names the server URL without its userinfo,
+  query or fragment.
 
 ### Changed
 
-- `--hub` refuses a URL with a user, password, query or fragment (the hub
-  authenticates the instance key), and the gate's start line names the hub
-  host only.
+- `--hub` refuses a URL with a user, password, query or fragment before
+  lockkit (the hub authenticates the instance key), and the gate's start
+  line names the hub host only.
 - The `mcp_servers` warning keeps the URL's host and path: a secret in the
   path still shows.
+
+## [0.8.1] - 2026-11-07
+
+Built on lockkit v0.14.1.
+
+### Changed
+
+- Docs, the agent's hints and the launcher's messages name `lox run`, which
+  replaces lockhub's deprecated `lox up` (#46): `E_NO_CONSOLE` says to start
+  the console with `lox run`, and so do the gate's usage error, `profile add`
+  and the console's policy errors. No behavior changes: container labels,
+  `up.json`, `.lockfamily/` and the flags stay the same.
+- lockkit v0.14.1, whose shared texts also name `lox run`.
+
+## [0.8.0] - 2026-11-06
+
+Built on lockkit v0.13.0.
+
+### Added
+
+- Proxy-side credential injection (#38, #41). A policy `inject` entry has the
+  gate add a header (e.g. `Authorization: Bearer …`) for one exact host and
+  port, using a secret from its own `--secrets` file, so the agent never holds
+  the credential. A request carrying such a secret is refused with
+  `E_SECRET_EGRESS`, and a missing secret with the new code `E_INJECT`.
+
+### Changed
+
+- CI runs the macOS job on `main` and nightly, not on pull requests (#39).
+
+## [0.7.1] - 2026-11-01
+
+### Changed
+
+- Docs and the default policy's comments follow the first run: `lox add lockhttp`
+  sets a lock up; no auto mode (an `auto` rule asks like `ask`, every hub ticket
+  is NeverAuto); the commented sample rule asks.
+
+### Added
+
+- Each release tag bumps the `lockhttp` formula of the
+  [Homebrew tap](https://github.com/DavidGodefroid/homebrew-tap)
+  (`brew install davidgodefroid/tap/lockhttp`): the release workflow's last job
+  dispatches the bump once the release is signed
+  (DavidGodefroid/lockfamily#8). It is skipped while the
+  `TAP_DISPATCH_TOKEN` secret is not set.
+
+## [0.7.0] - 2026-11-01
+
+Built on lockkit v0.10.0; supported lockhub as v0.6.0. The launcher verbs
+of lockkit v0.10.0 (lockkit#111, GUIDE.md §14), which `lox init` runs on
+every lock (#31, #32). Breaking: `lockhttp init --trusted` is removed (now
+`profile add --trusted`).
+
+### Added
+
+- `lockhttp profile add [--non-interactive] [--json] [--project DIR]
+  [--profile NAME] [--production] [--trusted "a.com .corp.example"]`:
+  adds a profile with the default policy to the project's
+  `.lockhttp/config.toml`, which `lox up` reviews and copies into the
+  console. A profile already there is never rewritten (code `exists`,
+  nothing written); other profiles are kept byte for byte. Parsed with
+  lockkit's `verbs.Parse`: a flag named like a secret, a value that embeds
+  a password or a positional argument is refused, and no error quotes a
+  value. lockhttp's target needs no secret: no `--credentials`, no
+  `credentials` in the JSON. Without `--non-interactive` it asks on the
+  terminal for the name, production and trusted hosts, and refuses
+  without one. `--json` prints one `verbs.Profile` or `verbs.Error` line.
+- `lockhttp init <agent>` (`claude`, `codex`, `cursor`, `gemini`): writes
+  nothing (lockhttp has no agent files: lea routes the agent's HTTP
+  through the gate), says so and exits 0.
+- `lockhttp doctor --fix [--yes]` repairs the write permission others have
+  on the project's policy or its directory, asking before each repair
+  unless `--yes` (required without a terminal; `--yes` alone is a usage
+  error). `--json` prints one `verbs.Doctor` (or `verbs.Error`) line.
+
+### Changed
+
+- `lockhttp doctor` checks the project of the current directory (its
+  `.lockhttp/config.toml`, every profile unless `--profile`) instead of the
+  console account's policy, and `--config` is gone.
+- The launcher runs `profile`, `init` and `doctor` as you, with the
+  project mounted at its own path and the current directory as the
+  working directory (`profile add --project` mounted and made absolute),
+  without the volume `lockhttp-home`; `policy` and `console` keep the
+  console account.
+- lockkit v0.10.0.
+
+### Removed
+
+- `lockhttp init [--profile] [--config] [--trusted] [--force]`, which
+  wrote the console account's policy (pre-release, no alias). Its
+  `--trusted` is now `profile add --trusted`, named after the config key
+  it fills; `--profile` is `profile add --profile`.
+
+## [0.6.0] - 2026-11-01
+
+Hub-only release, built on lockkit v0.9.1. The gate runs hub-attached
+only (lockkit#110): one mode, `lox up`'s.
+
+### Removed
+
+- The standalone gate. `lockhttp gate` without `--hub`, `--hub-key-file`
+  and `--instance` exits with a usage error ("launched by `lox up` only");
+  lea passes them from `lox up`'s `up.json`. The gate never asks a console
+  about a held request any more: every ask is a hub ticket.
+- The rollback of hub mode (a gate started without its hub flags
+  withdrawing its pending hub tickets) and its refusal code `E_WITHDRAWN`
+  (#26).
+- `lockhttp console --auto`, auto mode, and the console's `http.approve`
+  method: the console serves the approved policy (`policy.get`) and asks
+  its human about loosenings only. A `verdict = "auto"` rule asks like
+  `ask` (hub tickets are `NeverAuto`).
+
+### Changed
+
+- `lockhttp console` is lockkit's policy-only console
+  (`console.Options.PolicyOnly`, lockkit v0.9.1): it takes no hub flags,
+  as `lox up` starts it, opens no hub client and approves no request.
+  Only the gate is hub-attached.
+- The hub's decision on a held request is audited once, by the gate,
+  with `"approval": "hub"`, the ticket, the approver and the hub's
+  signature. The record of a request run after the hub approved it within
+  the hold says `"approval": "hub-run"` (was `"console"`), so that
+  lockhub's `lox audit verify --lock` does not read it as a second,
+  unsigned hub decision.
+- The agent's hints name `lox up` for `E_NO_CONSOLE` and lockhub for an
+  approval.
+- Docs: the quick start goes through `lox add` and `lox up`; the
+  standalone quick start is gone. The launcher's docker e2e checks that
+  the gate refuses to start without the hub; requests through a
+  hub-attached gate are covered by the integration tests (lockkit's test
+  hub) and lockhub's e2e.
+- Flag help (`--devices-file`, `--facade-keys-file`), comments and docs
+  name `lox`, the host CLI's name since lockhub v0.3.0 (#29).
+
+## [0.5.1] - 2026-10-31
+
+lockkit v0.8.1: a hub URL is `http(s)://host[:port]` only, lockkit's errors
+no longer repeat the value given, and previews mask after JSON escapes.
+
+### Security
+
+- lockkit v0.8.1: lockkit's errors no longer repeat the value given (the
+  hub URL, transport errors, instance names, `--require-device` risk
+  classes, `hub-key`), and `--hub` takes `http(s)://host[:port]` only: a
+  user, password, path, query, fragment, IPv6 zone, non-DNS host or bad
+  port is refused (lockkit's hub client). lockhttp's own messages that
+  still quote a value are addressed separately.
+
+### Changed
+
+- Builds on lockkit v0.8.1. The body preview and the personal-data
+  heuristic read a `\n`, `\r`, `\t` or `\u0026`-style escape as the
+  blank or delimiter it stands for (lockkit v0.8.0), so a phone number,
+  IBAN or card number right after one in a JSON body is masked too.
+- `lockhttp console` (lockkit v0.7.0, v0.7.1): a policy tightening that
+  cannot be saved is applied anyway (audited, told on the console) instead
+  of leaving the looser policy in force, and a change that ends the
+  session no longer prints a "policy tightened" or "policy change not
+  applied" line after it.
 
 ## [0.5.0] - 2026-10-30
 
@@ -214,7 +375,13 @@ separate signer, Claude API allowlist) available behind `--ca-cert` and
 - Release pipeline: goreleaser, cosign keyless signatures, SBOMs,
   SHA-pinned actions, `scripts/install.sh` with signature verification.
 
-[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.8.1
+[0.8.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.8.0
+[0.7.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.7.1
+[0.7.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.7.0
+[0.6.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.6.0
+[0.5.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.5.1
 [0.5.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.5.0
 [0.4.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.4.0
 [0.3.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.3.0

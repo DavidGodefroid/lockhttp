@@ -12,7 +12,6 @@ import (
 // Outcome is the answer to an ask.
 type Outcome struct {
 	Approved bool
-	Auto     bool
 	Code     string
 	Reason   string
 	// Ticket is the hub ticket an E_PENDING ask waits on (hub mode).
@@ -33,17 +32,13 @@ type item struct {
 	asked int
 }
 
-// Queue holds the asks and sends them to the console one at a time
-// (lockkit's console is serial, decision D7). A human decision is shared
-// only by requests of identical fingerprint; requests under the same key
-// with another fingerprint are separate items.
+// Queue holds the asks and sends them to the hub, side by side (a hub
+// decision may take hours). A human decision is shared only by requests
+// of identical fingerprint; requests under the same key with another
+// fingerprint are separate items.
 type Queue struct {
-	console Console
-	// approve, when set, answers an item instead of the console (hub
-	// mode), and concurrent sends the items without waiting for the
-	// previous answer.
-	approve    func(ctx context.Context, fp string, p wire.ApproveParams) (wire.ApproveResult, error)
-	concurrent bool
+	// approve answers an item (the gate's hubApprove).
+	approve func(ctx context.Context, fp string, p wire.ApproveParams) (wire.ApproveResult, error)
 	// answering counts the answers in flight; stopped closes once Run
 	// returned and they ended.
 	answering sync.WaitGroup
@@ -58,9 +53,9 @@ type Queue struct {
 	onChange func(total int, byContainer map[string]int)
 }
 
-// NewQueue returns a queue sending to c.
-func NewQueue(c Console) *Queue {
-	return &Queue{console: c, pending: map[string]*item{}, byKey: map[string]int{}, wake: make(chan struct{}, 1), stopped: make(chan struct{})}
+// NewQueue returns a queue answering its items with approve.
+func NewQueue(approve func(ctx context.Context, fp string, p wire.ApproveParams) (wire.ApproveResult, error)) *Queue {
+	return &Queue{approve: approve, pending: map[string]*item{}, byKey: map[string]int{}, wake: make(chan struct{}, 1), stopped: make(chan struct{})}
 }
 
 // Submit adds a waiter for the request of fingerprint fp. It returns the
@@ -152,15 +147,11 @@ func (q *Queue) Run(ctx context.Context) {
 				continue
 			}
 		}
-		if q.concurrent {
-			q.answering.Add(1)
-			go func() {
-				defer q.answering.Done()
-				q.answer(ctx, it)
-			}()
-		} else {
+		q.answering.Add(1)
+		go func() {
+			defer q.answering.Done()
 			q.answer(ctx, it)
-		}
+		}()
 		if ctx.Err() != nil {
 			return
 		}
@@ -169,14 +160,8 @@ func (q *Queue) Run(ctx context.Context) {
 
 // answer asks about one item and hands the outcome to its waiters.
 func (q *Queue) answer(ctx context.Context, it *item) {
-	var res wire.ApproveResult
-	var err error
-	if q.approve != nil {
-		res, err = q.approve(ctx, it.fp, it.params)
-	} else {
-		res, err = q.console.Approve(ctx, it.params)
-	}
-	out := Outcome{Approved: err == nil && res.Approved, Auto: res.Auto}
+	res, err := q.approve(ctx, it.fp, it.params)
+	out := Outcome{Approved: err == nil && res.Approved}
 	var ref *Refusal
 	switch {
 	case errors.As(err, &ref):

@@ -206,9 +206,10 @@ func TestLauncherAccountsPerCommand(t *testing.T) {
 		args, cmd  []string
 		want, deny [][]string
 	}{
-		{[]string{"init", "--trusted", "a.com b.com"}, nil, [][]string{{"--user", "lockhttp"}, {"-v", "lockhttp-home:/home/lockhttp"}}, [][]string{{"-v", "lockhttp-run:/run/lockhttp"}}},
+		{[]string{"init", "claude"}, nil, [][]string{{"--user", me}, {"-v", f.project + ":" + f.project}, {"-w", f.project}}, [][]string{{"-v", "lockhttp-home:/home/lockhttp"}, {"-v", "lockhttp-run:/run/lockhttp"}}},
 		{[]string{"policy", "edit"}, nil, [][]string{{"--user", "lockhttp"}, {"-v", "lockhttp-home:/home/lockhttp"}}, [][]string{{"-v", "lockhttp-run:/run/lockhttp"}}},
-		{[]string{"doctor"}, nil, [][]string{{"--user", "lockhttp"}, {"-v", "lockhttp-home:/home/lockhttp"}}, [][]string{{"-v", "lockhttp-run:/run/lockhttp"}}},
+		{[]string{"doctor", "--fix", "--yes", "--json"}, nil, [][]string{{"--user", me}, {"-v", f.project + ":" + f.project}}, [][]string{{"-v", "lockhttp-home:/home/lockhttp"}, {"-v", "lockhttp-run:/run/lockhttp"}}},
+		{[]string{"profile", "add", "--non-interactive", "--json", "--profile", "web", "--trusted", "a.com b.com"}, nil, [][]string{{"--user", me}, {"-v", f.project + ":" + f.project}}, [][]string{{"-v", "lockhttp-home:/home/lockhttp"}, {"-v", "lockhttp-run:/run/lockhttp"}}},
 		{[]string{"gate", "--upstream", "http://squid:3128"}, []string{"gate", "--listen", "0.0.0.0:3130", "--upstream", "http://squid:3128"},
 			[][]string{{"--user", "gate"}, {"--name", "lockhttp-gate"}, {"-v", "lockhttp-run:/run/lockhttp"}, {"-p", "127.0.0.1:3130:3130"}},
 			[][]string{{"-v", "lockhttp-home:/home/lockhttp"}}},
@@ -252,6 +253,61 @@ func TestLauncherAccountsPerCommand(t *testing.T) {
 	}
 	if out, _, err := f.run(t, f.project, nil, "ca", "init"); err == nil || !strings.Contains(out, "name the directory") {
 		t.Errorf("ca init without --dir: %v %s", err, out)
+	}
+}
+
+// The launcher verbs mount the project of the current directory (the
+// directory holding .lockhttp/config.toml, else .git, else the current
+// directory) at its own path, and work from the current directory;
+// profile add's --project is mounted and rewritten to its absolute path.
+// Their flags pass through unchanged.
+func TestLauncherVerbsMountTheProject(t *testing.T) {
+	f := newLauncherFixture(t)
+	sub := filepath.Join(f.project, "sub")
+	if err := os.WriteFile(filepath.Join(f.project, ".lockhttp", "config.toml"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitRepo := filepath.Join(f.root, "repo")
+	for _, d := range []string{filepath.Join(gitRepo, ".git"), filepath.Join(gitRepo, "x")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	other := filepath.Join(f.root, "other")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		dir            string
+		args, cmd      []string
+		mount, workdir string
+	}{
+		{sub, []string{"doctor", "--fix", "--yes", "--json"}, nil, f.project, sub},
+		{sub, []string{"init", "claude"}, nil, f.project, sub},
+		{filepath.Join(gitRepo, "x"), []string{"init", "codex"}, nil, gitRepo, filepath.Join(gitRepo, "x")},
+		{f.root, []string{"profile", "add", "--non-interactive"}, nil, f.root, f.root},
+		{f.root, []string{"profile", "add", "--project", "other", "--json"}, []string{"profile", "add", "--project", other, "--json"}, other, other},
+		{sub, []string{"profile", "add", "--project=../../other"}, []string{"profile", "add", "--project=" + other}, other, other},
+		{filepath.Join(other), []string{"profile", "add", "--project", "../project/sub"}, []string{"profile", "add", "--project", sub}, sub, sub},
+	} {
+		out, calls, err := f.run(t, tc.dir, nil, tc.args...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", tc.args, err, out)
+		}
+		run := lastRun(t, calls)
+		if !hasSeq(run, "-v", tc.mount+":"+tc.mount) || !hasSeq(run, "-w", tc.workdir) {
+			t.Errorf("%v from %s: want %s mounted, -w %s: %q", tc.args, tc.dir, tc.mount, tc.workdir, run)
+		}
+		want := tc.cmd
+		if want == nil {
+			want = tc.args
+		}
+		if got := imageArgs(run, "lockhttp")[1:]; strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+			t.Errorf("%v: command %q, want %q", tc.args, got, want)
+		}
+	}
+	if out, _, err := f.run(t, f.root, nil, "profile", "add", "--project", "nope"); err == nil || !strings.Contains(out, "not a directory") {
+		t.Errorf("--project nope: %v %s", err, out)
 	}
 }
 

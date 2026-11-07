@@ -1,7 +1,7 @@
 // Package gate is lockhttp's data plane: the HTTP(S) proxy every request
 // of the agents goes through. It decides each request with the policy the
 // console approved (it never reads a policy file), holds what needs a
-// human, asks the console, and audits what it lets through or refuses.
+// human, asks lockhub, and audits what it lets through or refuses.
 package gate
 
 import (
@@ -47,8 +47,10 @@ type Config struct {
 	Upstream *url.URL
 	Sources  *Sources
 	Creds    *Credentials
-	Console  Console
-	Audit    *AuditLog
+	// Secrets holds the values the policy's injections name (nil: none).
+	Secrets *Secrets
+	Console Console
+	Audit   *AuditLog
 	// StatusFile is rewritten when the console state or the pending
 	// counts change ("" for none).
 	StatusFile string
@@ -61,13 +63,9 @@ type Config struct {
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 	// Resolve replaces the resolver of direct mode (tests).
 	Resolve func(ctx context.Context, host string) ([]netip.Addr, error)
-	// Hub, when set, sends the asks to lockhub (hub mode); the console
-	// still serves the policy.
+	// Hub sends the asks to lockhub (required: the gate is hub-attached
+	// only); the console serves the policy.
 	Hub *Hub
-	// Withdrawn, in standalone mode, are the hub tickets the gate's last
-	// hub mode left pending and this start withdrew (WithdrawStandalone):
-	// the request of one is refused once, explicitly (E_WITHDRAWN).
-	Withdrawn *Withdrawn
 	// PolicyPoll is how often the policy is fetched (2 s by default).
 	PolicyPoll time.Duration
 	Now        func() time.Time
@@ -107,19 +105,23 @@ func New(cfg Config) *Gate {
 	if cfg.Creds == nil {
 		cfg.Creds = NewCredentials("")
 	}
+	if cfg.Secrets == nil {
+		cfg.Secrets = NewSecrets("")
+	}
 	if cfg.Log == nil {
 		cfg.Log = io.Discard
 	}
-	g := &Gate{cfg: cfg, queue: NewQueue(cfg.Console), grants: NewGrants(cfg.Now)}
-	if cfg.Hub != nil {
-		// A hub decision may take hours: its asks wait side by side.
-		g.queue.approve, g.queue.concurrent = g.hubApprove, true
-		// A renewal (the hub's renew request, or Renew on a request sent
-		// again) checks the plan as the run's recheck does; reveals and
-		// renewals are audited.
-		cfg.Hub.Client.SetRecompute(g.recompute)
-		cfg.Hub.Client.OnRequest(g.hubRequest)
+	if cfg.Hub == nil {
+		panic("gate: Config.Hub is required (the gate is hub-attached only)")
 	}
+	g := &Gate{cfg: cfg, grants: NewGrants(cfg.Now)}
+	// A hub decision may take hours: its asks wait side by side.
+	g.queue = NewQueue(g.hubApprove)
+	// A renewal (the hub's renew request, or Renew on a request sent
+	// again) checks the plan as the run's recheck does; reveals and
+	// renewals are audited.
+	cfg.Hub.Client.SetRecompute(g.recompute)
+	cfg.Hub.Client.OnRequest(g.hubRequest)
 	g.pol.Store(&polState{})
 	g.status = Status{Version: ContractVersion, Console: "down", PendingByContainer: map[string]int{}}
 	g.queue.onChange = func(total int, by map[string]int) {
@@ -175,15 +177,15 @@ func (g *Gate) updateStatus(f func(*Status)) {
 // until ctx ends.
 func (g *Gate) Run(ctx context.Context) {
 	go g.queue.Run(ctx)
-	if h := g.cfg.Hub; h != nil {
-		go h.Client.Watch(ctx, h.Plans, func(err error) { fmt.Fprintln(g.cfg.Log, "lockhttp gate: hub:", err) })
-	}
+	h := g.cfg.Hub
+	go h.Client.Watch(ctx, h.Plans, func(err error) { fmt.Fprintln(g.cfg.Log, "lockhttp gate: hub:", err) })
 	t := time.NewTicker(g.cfg.PolicyPoll)
 	defer t.Stop()
 	for {
 		g.poll(ctx)
 		g.cfg.Sources.Reload()
 		g.cfg.Creds.Reload()
+		g.cfg.Secrets.Reload()
 		g.grants.Sweep()
 		select {
 		case <-ctx.Done():
@@ -285,8 +287,12 @@ func (g *Gate) handle(ctx context.Context, c net.Conn) {
 		}
 		if err != nil {
 			id := newRequestID()
+			h := hostOnly(req.Host)
+			if name, why := g.cfg.Secrets.LeakNames([]string{req.Host}, nil); name != "" || why != "" {
+				h = redactedTarget
+			}
 			g.audit(wire.Record{Base: audit.Base{Event: "refused", Decision: "refused", Code: string(product.CodeSourceUnknown), Error: err.Error()},
-				RequestID: id, Target: wire.Target{Method: req.Method, Host: hostOnly(req.Host)}, Rule: "source"})
+				RequestID: id, Target: wire.Target{Method: req.Method, Host: h}, Rule: "source"})
 			writeRefusal(c, id, string(product.CodeSourceUnknown), "the gate cannot tell which container sent this request", req.Method == http.MethodConnect)
 			return
 		}
@@ -374,11 +380,9 @@ func writeRefusalTicket(w io.Writer, id, c, reason, tk string, connect bool) {
 func hintFor(code string) string {
 	switch code {
 	case "E_NO_CONSOLE":
-		return "No lockhttp console is running: ask the user to start it (lockhttp console)."
+		return "No lockhttp console is running: ask the user to start it (lox run)."
 	case "E_PENDING":
-		return "The request waits for the human in the lockhttp console: retry the same request in a moment."
-	case "E_WITHDRAWN":
-		return "The gate now runs without its hub: tell the user, then send the same request again; the human answers it in the lockhttp console."
+		return "The request waits for the human on lockhub: retry the same request in a moment."
 	case "E_DENIED", "E_TIMEOUT":
 		return "Do not retry the same request; ask the user."
 	case "E_HOST_UNKNOWN", "E_CLAUDE_API_PARAM", "E_EXFIL_SUSPECT", "E_RULE", "E_METHOD":
@@ -413,7 +417,7 @@ func (g *Gate) ask(p wire.ApproveParams, fp, key string, hold time.Duration, onA
 				return Outcome{Code: string(product.CodePending), Ticket: tk, Reason: "the request waits for a decision on the hub (ticket " + tk + ")"}
 			}
 		}
-		return Outcome{Code: string(product.CodePending), Reason: "the request waits for the human (kept on the console)"}
+		return Outcome{Code: string(product.CodePending), Reason: "the request waits for the human (kept on the hub)"}
 	}
 }
 
@@ -453,6 +457,23 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 	pol, _ := g.Policy()
 	r := decide.Request{Phase: decide.PhaseConnect, Container: src.Container, Via: src.Via, Method: http.MethodConnect, Host: host, Port: port}
 	t := wire.Target{Phase: "connect", TLS: "connect", Method: http.MethodConnect, Host: host, Port: port}
+	// A value in the authority (or a header name) is refused first: the
+	// floor and the hub would audit it, and the hub's check resolves it.
+	if name, why := g.cfg.Secrets.LeakNames([]string{req.Host, req.RequestURI}, rawHeaderNames(req.Header)); name != "" || why != "" {
+		t.Host = redactedTarget
+		d := decide.Decision{Verdict: decide.Deny, Rule: "secret:injected", Code: product.CodeSecretEgress,
+			Reason: "the CONNECT authority or a header name carries the value of the secret " + name + ", which only the gate adds: never send it yourself"}
+		if why != "" {
+			d.Rule, d.Reason = "secret:unscannable", why+": the gate cannot check it for the value of an injected secret"
+		}
+		g.refuse(c, d, id, src, t, true)
+		return
+	}
+	if name, ok := g.cfg.Secrets.Leak(headerValues(req.Header)...); ok {
+		g.refuse(c, decide.Decision{Verdict: decide.Deny, Rule: "secret:injected", Code: product.CodeSecretEgress,
+			Reason: "a header of the CONNECT carries the value of the secret " + name + ", which only the gate adds: never send it yourself"}, id, src, t, true)
+		return
+	}
 	if d, stop := decide.Floor(pol, r); stop {
 		g.refuse(c, d, id, src, t, true)
 		return
@@ -476,9 +497,7 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 	}
 	hostport := net.JoinHostPort(host, strconv.Itoa(port))
 	var d decide.Decision
-	if wd, ok := g.withdrawnRefusal("connect|" + src.Container + "|" + hostport); ok {
-		d = wd
-	} else if g.grants.Connect(src.Container, hostport) {
+	if g.grants.Connect(src.Container, hostport) {
 		d = decide.Decision{Verdict: decide.Free, Rule: "grant:connect", Class: "connect"}
 	} else {
 		d = decide.Evaluate(pol, r, g.cfg.Now(), g.cfg.Creds)
@@ -501,10 +520,7 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 			return
 		}
 		g.grants.GrantConnect(src.Container, hostport, grant)
-		rec.Base.Approval = "console"
-		if out.Auto {
-			rec.Base.Approval = "auto"
-		}
+		rec.Base.Approval = ApprovalHubRun
 	}
 	// FREE (or approved): open the tunnel.
 	if _, err := io.WriteString(c, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {
@@ -524,13 +540,26 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 		return
 	}
 	defer up.Close()
-	if _, err := up.Write(hello); err != nil {
-		return
+	// The gate holds secrets: what the client sends is matched as it
+	// streams (a TLS tunnel's ciphertext cannot be: see the security
+	// model), and a value of one closes the tunnel.
+	fs := g.cfg.Secrets.Forms()
+	leak, _ := fs.find(hello)
+	var in, out int64
+	if leak == "" {
+		if _, err := up.Write(hello); err != nil {
+			return
+		}
+		in, out, leak = splice(c, br, up, fs)
 	}
-	in, out := splice(c, br, up)
 	rec.Base.Event, rec.Base.Decision = "free", decisionOf(d)
 	if rec.Base.Approval != "" {
 		rec.Base.Event, rec.Base.Decision = "approved", "approved"
+	}
+	if leak != "" {
+		rec.Base = audit.Base{Event: "refused", Decision: "refused", Code: string(product.CodeSecretEgress),
+			Reason: "the tunnel carries the value of the secret " + leak + ", which only the gate adds: the tunnel is closed"}
+		rec.Rule = "secret:injected"
 	}
 	rec.ReqBytes, rec.RespBytes = in+int64(len(hello)), out
 	rec.DurationMS = g.cfg.Now().Sub(start).Milliseconds()
@@ -773,8 +802,10 @@ var nonPublic = []netip.Prefix{
 }
 
 // splice copies both ways until either side closes; it returns the
-// bytes sent and received.
-func splice(client net.Conn, br *bufio.Reader, up net.Conn) (in, out int64) {
+// bytes sent and received. With fs, what the client sends is matched as
+// it streams: a value of a secret closes both sides before the read that
+// completes it goes out, and splice returns the secret's name.
+func splice(client net.Conn, br *bufio.Reader, up net.Conn, fs *formSet) (in, out int64, leak string) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -786,14 +817,19 @@ func splice(client net.Conn, br *bufio.Reader, up net.Conn) (in, out int64) {
 			_ = client.Close()
 		}
 	}()
-	in, _ = io.Copy(up, br)
+	if fs.empty() {
+		in, _ = io.Copy(up, br)
+	} else if in, leak = copyScanned(up, br, fs); leak != "" {
+		_ = up.Close()
+		_ = client.Close()
+	}
 	if cw, ok := up.(interface{ CloseWrite() error }); ok {
 		_ = cw.CloseWrite()
 	} else {
 		_ = up.Close()
 	}
 	wg.Wait()
-	return in, out
+	return in, out, leak
 }
 
 // mitm terminates the client's TLS with a leaf for host and decides each

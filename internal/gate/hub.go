@@ -313,6 +313,15 @@ func (g *Gate) hubSubmit(ctx context.Context, fp string, p wire.ApproveParams, p
 	return id, "", nil
 }
 
+// ApprovalHubRun is the approval of the record of a request run after the
+// hub approved it within the hold. The decision itself is the record
+// hubApprove writes (approval "hub", with the ticket, the approver and
+// the hub's signature): lockhub's `lox audit verify --lock` takes every
+// approved or denied record with approval "hub" for a hub decision, so the
+// run must not carry that value (it would read as an unsigned decision, or
+// a second approval of the ticket).
+const ApprovalHubRun = "hub-run"
+
 // hubApprove asks the hub about one held request and waits for its
 // decision, until ctx ends. It answers like a console: nil when approved,
 // a *Refusal for a denial, an expired ticket or a request that went stale.

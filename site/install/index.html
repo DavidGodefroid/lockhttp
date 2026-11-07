@@ -3,38 +3,42 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Install — lockhttp</title>
-  <meta name="description" content="Install lockhttp: the launcher, the console in its own container, the gate beside lea's proxy container, and lea's opt-in switch.">
+  <title>Install lockhttp: Homebrew, lox add and lea</title>
+  <meta name="description" content="Install lockhttp with Homebrew or its signed install script, add the lock with lox add, answer held requests in lox run, and turn the gate on in lea.">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f4efe4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16140f" media="(prefers-color-scheme: dark)">
   <link rel="canonical" href="https://lockhttp.com/install/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="lockhttp">
-  <meta property="og:title" content="Install — lockhttp">
-  <meta property="og:description" content="Install lockhttp: the launcher, the console in its own container, the gate beside lea's proxy container, and lea's opt-in switch.">
+  <meta property="og:title" content="Install lockhttp: Homebrew, lox add and lea">
+  <meta property="og:description" content="Install lockhttp with Homebrew or its signed install script, add the lock with lox add, answer held requests in lox run, and turn the gate on in lea.">
   <meta property="og:url" content="https://lockhttp.com/install/">
   <meta property="og:image" content="https://lockhttp.com/assets/og.png">
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="lockhttp — Your AI browses. You hold the key.">
+  <meta property="og:image:alt" content="lockhttp: your agent browses, you hold the key.">
   <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Install — lockhttp">
-  <meta name="twitter:description" content="Install lockhttp: the host console, the gate in lea's proxy container, and lea's opt-in switch.">
+  <meta name="twitter:title" content="Install lockhttp: Homebrew, lox add and lea">
+  <meta name="twitter:description" content="Install lockhttp with Homebrew or its signed install script, add the lock with lox add, answer held requests in lox run, and turn the gate on in lea.">
   <meta name="twitter:image" content="https://lockhttp.com/assets/og.png">
-  <meta name="twitter:image:alt" content="lockhttp — Your AI browses. You hold the key.">
+  <meta name="twitter:image:alt" content="lockhttp: your agent browses, you hold the key.">
   <link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
-  <link rel="stylesheet" href="../assets/style.css">
+  <link rel="preload" href="../assets/fonts/zilla-slab-700.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../assets/fonts/source-serif-4-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../assets/tokens.css">
+  <link rel="stylesheet" href="../assets/lock-site.css">
   <script src="../assets/anchors.js" defer></script>
+  <script src="../assets/copy.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <div class="wrap">
-      <a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="32" height="32"><span class="wordmark">lock<span>http</span></span></a>
+      <a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="32" height="32"><span class="wordmark">lockhttp</span></a>
       <nav class="site-nav" aria-label="Main">
         <ul>
           <li><a href="../">Home</a></li>
@@ -49,31 +53,57 @@
   </header>
   <main id="main" tabindex="-1">
     <div class="wrap">
+
+<p class="eyebrow">Install · pre-release v0.8.x</p>
 <h1>Install lockhttp</h1>
 <div class="prose">
-  <p class="lead">A launcher on the host, the console in its own container, a gate beside lea’s proxy container, and an opt-in switch in lea.</p>
+  <p class="lead">lockhttp runs in Docker, beside <a href="https://github.com/DavidGodefroid/lea">lea</a>. On your machine you need Docker, lea, <code>lox</code> and the <code>lockhttp</code> launcher, a shell script that runs every command in the signed lockhttp image.</p>
 </div>
 
-<div class="notice" role="note"><p><strong>Pre-release.</strong> lockhttp <code>v0.5.0</code> is out as a pre-release and runs in Docker only (one <code>lockhttp</code> launcher, a cosign-signed image): command names are fixed, flags may still move. TLS decryption ships in it and is optional, wired by lea: without a local CA and the signer (<code>--ca-cert</code>, <code>--signer</code>), HTTPS is decided at the domain. Design decisions: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">docs/decisions.md</a>, contract with lea: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">docs/lea.md</a>.</p></div>
-
-<section aria-labelledby="status">
-  <h2 id="status">Status</h2>
-  <div class="prose">
-    <p>lockhttp runs in Docker. The only thing installed on the host is the <code>lockhttp</code> launcher, a shell script that runs every command in the signed image <code>ghcr.io/davidgodefroid/lockhttp</code>, by digest. Download the install script from the release you install on the <a href="https://github.com/DavidGodefroid/lockhttp/releases">releases page</a>, read it, then run it (cosign is required):</p>
+<section aria-labelledby="homebrew">
+  <h2 id="homebrew">With Homebrew</h2>
+  <div class="install">
+    <div class="install-head"><span>Install with Homebrew</span></div>
+    <pre tabindex="0" aria-label="Install commands"><code><span class="cmd">brew trust davidgodefroid/tap</span>
+<span class="cmd">brew install davidgodefroid/tap/lox davidgodefroid/tap/lockhttp</span>
+<span class="cmd">brew install davidgodefroid/tap/lea</span></code></pre>
+    <p class="install-note">Homebrew asks you to trust a third-party tap once. <code>brew install davidgodefroid/tap/lockfamily</code> installs the whole family instead.</p>
   </div>
-  <pre tabindex="0" class="term"><code>V=vX.Y.Z
+  <ol class="steps prose">
+    <li><p>In lea’s projects directory (<code>LEA_PROJECTS_DIR</code>), <code>lox add lockhttp</code> asks only for the lock’s name. It writes the policy, runs <code>lockhttp doctor --fix</code>, shows a short review and starts the console.</p>
+      <pre tabindex="0"><code>cd ~/projects
+lox add lockhttp</code></pre></li>
+    <li><p>In a terminal of its own, outside lea and any agent, keep <code>lox run</code> open. Every held request shows up there for your decision.</p>
+      <pre tabindex="0"><code>lox run</code></pre></li>
+    <li><p>Start lea with lockhttp on. If lea already runs, <code>lea stop</code> first: lea mounts the locks’ sockets when its container starts.</p>
+      <pre tabindex="0"><code>LEA_LOCKHTTP=1 lea</code></pre></li>
+  </ol>
+  <div class="prose">
+    <p>lea reads <code>.lockfamily/up.json</code> only at the root of its projects directory: run <code>lox add</code> there, not in a project inside it. <a href="https://github.com/DavidGodefroid/lockhub/blob/main/docs/lox-add.md">How <code>lox add</code> works</a>.</p>
+    <p>You can also answer held requests with <code>lox approve</code>, in lea’s deck or on a paired phone.</p>
+  </div>
+</section>
+
+<section aria-labelledby="script">
+  <h2 id="script">Without Homebrew</h2>
+  <p class="prose">Download the install script from the release you install on the <a href="https://github.com/DavidGodefroid/lockhttp/releases">releases page</a>, read it, then run it with that release:</p>
+  <pre tabindex="0"><code>V=vX.Y.Z
 curl -fsSLO "https://raw.githubusercontent.com/DavidGodefroid/lockhttp/$V/scripts/install.sh"
 less install.sh
 LOCKHTTP_VERSION=$V sh install.sh
 lockhttp version</code></pre>
+  <div class="prose">
+    <p>It verifies the cosign signature of the release’s checksums, the archive and the image. The launcher lands in <code>/usr/local/bin</code> and runs the image by its digest.</p>
+    <p>cosign is required. Linux (Docker Engine) and macOS (Docker Desktop); on Windows, WSL 2 with Docker Desktop.</p>
+  </div>
 </section>
 
 <section aria-labelledby="requirements">
   <h2 id="requirements">Requirements</h2>
   <ul class="prose">
-    <li>Docker: Docker Engine on Linux, Docker Desktop on macOS, or WSL 2 with Docker Desktop on Windows; and <code>cosign</code> to verify the release.</li>
-    <li><a href="https://github.com/DavidGodefroid/lea">lea</a>, which runs the agents in containers on internal networks and runs the gate in its proxy container (Docker, or rootless Podman).</li>
-    <li>A terminal you keep in view, where the console stays open.</li>
+    <li>Docker, and <code>cosign</code> for the install script.</li>
+    <li><a href="https://github.com/DavidGodefroid/lea">lea</a>: it runs the agents in containers on internal networks, and runs the gate beside its proxy (Docker, or rootless Podman).</li>
+    <li><a href="https://github.com/DavidGodefroid/lockhub">lockhub</a>’s <code>lox</code>: the gate runs hub-attached only, and you answer held requests on the hub.</li>
   </ul>
 </section>
 
@@ -83,41 +113,68 @@ lockhttp version</code></pre>
   <table>
   <thead><tr><th scope="col">Command</th><th scope="col">Where</th><th scope="col">What it does</th></tr></thead>
   <tbody>
-  <tr><th scope="row"><code>lockhttp init</code></th><td>container, as <code>lockhttp</code></td><td>Writes the policy (<code>~/.config/lockhttp/config.toml</code> in the volume <code>lockhttp-home</code>). <code>--trusted</code> imports lea’s <code>LEA_EGRESS_ALLOW</code> as trusted read-only hosts.</td></tr>
-  <tr><th scope="row"><code>lockhttp policy show|edit|path</code></th><td>container, as <code>lockhttp</code></td><td>Prints, edits or locates the policy.</td></tr>
-  <tr><th scope="row"><code>lockhttp console</code></th><td>container <code>lockhttp-console</code>, as <code>lockhttp</code></td><td>The approval console: approvals, policy review, auto mode, audit.</td></tr>
-  <tr><th scope="row"><code>lockhttp doctor</code></th><td>container, as <code>lockhttp</code></td><td>Checks the setup.</td></tr>
-  <tr><th scope="row"><code>lockhttp gate</code></th><td>its own container, as <code>gate</code></td><td>The HTTP(S) proxy. lea starts it beside its proxy container; <code>lockhttp gate</code> runs one on <code>127.0.0.1:3130</code> for standalone use.</td></tr>
-  <tr><th scope="row"><code>lockhttp signer</code>, <code>lockhttp ca init</code></th><td>sidecar containers / your machine (launcher)</td><td>Phase 2 (TLS decryption): the local CA and the process that holds its key.</td></tr>
-  <tr><th scope="row"><code>lockhttp version</code>, <code>help</code></th><td>anywhere</td><td>Exit codes: 0 ok · 1 failed · 3 usage/config error.</td></tr>
+  <tr><th scope="row"><code>lockhttp profile add</code></th><td>as you, on the project</td><td>Adds a profile with the default policy to the project’s <code>.lockhttp/config.toml</code>. <code>lox run</code> reviews it and copies it into the console. <code>--trusted</code> imports trusted read-only hosts.</td></tr>
+  <tr><th scope="row"><code>lockhttp init &lt;agent&gt;</code></th><td>as you, on the project</td><td>Writes nothing: lockhttp has no agent files. lea routes the agent’s HTTP through the gate.</td></tr>
+  <tr><th scope="row"><code>lockhttp doctor</code></th><td>as you, on the project</td><td>Checks the setup and the project’s policy; <code>--fix</code> repairs its permissions.</td></tr>
+  <tr><th scope="row"><code>lockhttp policy show|edit|path</code></th><td>as <code>lockhttp</code></td><td>Prints, edits or locates the console’s copy of the policy.</td></tr>
+  <tr><th scope="row"><code>lockhttp console</code></th><td>its own container, as <code>lockhttp</code></td><td>The policy console: it serves the approved policy to the gate and asks you about every loosening.</td></tr>
+  <tr><th scope="row"><code>lockhttp gate</code></th><td>its own container, as <code>gate</code></td><td>The HTTP(S) proxy, hub-attached only. lea starts it beside its proxy with the hub flags from <code>up.json</code>.</td></tr>
+  <tr><th scope="row"><code>lockhttp signer</code>, <code>lockhttp ca init</code></th><td>sidecar container / the launcher</td><td>TLS decryption: the local CA, and the process that holds its key.</td></tr>
+  <tr><th scope="row"><code>lockhttp version</code>, <code>update</code></th><td>anywhere</td><td>The launcher’s and the image’s versions; a newer release’s launcher and image.</td></tr>
   </tbody>
   </table>
   </div>
+  <p class="prose">Every command and flag: the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/usage.md">usage guide</a>.</p>
 </section>
 
 <section aria-labelledby="setup">
-  <h2 id="setup">Setup with lea</h2>
-  <ol class="steps prose">
-    <li><strong>Install the launcher.</strong> <code>scripts/install.sh</code>, as above. There is no host account or group to create: they are in the image.</li>
-    <li><strong>Write the policy.</strong> <code>lockhttp init</code>, optionally <code>--trusted "&lt;LEA_EGRESS_ALLOW&gt;"</code>. It runs as the console account and writes into its volume. lea never writes this file, and an agent cannot reach it.</li>
-    <li><strong>Start the console.</strong> In a terminal you keep in view: <code>lockhttp console</code>. It runs as <code>lockhttp</code> in the container <code>lockhttp-console</code>, the only one with the policy volume.</li>
-    <li><strong>Turn it on in lea.</strong> <code>LEA_LOCKHTTP=1</code>. lea starts the gate from the same image beside its proxy container, puts squid on loopback behind it, routes keyproxy through it and switches off the SSH git forwarders.</li>
-    <li><strong>Check.</strong> <code>lockhttp doctor</code>, and lea’s own doctor: from an agent, <code>curl --noproxy '*' https://example.com</code> must fail.</li>
-  </ol>
-  <p class="prose">Every file, mount and flag lea uses is in the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">lea integration contract</a>.</p>
+  <h2 id="setup">What lea does with it</h2>
+  <div class="prose">
+    <p>With <code>LEA_LOCKHTTP=1</code>, lea starts the gate from the same image beside its proxy container, asking the hub that <code>lox run</code> serves. It puts squid on loopback behind the gate and routes its key proxy through it.</p>
+    <p>lea never writes the policy. Without a trusted <code>up.json</code> naming a lockhttp lock, lea stops, says why, and says to run <code>lox run</code>.</p>
+    <p>To check: <code>lockhttp doctor</code>, and lea’s own doctor. From an agent, <code>curl --noproxy '*' https://example.com</code> must fail.</p>
+    <p>Every file, mount and flag lea uses: the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">lea integration contract</a>.</p>
+  </div>
 </section>
+
     </div>
   </main>
   <footer class="site-footer">
-    <div class="wrap">
-      <ul>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp">Source on GitHub</a></li>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/README.md">README</a></li>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/lea.md">lea integration contract</a></li>
-        <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/decisions.md">Design decisions</a></li>
-        <li><a href="https://lockfamily.dev/">The Lock family</a></li>
-      </ul>
-      <p>Pre-release: <a href="https://github.com/DavidGodefroid/lockhttp/releases">v0.5.0</a> is out. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+    <div class="wrap footer-grid">
+      <div class="footer-about">
+        <a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="32" height="32"><span class="wordmark">lockhttp</span></a>
+        <p>Outbound HTTP(S) for AI agents: reads of trusted hosts pass, and anything that sends data or reaches an unknown host waits for you.</p>
+        <p class="family-link">Part of the <a href="https://lockfamily.dev">Lock Family</a>, harness security for AI agents.</p>
+      </div>
+      <nav aria-labelledby="footer-lock">
+        <h2 id="footer-lock">lockhttp</h2>
+        <ul>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp">Source on GitHub</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/README.md">README</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/usage.md">Usage guide</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/security-model.md">Security model</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/CHANGELOG.md">Changelog</a></li>
+          <li><a href="https://github.com/DavidGodefroid/lockhttp/blob/main/SECURITY.md">Report a vulnerability</a></li>
+        </ul>
+      </nav>
+      <nav class="family-strip" aria-labelledby="footer-family">
+        <h2 id="footer-family">The Lock Family</h2>
+        <ul>
+          <li data-lock="locksql"><a href="https://github.com/DavidGodefroid/locksql">locksql</a><span>SQL databases, PII masked</span></li>
+          <li data-lock="lockmq"><a href="https://github.com/DavidGodefroid/lockmq">lockmq</a><span>RabbitMQ queues</span></li>
+          <li data-lock="lockfile"><a href="https://github.com/DavidGodefroid/lockfile">lockfile</a><span>Files: S3, SFTP, disk</span></li>
+          <li data-lock="lockhttp" aria-current="true"><a href="https://github.com/DavidGodefroid/lockhttp">lockhttp</a><span>Outbound HTTP(S)</span></li>
+          <li data-lock="locklog"><a href="https://github.com/DavidGodefroid/locklog">locklog</a><span>Logs, masked search</span></li>
+          <li data-lock="lockssh"><a href="https://github.com/DavidGodefroid/lockssh">lockssh</a><span>Commands over SSH</span></li>
+          <li data-lock="lockhub"><a href="https://github.com/DavidGodefroid/lockhub">lockhub</a><span>The approval hub and <code>lox</code></span></li>
+          <li data-lock="lockkit"><a href="https://github.com/DavidGodefroid/lockkit">lockkit</a><span>The shared Go core</span></li>
+          <li data-lock="lea"><a href="https://github.com/DavidGodefroid/lea">lea</a><span>Agents in containers</span></li>
+        </ul>
+      </nav>
+    </div>
+    <div class="wrap footer-bottom">
+      <p>Pre-release (v0.8.x). lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p><a href="https://lockfamily.dev">lockfamily.dev</a> · <a href="https://github.com/DavidGodefroid/lockfamily">the family on GitHub</a></p>
     </div>
   </footer>
 </body>

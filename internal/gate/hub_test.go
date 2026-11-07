@@ -40,6 +40,9 @@ type fakeHub struct {
 	consumed  map[string]bool
 	withdraws map[string]bool
 	logs      []string // what the gate logged
+	// answer, when set, is the decision filed on every new ticket.
+	answer ticket.Outcome
+	reason string
 }
 
 func (h *fakeHub) withdrawn(id string) bool { h.mu.Lock(); defer h.mu.Unlock(); return h.withdraws[id] }
@@ -71,7 +74,11 @@ func (h *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.mu.Lock()
 		h.tickets = append(h.tickets, t)
 		h.raw[t.ID] = b
+		o, reason := h.answer, h.reason
 		h.mu.Unlock()
+		if o != "" {
+			h.decide(t, o, reason, nil, "")
+		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"ticket": t.ID})
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/decisions":
 		since, _ := strconv.Atoi(r.URL.Query().Get("since"))
@@ -168,7 +175,8 @@ func (h *fakeHub) file(id string, d *ticket.Decision) {
 	h.mu.Unlock()
 }
 
-// hubEnv is a gate in hub mode, its fake hub and its plan store.
+// hubEnv is a gate, its fake hub (which answers nothing by itself) and
+// its plan store.
 func hubEnv(t *testing.T, conf string, mutate func(*Hub)) (*env, *fakeHub) {
 	t.Helper()
 	return hubEnvWith(t, conf, nil, mutate)
@@ -177,6 +185,14 @@ func hubEnv(t *testing.T, conf string, mutate func(*Hub)) (*env, *fakeHub) {
 // hubEnvWith is hubEnv with the hub client's configuration changed by
 // config (pinned devices).
 func hubEnvWith(t *testing.T, conf string, config func(*hubclient.Config), mutate func(*Hub)) (*env, *fakeHub) {
+	t.Helper()
+	e := newEnvHub(t, conf, true, config, mutate, nil)
+	return e, e.hub
+}
+
+// newTestHub is a fake hub and the gate's Hub on it: its client (with
+// config applied), a plan store, mutate applied.
+func newTestHub(t *testing.T, config func(*hubclient.Config), mutate func(*Hub)) (*fakeHub, *Hub) {
 	t.Helper()
 	pub, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -201,29 +217,15 @@ func hubEnvWith(t *testing.T, conf string, config func(*hubclient.Config), mutat
 	if mutate != nil {
 		mutate(h)
 	}
-	// Runs after newEnv's cleanup stopped the gate, before the hub and the
-	// plans directory go: the stopped asks withdraw their tickets first.
-	var g *Gate
-	t.Cleanup(func() {
-		select {
-		case <-g.Stopped():
-		case <-time.After(10 * time.Second):
-			t.Error("the gate did not stop")
-		}
-		// Before the plans directory goes (Windows refuses to remove a
-		// locked file).
-		if err := h.Close(); err != nil {
-			t.Error(err)
-		}
-	})
-	e := newEnv(t, conf, true, func(cfg *Config) { cfg.Hub = h; cfg.Log = hubLog{t, fh} })
-	g = e.gate
-	// The console is never asked in hub mode.
-	e.console.answer = func(p wire.ApproveParams) (wire.ApproveResult, error) {
-		t.Errorf("the console was asked about %s %s", p.Method, p.Host)
-		return wire.ApproveResult{}, &Refusal{Code: "E_DENIED"}
-	}
-	return e, fh
+	return fh, h
+}
+
+// answerAll makes the hub decide every new ticket o, with reason; an
+// empty o leaves the tickets to the test.
+func (h *fakeHub) answerAll(o ticket.Outcome, reason string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.answer, h.reason = o, reason
 }
 
 func (e *env) waitIdle() {
@@ -535,5 +537,53 @@ func TestHubWithdrawOnStop(t *testing.T) {
 	}
 	if !fh.withdrawn(tk.ID) {
 		t.Fatal("the ticket of a stopped ask was not withdrawn")
+	}
+}
+
+// An ask the hub approves within the hold: the request goes through at
+// once. The audit holds one hub decision for the ticket (approval "hub",
+// signed, with the ticket), and the run of the request as approval
+// "hub-run": as lockhub's `lox audit verify --lock` reads a lock's log
+// (every approved or denied record with approval "hub" is a hub decision,
+// which must carry the hub's signature and be the ticket's only approval),
+// the log verifies.
+func TestHubApprovedWithinHoldAuditsOneDecision(t *testing.T) {
+	e, fh := hubEnv(t, hubTestPolicy, nil)
+	e.backend("example.com", true, http.HandlerFunc(ok))
+	e.remap("example.com", "443")
+	c := e.client("dev-5", true)
+	got := make(chan *http.Response, 1)
+	go func() { got <- e.post(c, `{"to":"jean.dupont@example.org"}`) }()
+	tk := fh.waitTickets(1)[0]
+	fh.decide(tk, ticket.Approved, "", nil, "")
+	if r := <-got; r.StatusCode != 200 {
+		t.Fatalf("approved within the hold: %s %v", r.Status, r.Header)
+	}
+	e.waitIdle()
+	audit := e.auditText()
+	if !hasRecord(audit, map[string]string{"event": "approved", "approval": ApprovalHubRun, "method": "POST"}) {
+		t.Fatalf("no run record:\n%s", audit)
+	}
+	approvals := map[string]int{}
+	for _, line := range strings.Split(audit, "\n") {
+		var m map[string]any
+		if json.Unmarshal([]byte(line), &m) != nil {
+			continue
+		}
+		ev, _ := m["event"].(string)
+		sig, _ := m["hub_sig"].(string)
+		if !(sig != "" || m["approval"] == "hub" && (ev == "approved" || ev == "denied")) {
+			continue
+		}
+		tid, _ := m["ticket"].(string)
+		if sig == "" || tid != tk.ID {
+			t.Errorf("a hub decision without the hub's signature or the ticket: %s", line)
+		}
+		if ev == "approved" {
+			approvals[tid]++
+		}
+	}
+	if approvals[tk.ID] != 1 {
+		t.Fatalf("hub approvals of %s: %d, want 1\n%s", tk.ID, approvals[tk.ID], audit)
 	}
 }

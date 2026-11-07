@@ -222,19 +222,49 @@ func TestHostMatch(t *testing.T) {
 }
 
 func TestDefaultParses(t *testing.T) {
-	p, err := Parse([]byte(DefaultConfig(nil)), "config.toml", "default")
+	p, err := Parse([]byte(DefaultConfig("default", false, nil)), "config.toml", "default")
 	if err != nil {
 		t.Fatalf("default config: %v", err)
 	}
-	if len(p.Trusted) == 0 {
-		t.Fatal("default config trusts nothing")
+	if len(p.Trusted) == 0 || p.Production {
+		t.Fatalf("default config: %+v", p)
 	}
-	q, err := Parse([]byte(DefaultConfig([]string{"example.org", ".corp.example"})), "config.toml", "default")
+	extra, err := ImportHosts([]string{"Example.org", ".corp.example", ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err := Parse([]byte(DefaultConfig("default", false, extra)), "config.toml", "default")
 	if err != nil {
 		t.Fatalf("default config with imports: %v", err)
 	}
-	if !q.Trusts("example.org") || !q.Trusts("x.corp.example") {
+	if !q.Trusts("example.org") || !q.Trusts("x.corp.example") || !q.Trusts("corp.example") {
 		t.Fatalf("imports not trusted: %v", q.Trusted)
+	}
+	// A dotted name is a quoted key, not a nested table; production is
+	// written.
+	r, err := Parse([]byte(DefaultConfig("prod.eu", true, nil)), "config.toml", "prod.eu")
+	if err != nil || !r.Production {
+		t.Fatalf("dotted production profile: %+v %v", r, err)
+	}
+	// Two profiles side by side parse.
+	two := DefaultConfig("default", false, nil) + "\n" + DefaultProfile("lab", false, nil)
+	if names, err := Profiles([]byte(two), "config.toml"); err != nil || len(names) != 2 {
+		t.Fatalf("two profiles: %v %v", names, err)
+	}
+}
+
+// ImportHosts refuses what is not a host or a .domain, and never quotes
+// the entry.
+func TestImportHostsRefuses(t *testing.T) {
+	for _, in := range []string{"1.2.3.4", "*.example.com", "localhost", "a b.com", `x".com`, "user:pw@host.com"} {
+		_, err := ImportHosts([]string{"ok.example", in})
+		if err == nil {
+			t.Errorf("%q accepted", in)
+			continue
+		}
+		if strings.Contains(err.Error(), in) || !strings.Contains(err.Error(), "entry 2") {
+			t.Errorf("%q: %v", in, err)
+		}
 	}
 }
 
@@ -253,6 +283,9 @@ func TestErrorsDoNotEchoValues(t *testing.T) {
 	}
 	ih := func(fields string) string {
 		return prof + "[[profiles.default.internal_hosts]]\n" + fields
+	}
+	inj := func(fields string) string {
+		return prof + "[[profiles.default.inject]]\n" + fields
 	}
 	// The URL canary trips lockkit's embedded-password check first for most
 	// keys; the token canary reaches lockhttp's own messages.
@@ -294,6 +327,16 @@ func TestErrorsDoNotEchoValues(t *testing.T) {
 		{"rule expires", rule("id = \"x\"\nhost = \"a.com\"\nexpires = \"C\"\nverdict = \"ask\""), "rules entry 1"},
 		{"rule max_body", rule("id = \"x\"\nhost = \"a.com\"\nmax_body = \"C\"\nverdict = \"ask\""), "rules entry 1: max_body"},
 		{"rule auto forbidden", rule("id = \"glsa_CanarySecretToken123\"\nhost = \"*\"\nverdict = \"auto\""), "rules entry 1"},
+		{"inject id", inj("id = \"C\"\nhost = \"a.com\"\nport = 443\nheader = \"X-K\"\ncredential = \"k\""), "inject entry 1"},
+		{"inject id, other error", inj("id = \"C\"\nhost = \"a.com\"\nport = 0\nheader = \"X-K\"\ncredential = \"k\""), "inject entry 1"},
+		{"inject id twice", inj("id = \"glsa_CanarySecretToken123\"\nhost = \"a.com\"\nport = 443\nheader = \"X-K\"\ncredential = \"k\"\n") +
+			"[[profiles.default.inject]]\nid = \"glsa_CanarySecretToken123\"\nhost = \"b.com\"\nport = 443\nheader = \"X-K\"\ncredential = \"k\"", "inject entry 2"},
+		{"inject host", inj("id = \"x\"\nhost = \"C\"\nport = 443\nheader = \"X-K\"\ncredential = \"k\""), "inject entry 1 host"},
+		{"inject header", inj("id = \"x\"\nhost = \"a.com\"\nport = 443\nheader = \"C\"\ncredential = \"k\""), "inject entry 1"},
+		{"inject credential", inj("id = \"x\"\nhost = \"a.com\"\nport = 443\nheader = \"X-K\"\ncredential = \"C\""), "inject entry 1"},
+		{"inject spliced host", prof + "splice = [\"glsa-canarysecrettoken123.example\"]\n[[profiles.default.inject]]\nid = \"x\"\nhost = \"glsa-canarysecrettoken123.example\"\nport = 443\nheader = \"X-K\"\ncredential = \"k\"", "inject entry 1"},
+		{"inject same target", inj("id = \"glsa_CanarySecretToken123\"\nhost = \"glsa-canarysecrettoken123.example\"\nport = 443\nheader = \"X-K\"\ncredential = \"k\"\n") +
+			"[[profiles.default.inject]]\nid = \"y\"\nhost = \"glsa-canarysecrettoken123.example\"\nport = 443\nheader = \"X-K\"\ncredential = \"k\"", "inject entry 2"},
 		// lockkit's decoder: the key, not the value.
 		{"ports type", ih("host = \"ci\"\nports = [\"C\"]"), "internal_hosts.ports"},
 	}
@@ -302,7 +345,7 @@ func TestErrorsDoNotEchoValues(t *testing.T) {
 			t.Run(c.name+"/"+secret, func(t *testing.T) {
 				src := strings.ReplaceAll(c.src, `"C`, `"`+secret)
 				_, err := Parse([]byte(src+"\n"), "config.toml", "default")
-				if err == nil && secret == canary && (c.name == "rule id" || c.name == "rule container") {
+				if err == nil && secret == canary && (c.name == "rule id" || c.name == "rule container" || c.name == "inject id") {
 					return
 				}
 				if err == nil {

@@ -17,6 +17,9 @@ import (
 	"syscall"
 
 	"golang.org/x/term"
+
+	"github.com/DavidGodefroid/lockkit/console"
+	"github.com/DavidGodefroid/lockkit/kit"
 )
 
 // version is set at build time (-X main.version=...).
@@ -43,6 +46,8 @@ type env struct {
 	editor func(path string) error
 	// userConfig is the console's config file; "" is the real one.
 	userConfig string
+	// consoleRun replaces console.Run (tests); nil is console.Run.
+	consoleRun func(ctx context.Context, p kit.Product, b console.Backend, o console.Options) error
 }
 
 const usageText = `usage: lockhttp <command> [arguments]
@@ -50,25 +55,32 @@ const usageText = `usage: lockhttp <command> [arguments]
 lockhttp runs in Docker: on the host, the lockhttp launcher runs each
 command in the image, as the account it needs (docs/docker.md).
 
-Human commands (console account)
-  init     [--profile P] [--config FILE] [--trusted "a.com .corp.example"] [--force]
-                                   write the policy file
+Launcher verbs (as you, on the project; lox add runs them)
+  profile add [--non-interactive] [--json] [--project DIR] [--profile NAME]
+              [--production] [--trusted "a.com .corp.example"]
+                                   add a profile to .lockhttp/config.toml
+  init     <agent>                 agent files: none (lea routes the agent's HTTP)
+  doctor   [--fix [--yes]] [--json] [--profile P] [--ca-cert FILE] [--gate ADDR]
+                                   check the setup and the project's policy
+
+Console account
   policy   show | edit | path [--config FILE]
-                                   print, edit or locate the policy file
-  console  [--profile P] [--config FILE] [--auto]
-                                   run the approval console
-  doctor   [--profile P] [--config FILE] [--ca-cert FILE] [--gate ADDR]
-                                   check the setup
+                                   print, edit or locate the console's policy file
+  console  [--profile P] [--config FILE]
+                                   run the policy console (lox run runs it)
+
+Other human commands
   ca init  --dir DIR [--name NAME] [--force]
                                    create (or rotate) the local CA for decryption
 
 Gate and signer (lea runs them beside its proxy container)
-  gate     --listen ADDR [--upstream URL] [--profile P] [--sources FILE]
-           [--credentials FILE] [--audit-dir DIR] [--status-file FILE]
-           [--ca-cert FILE --signer SOCKET] [--check]
-           [--hub URL --hub-key-file FILE --instance NAME [--home DIR]
-            [--hub-net CIDR ...] [--hub-plain-http]]
-                                   run the HTTP(S) proxy (--hub: ask lockhub)
+  gate     --listen ADDR --hub URL --hub-key-file FILE --instance NAME
+           [--home DIR] [--hub-net CIDR ...] [--hub-plain-http]
+           [--upstream URL] [--profile P] [--sources FILE]
+           [--credentials FILE] [--secrets FILE] [--audit-dir DIR] [--status-file FILE]
+           [--ca-cert FILE --signer SOCKET] | --check
+                                   run the HTTP(S) proxy, asking lockhub
+                                   (launched by lox run only, through lea)
   signer   --ca-cert FILE --ca-key FILE --listen SOCKET [--allow-uid N ...]
                                    issue leaf certificates to the gate (holds the CA key)
   hub-key  --instance NAME [--home DIR]
@@ -109,6 +121,8 @@ func run(e env, args []string) int {
 		return runPolicy(e, args[1:])
 	case "init":
 		return runInit(e, args[1:])
+	case "profile":
+		return runProfile(e, args[1:])
 	case "console":
 		return runConsole(e, args[1:])
 	case "doctor":

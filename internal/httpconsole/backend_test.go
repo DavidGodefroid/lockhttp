@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -31,7 +30,7 @@ func (f *fakeEnv) Approve(ctx context.Context, id int64, s console.Screen) conso
 		f.records = append(f.records, s.Record(audit.Base{Event: "approved"}))
 	}
 	if !s.NeverAuto {
-		return console.Approval{Approved: true, Auto: true}
+		return console.Approval{Approved: true}
 	}
 	if f.answer {
 		return console.Approval{Approved: true}
@@ -89,79 +88,6 @@ func call(t *testing.T, b *Backend, env *fakeEnv, method string, params any) ipc
 	return b.Methods()[method](context.Background(), ipc.Request{JSONRPC: "2.0", ID: 7, Method: method, Params: raw}, env)
 }
 
-func autoParams() wire.ApproveParams {
-	return wire.ApproveParams{RequestID: "h-1", Source: wire.Source{Container: "lea-a", Agent: "dev-5", Attribution: "proxy-auth"},
-		Target: wire.Target{Phase: "http", TLS: "mitm", Method: "POST", Host: "registry.npmjs.org", Port: 443, Path: "/-/npm/v1/security/advisories/bulk"},
-		Rule:   "audit", RuleAuto: true, NeverAuto: false}
-}
-
-func TestAutoOnlyForApprovedAutoRule(t *testing.T) {
-	b, env := setup(t)
-	if r := call(t, b, env, wire.MethodApprove, autoParams()); r.Error != nil || env.screens[0].NeverAuto {
-		t.Fatalf("matching auto rule should allow auto: %+v %+v", r.Error, env.screens)
-	}
-	cases := map[string]func(*wire.ApproveParams){
-		"other container": func(p *wire.ApproveParams) { p.Container = "lea-b" },
-		"other path":      func(p *wire.ApproveParams) { p.Path = "/pkg" },
-		"other method":    func(p *wire.ApproveParams) { p.Method = "PUT" },
-		"ask rule":        func(p *wire.ApproveParams) { p.Rule = "issues"; p.Host = "api.github.com"; p.Path = "/x" },
-		"unknown rule":    func(p *wire.ApproveParams) { p.Rule = "nope" },
-		"no claim":        func(p *wire.ApproveParams) { p.RuleAuto = false },
-		"red":             func(p *wire.ApproveParams) { p.Red = true },
-		"connect":         func(p *wire.ApproveParams) { p.Phase = "connect" },
-	}
-	for name, edit := range cases {
-		t.Run(name, func(t *testing.T) {
-			p := autoParams()
-			edit(&p)
-			env.screens = nil
-			r := call(t, b, env, wire.MethodApprove, p)
-			if !env.screens[0].NeverAuto || r.Error == nil {
-				t.Fatalf("auto allowed for a forged claim: %+v", env.screens[0])
-			}
-		})
-	}
-}
-
-func TestApproveScreenAndRecord(t *testing.T) {
-	b, env := setup(t)
-	env.answer = true
-	p := autoParams()
-	p.RuleAuto, p.NeverAuto, p.ClientGone, p.Pending = false, true, true, 3
-	p.Preview = strings.Repeat("x", 5000)
-	r := call(t, b, env, wire.MethodApprove, p)
-	var res wire.ApproveResult
-	if r.Error != nil || json.Unmarshal(r.Result, &res) != nil || !res.Approved || res.Auto {
-		t.Fatalf("approve: %+v %s", r.Error, r.Result)
-	}
-	text := strings.Join(env.screens[0].Body, "\n")
-	for _, want := range []string{"client gone", "3 distinct requests", "preview (masked)", "request h-1"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("screen lacks %q:\n%s", want, text)
-		}
-	}
-	if len(text) > 3000 {
-		t.Fatal("preview not capped")
-	}
-	rec, ok := env.records[0].(wire.Record)
-	if !ok || rec.RequestID != "h-1" || rec.Container != "lea-a" || rec.Host != "registry.npmjs.org" || rec.Event != "approved" {
-		t.Fatalf("record: %+v", env.records[0])
-	}
-	if !strings.Contains(env.screens[0].Requester, "declared") {
-		t.Fatalf("agent must be shown as declared: %q", env.screens[0].Requester)
-	}
-}
-
-func TestDenied(t *testing.T) {
-	b, env := setup(t)
-	p := autoParams()
-	p.NeverAuto = true
-	r := call(t, b, env, wire.MethodApprove, p)
-	if r.Error == nil || r.Error.Code != ipc.CodeDenied {
-		t.Fatalf("deny: %+v", r)
-	}
-}
-
 func TestPolicyGet(t *testing.T) {
 	b, env := setup(t)
 	r := call(t, b, env, wire.MethodPolicy, nil)
@@ -174,10 +100,15 @@ func TestPolicyGet(t *testing.T) {
 	}
 }
 
-func TestInvalidParams(t *testing.T) {
-	b, env := setup(t)
-	r := call(t, b, env, wire.MethodApprove, wire.ApproveParams{})
-	if r.Error == nil || r.Error.Code != ipc.CodeInvalidParams {
-		t.Fatalf("empty params: %+v", r)
+// The console serves the policy only: the gate asks lockhub about held
+// requests, so no method lets a caller ask the console's human.
+func TestServesPolicyOnly(t *testing.T) {
+	b, _ := setup(t)
+	ms := b.Methods()
+	if len(ms) != 1 || ms[wire.MethodPolicy] == nil {
+		t.Fatalf("methods: %v", ms)
+	}
+	if ms["http.approve"] != nil {
+		t.Fatal("the console still serves http.approve")
 	}
 }
