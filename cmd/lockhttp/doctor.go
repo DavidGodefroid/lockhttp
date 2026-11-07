@@ -202,7 +202,7 @@ func policyChecks(path, profile string) []verbs.Check {
 }
 
 // permissionCheck refuses a policy, or its .lockhttp directory, that
-// others than its owner may write: lox up copies it into the console. The
+// others than its owner may write: lox run copies it into the console. The
 // repair removes their write permission.
 func permissionCheck(path string) ([]verbs.Check, []repair) {
 	if runtime.GOOS == "windows" {

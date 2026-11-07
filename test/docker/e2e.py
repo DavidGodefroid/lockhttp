@@ -4,11 +4,11 @@ docs/docker.md.
 
 The console runs in a pseudo-terminal this script answers (y to every
 prompt). The console is lockkit's policy-only console: it starts without
-hub flags, as `lox up` runs it (`console`, or `console --profile P`), and
+hub flags, as `lox run` runs it (`console`, or `console --profile P`), and
 refuses them. The gate is hub-attached only: without its hub flags the
-launcher's gate refuses to start ("launched by `lox up` only"). A request
+launcher's gate refuses to start ("launched by `lox run` only"). A request
 through a gate that asks a hub is tested end to end by lockhub's e2e,
-which runs the lockhttp lock under `lox up`. Needs docker. Uses the
+which runs the lockhttp lock under `lox run`. Needs docker. Uses the
 launcher's real names (lockhttp-console, lockhttp-gate, volumes
 lockhttp-run and lockhttp-home) and removes them: run it on a CI runner,
 not on a machine with a lockhttp setup.
@@ -145,14 +145,14 @@ def main():
         out = json.loads(r.stdout) if r.stdout.startswith("{") else {}
         check(r.returncode == 0 and out.get("ok") is True and "checks" in out, "doctor --fix --yes --json passes on the project", r.stdout + r.stderr)
 
-        # lox up copies the project's policy into the console's volume; do
+        # lox run copies the project's policy into the console's volume; do
         # the same for the launcher's console.
         sh("docker", "run", "-i", "--rm", "--user", "lockhttp", "-v", "lockhttp-home:/home/lockhttp", "--entrypoint", "sh", image,
            "-c", "umask 077 && mkdir -p /home/lockhttp/.config/lockhttp && cat > /home/lockhttp/.config/lockhttp/config.toml", input=policy)
         r = launcher("policy", "show")
         check('"example.com",' in r.stdout, "the policy is in the console's volume", r.stdout)
 
-        # The console starts without hub flags, as lox up runs it (lockhub
+        # The console starts without hub flags, as lox run runs it (lockhub
         # internal/family/compose.go gives a gate kind's console `console`,
         # plus `--profile P` when the lock names one): it approves its first
         # policy, listens, and asks no hub.
@@ -163,13 +163,13 @@ def main():
             check("lockhub at" not in console.text(), "the console asks no hub", console.text())
             sh("docker", "rm", "-f", "lockhttp-console", check_=False)
 
-        # The hub flags lox up gives the other locks' consoles are refused.
+        # The hub flags lox run gives the other locks' consoles are refused.
         r = launcher("console", "--hub", "http://lockhub:8443", "--hub-plain-http", "--hub-key-file", "/run/lockfamily/hub.pub", "--instance", "web", check_=False)
         check(r.returncode != 0 and "-hub" in r.stderr, "the console takes no hub flags", r.stdout + r.stderr)
 
-        # The gate does not start without the hub: lox up gives its flags.
+        # The gate does not start without the hub: lox run gives its flags.
         r = launcher("gate", check_=False)
-        check(r.returncode != 0 and "launched by `lox up` only" in r.stderr, "the gate needs the hub", r.stdout + r.stderr)
+        check(r.returncode != 0 and "launched by `lox run` only" in r.stderr, "the gate needs the hub", r.stdout + r.stderr)
     finally:
         cleanup()
     if failures:

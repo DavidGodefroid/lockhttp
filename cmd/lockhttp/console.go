@@ -30,10 +30,10 @@ func (e env) configPath(flagVal string) (string, error) {
 }
 
 // runConsole is `lockhttp console`: the policy console, in the console
-// account's own session (`lox up` runs it). It serves the approved policy
+// account's own session (`lox run` runs it). It serves the approved policy
 // to the gate and asks its human about every loosening; the gate asks
 // lockhub, never this console, about held requests. It is lockkit's
-// policy-only console: it takes no hub flags (lox up passes none) and
+// policy-only console: it takes no hub flags (lox run passes none) and
 // approves no request.
 func runConsole(e env, args []string) int {
 	const usage = "lockhttp console [--profile P] [--config FILE]"

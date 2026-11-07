@@ -2,9 +2,9 @@
 
 Why per-request decisions; the gate, the console and the hub; the verdicts; what the agent sees; the Claude API checks; the limits. The short version is in the [README](../README.md#how-it-works).
 
-> Moved from the README, whole. `lox up` is deprecated in lockhub: `lox run`
-> now runs the hub and the lockhttp console and writes `.lockfamily/up.json`;
-> where this page said `lox up`, read `lox run`.
+> Moved from the README, whole. `lox run` runs the hub and the lockhttp
+> console, writes `.lockfamily/up.json` and serves the decisions in its
+> terminal; it replaces lockhub's deprecated `lox up`.
 
 ## Why LockHTTP?
 

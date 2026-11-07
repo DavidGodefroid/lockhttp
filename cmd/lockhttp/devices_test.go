@@ -14,7 +14,7 @@ import (
 	"github.com/DavidGodefroid/lockkit/ticket/devicetest"
 )
 
-// writeDevicesFile writes the devices file lox up mounts.
+// writeDevicesFile writes the devices file lox run mounts.
 func writeDevicesFile(t *testing.T, devs ...ticket.Device) string {
 	t.Helper()
 	b, err := ticket.MarshalDevices(devs)
@@ -71,7 +71,7 @@ func TestGateDeviceFlags(t *testing.T) {
 		}
 	}
 	// The device flags need the hub, as the gate always does.
-	if code, _, errs := runEnv(t, gate, "gate", "--listen", "127.0.0.1:0", "--devices-file", good); code != exitUsage || !strings.Contains(errs, "launched by `lox up` only") {
+	if code, _, errs := runEnv(t, gate, "gate", "--listen", "127.0.0.1:0", "--devices-file", good); code != exitUsage || !strings.Contains(errs, "launched by `lox run` only") {
 		t.Errorf("devices without the hub: %d %s", code, errs)
 	}
 	// As the other hub flags, they have their LOCKHTTP_* variables.

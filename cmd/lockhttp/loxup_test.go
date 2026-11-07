@@ -17,7 +17,7 @@ import (
 	"github.com/DavidGodefroid/lockkit/sysconf"
 )
 
-// loxUpConsoleArgv is the command lockhub's `lox up` gives a lockhttp
+// loxUpConsoleArgv is the command lockhub's `lox run` gives a lockhttp
 // lock's console service, copied from lockhub internal/family/compose.go:
 //
 //	cmd := []string{"console"}
@@ -29,11 +29,11 @@ import (
 // the policy) and lockhub refuses allowed_uids on it: the console gets
 // "console" and, when the lock names a profile, "--profile P". No hub
 // flag. Keep this in step with lockhub: if it changes, this test says
-// whether lockhttp's console still starts under lox up.
+// whether lockhttp's console still starts under lox run.
 //
 // This is a copy: it does not detect a change in lockhub's compose.go.
 // That side is guarded by lockhub's internal/family/contract_test.go,
-// which asserts the argv lox up gives the lockhttp console service.
+// which asserts the argv lox run gives the lockhttp console service.
 func loxUpConsoleArgv(profile string) []string {
 	cmd := []string{"console"}
 	if profile != "" {
@@ -42,7 +42,7 @@ func loxUpConsoleArgv(profile string) []string {
 	return cmd
 }
 
-// loxUpLockConsoleArgv is what lox up gives a non-gate lock's console
+// loxUpLockConsoleArgv is what lox run gives a non-gate lock's console
 // (locksql, lockmq, lockfile): the hub flags lockhttp's console never gets.
 func loxUpLockConsoleArgv(instance string) []string {
 	return []string{"console", "--hub", "http://lockhub:8443", "--hub-plain-http", "--hub-key-file", "/run/lockfamily/hub.pub", "--instance", instance}
@@ -65,7 +65,7 @@ func (a *answerer) text() string {
 	return strings.Join(a.lines, "\n")
 }
 
-// lockhttp console, started with the argv lox up writes for it, starts
+// lockhttp console, started with the argv lox run writes for it, starts
 // (lockkit's policy-only console: no hub) and listens; the console Run
 // gets is policy-only, with no hub option.
 func TestConsoleStartsAsLoxUpRunsIt(t *testing.T) {
@@ -115,7 +115,7 @@ func TestConsoleStartsAsLoxUpRunsIt(t *testing.T) {
 	}
 }
 
-// The hub flags lox up gives the other locks' consoles are not lockhttp
+// The hub flags lox run gives the other locks' consoles are not lockhttp
 // console's: it refuses them (usage) before running a console.
 func TestConsoleRefusesHubFlags(t *testing.T) {
 	e := env{tty: true, consoleRun: func(context.Context, kit.Product, console.Backend, console.Options) error {

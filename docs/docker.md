@@ -173,12 +173,12 @@ amd64 and arm64 only.
 ## Quick start (hub-attached)
 
 lockhttp runs hub-attached only: there is no standalone gate. lockhub's
-`lox up` runs the console (in a compose service of its own, with the
+`lox run` runs the console (in a compose service of its own, with the
 policy it reviewed from `<workspace>/.lockhttp/`) and the hub, and lea runs
-the gate beside its proxy with the hub flags `lox up` writes in
+the gate beside its proxy with the hub flags `lox run` writes in
 `.lockfamily/up.json` ([install.md](install.md#quick-start-with-lea),
 [lea.md](lea.md)). `lockhttp gate` without `--hub`, `--hub-key-file` and
-`--instance` exits with a usage error ("launched by `lox up` only").
+`--instance` exits with a usage error ("launched by `lox run` only").
 
 `lox add lockhttp` writes the policy through the launcher verbs, from the project
 root: `lockhttp profile add --non-interactive --json --profile NAME`
@@ -187,7 +187,7 @@ write) and `lockhttp doctor --fix --yes --json`. They run as you on the
 project; run them by hand the same way.
 
 The launcher's own `console` and `policy` still run the image as the
-console account with the volume `lockhttp-home`, the policy `lox up`
+console account with the volume `lockhttp-home`, the policy `lox run`
 would copy there. To try the launcher's console by hand, copy the
 project's policy into the volume first:
 
