@@ -97,7 +97,7 @@ When you change what a subcommand runs, change the table in
 launcher as a user would. The console runs in a pseudo-terminal the script
 answers; the gate, hub-attached only, must refuse to start without its hub
 flags. Requests through a gate that asks a hub are tested by lockhub's e2e,
-under `lox up`. It needs Docker and Python 3 (standard library only):
+under `lox run`. It needs Docker and Python 3 (standard library only):
 
 ```sh
 docker build -t lockhttp .

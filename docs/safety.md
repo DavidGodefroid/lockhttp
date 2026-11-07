@@ -2,9 +2,9 @@
 
 The safety model in full. Threats, parades and residual risks: [security-model.md](security-model.md).
 
-> Moved from the README, whole. `lox up` is deprecated in lockhub: `lox run`
-> now runs the hub and the lockhttp console and writes `.lockfamily/up.json`;
-> where this page said `lox up`, read `lox run`.
+> Moved from the README, whole. `lox run` runs the hub and the lockhttp
+> console, writes `.lockfamily/up.json` and serves the decisions in its
+> terminal; it replaces lockhub's deprecated `lox up`.
 
 ## Security model
 

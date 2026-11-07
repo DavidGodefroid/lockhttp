@@ -60,7 +60,7 @@ func init() {
 	refusal.Register(CodePending, refusal.RetryAskUser,
 		"the request waits for the human", "retry the same request in a moment: once approved it goes through")
 	refusal.Register(CodeNoConsole, refusal.RetryAskUser,
-		"no lockhttp console is running", "ask the user to run: lox up")
+		"no lockhttp console is running", "ask the user to run: lox run")
 	refusal.Register(CodeClaudeParam, refusal.RetryAskUser,
 		"a Claude API parameter needs a human (mcp_servers, a server tool, files)", "ask the user to approve it on lockhub")
 	refusal.Register(CodeSourceUnknown, refusal.RetryStop,

@@ -76,7 +76,7 @@ lockhttp profile add [--non-interactive] [--json] [--project DIR] [--profile NAM
 ```
 
 Adds one profile, with the default policy, to the project's
-`.lockhttp/config.toml`, which `lox up` reviews and copies into the
+`.lockhttp/config.toml`, which `lox run` reviews and copies into the
 lockhttp console. A new file is written `0600` in a `0700` directory; a
 profile added to an existing file is appended, the other profiles left
 byte for byte. A profile already in the file is never rewritten: exit 1,
@@ -135,7 +135,7 @@ first, then the flag.
 | `--config FILE` | `~/.config/lockhttp/config.toml` | The policy file. |
 
 `show` and `edit` exit 1 when the file does not exist: `lockhttp profile
-add` writes the policy in the project, and `lox up` copies it into the
+add` writes the policy in the project, and `lox run` copies it into the
 console.
 
 ## `lockhttp console`
@@ -148,11 +148,11 @@ The policy console: lockkit's console, serving `policy.get` to the gate.
 It asks no question about a request: the gate asks lockhub about every held
 request, and you answer on a facade of the hub (`lox approve`, lea's deck,
 a paired phone). It must run in a terminal (exit 3 otherwise), as the
-console account. Under `lox up` it runs in its own compose service, with
+console account. Under `lox run` it runs in its own compose service, with
 the policy copied from `<workspace>/.lockhttp/` (`lox attach <instance>`
 attaches its terminal); the launcher runs it in the container
 `lockhttp-console`, the only one that mounts `lockhttp-home`. It is
-lockkit's policy-only console: it takes no hub flags (`lox up` passes
+lockkit's policy-only console: it takes no hub flags (`lox run` passes
 none to it, only to the gate) and approves no request; one that reached
 it would be refused. The gate, not the console, needs the hub flags.
 
@@ -259,7 +259,7 @@ lockhttp gate --check [--listen ADDR]
 
 The HTTP(S) proxy. It runs hub-attached only: without `--hub`,
 `--hub-key-file` and `--instance` it exits with a usage error (exit 3,
-"launched by `lox up` only"); lea passes them from `lox up`'s `up.json`.
+"launched by `lox run` only"); lea passes them from `lox run`'s `up.json`.
 It refuses to run as root; in the image it runs as `gate` (uid 10003).
 Each flag but `--check` has an environment variable, read when the flag is
 not given.
@@ -286,8 +286,8 @@ with the socket volume, publishes its port on `LOCKHTTP_PUBLISH`
 | `--instance NAME` | `LOCKHTTP_INSTANCE` | none (required) | The lock instance name the hub knows the gate by. |
 | `--home DIR` | `LOCKHTTP_HOME` | the home directory | The gate's own volume (`0700`, the gate's uid only): the instance key (`hub/NAME.key`, made by `lockhttp hub-key`), the plans and the hub state (`hub/NAME/`). Never mount it in another container. |
 | `--hub-plain-http` | `LOCKHTTP_HUB_PLAIN_HTTP=1` | off | Allow an `http://` `--hub` URL to a hub on a network of its own: a service name without a dot (`lockhub`) or a private address only. Without it an `http://` hub is refused unless it is a loopback address; use `https`. Requests and decisions are signed either way. |
-| `--facade-keys-file FILE` | `LOCKHTTP_FACADE_KEYS_FILE` | none | The facade keys the gate pins (JSON, written by `lox up`). A reveal (Ctrl-O on a local facade of the hub) is answered with the ticket's clear screen sealed to the facade's ephemeral key, only when one of these keys signed it; the hub relays ciphertext. Without it, reveals are refused. |
-| `--devices-file FILE` | `LOCKHTTP_DEVICES_FILE` | none | The approval devices the gate pins (JSON, written by `lox up` at `/run/lockfamily/devices.json`). A decision taken on a device (the hub's mobile facade) is acted on only if it carries the signature of one of them over the gate's own signed ticket. Without it, every decision of the mobile facade is refused. |
+| `--facade-keys-file FILE` | `LOCKHTTP_FACADE_KEYS_FILE` | none | The facade keys the gate pins (JSON, written by `lox run`). A reveal (Ctrl-O on a local facade of the hub) is answered with the ticket's clear screen sealed to the facade's ephemeral key, only when one of these keys signed it; the hub relays ciphertext. Without it, reveals are refused. |
+| `--devices-file FILE` | `LOCKHTTP_DEVICES_FILE` | none | The approval devices the gate pins (JSON, written by `lox run` at `/run/lockfamily/devices.json`). A decision taken on a device (the hub's mobile facade) is acted on only if it carries the signature of one of them over the gate's own signed ticket. Without it, every decision of the mobile facade is refused. |
 | `--require-device RISKS` | `LOCKHTTP_REQUIRE_DEVICE` | none | Risk classes, comma-separated (`write`, `prod-write`), whose approvals must be signed by a pinned device, from any facade: an approval without one is a denial. The gate's asks are `write`, or `prod-write` under a production policy. Needs `--devices-file`. |
 | `--seal-clear` | `LOCKHTTP_SEAL_CLEAR=1` | off | Send each ticket's clear screen (the console's, personal data unmasked) sealed to every pinned device; the hub relays ciphertext. Off, the clear screen never leaves the gate. Needs `--devices-file`. |
 | `--hub-net CIDR` | | none | A network of the hub. The gate refuses as a target the hub's host name, its addresses (resolved at start) and any name resolving into these networks, even when `internal_hosts` allows private addresses; a name that does not resolve is refused too. Repeatable. Without it, the hub host must resolve at start, or the gate does not start. |
@@ -332,17 +332,18 @@ pinned facade key (`--facade-keys-file`) on a reveal, and with
 by the hub are audited (`reveal`/`renew`, `approval` `hub-claimed`).
 
 **Supported lockhub versions.** Which [lockhub](https://github.com/DavidGodefroid/lockhub)
-releases each lockhttp release works with. Under `lox up`, lea runs the gate in hub mode
-(lockhub's `docs/lox-up.md`), and only from an `up.json` that says what the gate pins
+releases each lockhttp release works with. Under `lox run`, lea runs the gate in hub mode
+(lockhub's `docs/lox-run.md`), and only from an `up.json` that says what the gate pins
 (`"lockhttp_gate": 1`): that needs lockhub v0.2.2 or later and lea v0.3.0 or later, for every
 lockhttp release below. A gate run by hand works with the hub image of the last column.
-From v0.6.0 the gate is hub-attached only (there is no standalone gate): run it under `lox up`,
+From v0.6.0 the gate is hub-attached only (there is no standalone gate): run it under `lox run`,
 with a trusted `up.json` naming one lockhttp lock. lea after v0.3.5 (lea#232) then refuses to
-start a gate without one and says to run `lox up`; lea v0.3.0 to v0.3.5 instead falls back to a
+start a gate without one and says to run `lox run`; lea v0.3.0 to v0.3.5 instead falls back to a
 standalone gate, which v0.6.0 and later refuse: that gate container exits and restarts (nothing gets out).
 
-| lockhttp | lockkit | Under `lox up` (lea's gate) | Hub image, gate run by hand |
+| lockhttp | lockkit | Under `lox run` (lea's gate) | Hub image, gate run by hand |
 |---|---|---|---|
+| v0.8.1 | v0.14.1 | as v0.6.0 | v0.2.0 or later |
 | v0.8.0 | v0.13.0 | as v0.6.0 | v0.2.0 or later |
 | v0.7.1 | v0.10.0 | as v0.6.0 | v0.2.0 or later |
 | v0.7.0 | v0.10.0 | as v0.6.0 | v0.2.0 or later |
@@ -363,7 +364,7 @@ and lea's `internal/launcher/lockhubgate.go` are the references.
 
 The gate finds the console's socket as a lockkit client, in the socket
 directory of the image's `/etc/lockhttp/system.toml`: `/run/lockhttp`, the
-console's socket volume (`lox up`'s `<project>_<instance>-run`) it shares
+console's socket volume (`lox run`'s `<project>_<instance>-run`) it shares
 with the console.
 It polls the policy every 2 s and reloads `--sources`, `--credentials` and `--secrets`
 when they change.
@@ -406,7 +407,7 @@ lockhttp hub-key --instance NAME [--home DIR]
 ```
 
 Prints the gate's instance public key (Ed25519, base64 on one line) for
-`lox up` to pin at the hub. The first call makes the key in
+`lox run` to pin at the hub. The first call makes the key in
 `DIR/hub/NAME.key` (`0600`); `--home` defaults to `LOCKHTTP_HOME`, then the
 home directory.
 

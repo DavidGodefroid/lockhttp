@@ -133,12 +133,12 @@ func TestConsoleNeedsTTY(t *testing.T) {
 }
 
 // The gate runs hub-attached only: without its hub flags it does not
-// start, and it says that `lox up` (through lea) gives them.
+// start, and it says that `lox run` (through lea) gives them.
 func TestGateHubOnly(t *testing.T) {
 	gate := env{euid: func() int { return 1000 }}
 	for _, args := range [][]string{nil, {"--upstream", "http://127.0.0.1:3128"}, {"--sources", "s.json", "--profile", "p"}} {
 		code, out, errs := runEnv(t, gate, append([]string{"gate", "--listen", "127.0.0.1:0"}, args...)...)
-		if code != exitUsage || out != "" || !strings.Contains(errs, "launched by `lox up` only") || !strings.Contains(errs, "--hub") {
+		if code != exitUsage || out != "" || !strings.Contains(errs, "launched by `lox run` only") || !strings.Contains(errs, "--hub") {
 			t.Errorf("%v: %d %q %s", args, code, out, errs)
 		}
 	}

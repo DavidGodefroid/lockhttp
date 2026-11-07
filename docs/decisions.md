@@ -58,10 +58,10 @@ first are not.
 ## Hub-attached only (lockkit#110)
 
 The gate runs hub-attached only: `lockhttp gate` needs `--hub`,
-`--hub-key-file` and `--instance` (lea passes them from `lox up`'s
-`up.json`) and exits otherwise ("launched by `lox up` only"). The
+`--hub-key-file` and `--instance` (lea passes them from `lox run`'s
+`up.json`) and exits otherwise ("launched by `lox run` only"). The
 standalone gate, which asked a console of its own, and its rollback
-(`E_WITHDRAWN`) are gone. `lockhttp console` stays: under `lox up` it serves
+(`E_WITHDRAWN`) are gone. `lockhttp console` stays: under `lox run` it serves
 the approved policy to the gate and asks its human about every loosening;
 it serves no approvals (`http.approve` and `--auto` are gone). One mode
 keeps one path to test and to reason about (KISS).

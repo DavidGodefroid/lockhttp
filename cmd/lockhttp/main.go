@@ -65,7 +65,7 @@ Console account
   policy   show | edit | path [--config FILE]
                                    print, edit or locate the console's policy file
   console  [--profile P] [--config FILE]
-                                   run the policy console (lox up runs it)
+                                   run the policy console (lox run runs it)
 
 Other human commands
   ca init  --dir DIR [--name NAME] [--force]
@@ -78,7 +78,7 @@ Gate and signer (lea runs them beside its proxy container)
            [--credentials FILE] [--secrets FILE] [--audit-dir DIR] [--status-file FILE]
            [--ca-cert FILE --signer SOCKET] | --check
                                    run the HTTP(S) proxy, asking lockhub
-                                   (launched by lox up only, through lea)
+                                   (launched by lox run only, through lea)
   signer   --ca-cert FILE --ca-key FILE --listen SOCKET [--allow-uid N ...]
                                    issue leaf certificates to the gate (holds the CA key)
   hub-key  --instance NAME [--home DIR]

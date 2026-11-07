@@ -2,9 +2,9 @@
 
 How to install lockhttp, set it up with lea and lockhub, and the commands of its launcher. The short path is in the [README](../README.md#install).
 
-> Moved from the README, whole. `lox up` is deprecated in lockhub: `lox run`
-> now runs the hub and the lockhttp console and writes `.lockfamily/up.json`;
-> where this page said `lox up`, read `lox run`.
+> Moved from the README, whole. `lox run` runs the hub and the lockhttp
+> console, writes `.lockfamily/up.json` and serves the decisions in its
+> terminal; it replaces lockhub's deprecated `lox up`.
 
 ## Install
 
@@ -63,7 +63,7 @@ and [lea](https://github.com/DavidGodefroid/lea) runs the gate beside its
 proxy container when `LEA_LOCKHTTP=1`, with the hub flags `lox run` writes in
 `.lockfamily/up.json`. The contract between lockhttp and lea (files, mounts,
 uids, network rules) is in [docs/lea.md](lea.md); the one between
-`lox run` and lea in lockhub's `docs/lox-up.md`.
+`lox run` and lea in lockhub's `docs/lox-run.md`.
 
 LockHTTP needs lea, and `lox add lockhttp` sets it up (its only question is
 the lock's name): see lockhub's

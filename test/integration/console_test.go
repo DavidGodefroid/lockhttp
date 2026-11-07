@@ -4,7 +4,7 @@
 // same process (the console's same-user mode, which only a test build may
 // turn on: lockkit IsolationEnv.AllowSameUser, on a private socket) and
 // lockkit's test hub: the console serves the policy (lockkit's policy-only
-// console, without a hub, as lox up starts it), the gate's hub decides the
+// console, without a hub, as lox run starts it), the gate's hub decides the
 // held requests.
 package integration
 

@@ -380,7 +380,7 @@ func writeRefusalTicket(w io.Writer, id, c, reason, tk string, connect bool) {
 func hintFor(code string) string {
 	switch code {
 	case "E_NO_CONSOLE":
-		return "No lockhttp console is running: ask the user to start it (lox up)."
+		return "No lockhttp console is running: ask the user to start it (lox run)."
 	case "E_PENDING":
 		return "The request waits for the human on lockhub: retry the same request in a moment."
 	case "E_DENIED", "E_TIMEOUT":

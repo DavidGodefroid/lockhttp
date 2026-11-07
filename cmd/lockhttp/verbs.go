@@ -38,7 +38,7 @@ const (
 const flagTrusted = "trusted"
 
 // noPolicyHint says where the console's policy file comes from.
-const noPolicyHint = "lockhttp profile add writes it in the project, lox up copies it here"
+const noPolicyHint = "lockhttp profile add writes it in the project, lox run copies it here"
 
 // verbOut prints the outcome of a verb: one verbs.Error line on stdout
 // with --json, human text on stderr.
@@ -192,7 +192,7 @@ func runProfileAdd(e env, o verbOut, args []string) int {
 	if o.json {
 		_ = verbs.WriteJSON(e.stdout, verbs.Profile{Lock: product.P.Name, Profile: name, Config: path, Production: prod})
 	} else {
-		fmt.Fprintf(e.stdout, "added profile %s to %s\nnext: lox up reviews it and copies it into the lockhttp console\n", name, path)
+		fmt.Fprintf(e.stdout, "added profile %s to %s\nnext: lox run reviews it and copies it into the lockhttp console\n", name, path)
 	}
 	return exitOK
 }

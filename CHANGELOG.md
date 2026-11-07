@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] - 2026-11-07
+
+Built on lockkit v0.14.1.
+
+### Changed
+
+- Docs, the agent's hints and the launcher's messages name `lox run`, which
+  replaces lockhub's deprecated `lox up` (#46): `E_NO_CONSOLE` says to start
+  the console with `lox run`, and so do the gate's usage error, `profile add`
+  and the console's policy errors. No behavior changes: container labels,
+  `up.json`, `.lockfamily/` and the flags stay the same.
+- lockkit v0.14.1, whose shared texts also name `lox run`.
+
 ## [0.8.0] - 2026-11-06
 
 Built on lockkit v0.13.0.
@@ -335,7 +348,8 @@ separate signer, Claude API allowlist) available behind `--ca-cert` and
 - Release pipeline: goreleaser, cosign keyless signatures, SBOMs,
   SHA-pinned actions, `scripts/install.sh` with signature verification.
 
-[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.8.1
 [0.8.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.8.0
 [0.7.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.7.1
 [0.7.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.7.0

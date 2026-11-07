@@ -14,6 +14,6 @@ func TestDefaultConfigComments(t *testing.T) {
 		t.Error("stale: lockhub has no auto mode for the gate's asks")
 	}
 	if !strings.Contains(c, "lox attach") || !strings.Contains(c, ":review") {
-		t.Error("say how :review is reached under lox up")
+		t.Error("say how :review is reached under lox run")
 	}
 }
