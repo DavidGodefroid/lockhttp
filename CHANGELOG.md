@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Security
+
+- Configuration and usage errors no longer repeat the value given, which
+  may be a pasted secret or a URL with userinfo: policy errors name the key
+  and, for a list, the entry's place in the file (`trusted entry 2`,
+  `internal_hosts entry 1 host`, `rules entry 3`, `inject entry 1`; a rule
+  or an injection by its place, not its `id` or host) with the allowed
+  values; the sources file names a bad `networks` entry by its place;
+  `--hub`, `--instance` (`gate` and `hub-key`), `--hub-net`,
+  `--require-device`, `--allow-uid`, `--listen` (gate, `--check`, signer)
+  and `doctor --gate` errors, flag parse errors, unknown commands,
+  subcommands and flags (an unknown flag is named only when it looks like a
+  flag name), stray arguments and "no profile of that name" omit the value.
+  Profile names are keys and file paths are still named. The `mcp_servers`
+  warning (shown and audited) names the server URL without its userinfo,
+  query or fragment.
+
+### Changed
+
+- `--hub` refuses a URL with a user, password, query or fragment before
+  lockkit (the hub authenticates the instance key), and the gate's start
+  line names the hub host only.
+- The `mcp_servers` warning keeps the URL's host and path: a secret in the
+  path still shows.
+
 ## [0.8.1] - 2026-11-07
 
 Built on lockkit v0.14.1.

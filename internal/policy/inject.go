@@ -84,86 +84,89 @@ var forbiddenInjectHeaders = map[string]bool{
 
 func injectsFromRaw(in []rawInject, p Policy) ([]Inject, error) {
 	var out []Inject
-	ids := map[string]bool{}
-	targets := map[string]string{}
-	for _, ri := range in {
-		inj, err := injectFromRaw(ri)
+	// Errors name an injection by its place in the file, never by its id
+	// or host: values the human typed (a pasted secret must not come back).
+	ids := map[string]int{}
+	targets := map[string]int{}
+	for i, ri := range in {
+		key := entry("inject", i)
+		inj, err := injectFromRaw(key, ri)
 		if err != nil {
 			return nil, err
 		}
-		if ids[inj.ID] {
-			return nil, fmt.Errorf("inject id %q is used twice", inj.ID)
+		if j, dup := ids[inj.ID]; dup {
+			return nil, fmt.Errorf("%s: id is already used by %s", key, entry("inject", j))
 		}
-		ids[inj.ID] = true
+		ids[inj.ID] = i
 		if matchAny(p.Splice, inj.Host) {
-			return nil, fmt.Errorf("inject %s: %s is spliced (never decrypted): the gate cannot add a header", inj.ID, inj.Host)
+			return nil, fmt.Errorf("%s: host is spliced (never decrypted): the gate cannot add a header", key)
 		}
 		// Two injections of one header for the same requests would be
 		// ambiguous. A container-scoped one beside an all-containers one
 		// is not: the container's wins (InjectFor).
-		key := inj.Host + ":" + strconv.Itoa(inj.Port) + " " + inj.Header + " " + inj.Container
-		if other, dup := targets[key]; dup {
-			return nil, fmt.Errorf("inject %s: %s already injects %s on %s:%d", inj.ID, other, inj.Header, inj.Host, inj.Port)
+		target := inj.Host + ":" + strconv.Itoa(inj.Port) + " " + inj.Header + " " + inj.Container
+		if j, dup := targets[target]; dup {
+			return nil, fmt.Errorf("%s: %s already injects this header on this host and port", key, entry("inject", j))
 		}
-		targets[key] = inj.ID
+		targets[target] = i
 		out = append(out, inj)
 	}
 	return out, nil
 }
 
-func injectFromRaw(ri rawInject) (Inject, error) {
+func injectFromRaw(key string, ri rawInject) (Inject, error) {
 	if !ruleIDRe.MatchString(ri.ID) {
-		return Inject{}, fmt.Errorf("inject id %q: use letters, digits, '_', '-' or '.'", ri.ID)
+		return Inject{}, fmt.Errorf("%s: id: use letters, digits, '_', '-' or '.'", key)
 	}
 	inj := Inject{ID: ri.ID, Container: ri.Container, Port: ri.Port, Scheme: ri.Scheme, Credential: ri.Credential, Note: ri.Note}
 	if inj.Container != "" && !containerRe.MatchString(inj.Container) {
-		return Inject{}, fmt.Errorf("inject %s: invalid container", ri.ID)
+		return Inject{}, fmt.Errorf("%s: invalid container", key)
 	}
-	h, err := CheckHostPattern("inject "+ri.ID+" host", ri.Host, true)
+	h, err := CheckHostPattern(key+" host", ri.Host, true)
 	if err != nil {
 		return Inject{}, err
 	}
 	if strings.HasPrefix(h, "*.") || h == "*" {
-		return Inject{}, fmt.Errorf("inject %s: name an exact host, not a pattern", ri.ID)
+		return Inject{}, fmt.Errorf("%s: name an exact host, not a pattern", key)
 	}
 	inj.Host = h
 	if inj.Port < 1 || inj.Port > 65535 {
-		return Inject{}, fmt.Errorf("inject %s: port is required (1-65535)", ri.ID)
+		return Inject{}, fmt.Errorf("%s: port is required (1-65535)", key)
 	}
 	if !headerNameRe.MatchString(ri.Header) {
-		return Inject{}, fmt.Errorf("inject %s: header must be a header name (letters, digits and '-')", ri.ID)
+		return Inject{}, fmt.Errorf("%s: header must be a header name (letters, digits and '-')", key)
 	}
 	inj.Header = textproto.CanonicalMIMEHeaderKey(ri.Header)
 	if forbiddenInjectHeaders[inj.Header] || strings.HasPrefix(inj.Header, "Proxy-") || strings.HasPrefix(inj.Header, "X-Lockhttp-") {
-		return Inject{}, fmt.Errorf("inject %s: the gate owns the header %s", ri.ID, inj.Header)
+		return Inject{}, fmt.Errorf("%s: the gate owns this header", key)
 	}
 	if inj.Scheme != "" && !schemeRe.MatchString(inj.Scheme) {
-		return Inject{}, fmt.Errorf("inject %s: scheme must be a word (\"Bearer\", \"Token\")", ri.ID)
+		return Inject{}, fmt.Errorf("%s: scheme must be a word (\"Bearer\", \"Token\")", key)
 	}
 	if !CredentialName(inj.Credential) {
-		return Inject{}, fmt.Errorf("inject %s: credential names a secret of the gate's secrets file (\"ha-token\": lower-case letters, digits, '_', '-' or '.', at most 32), never its value", ri.ID)
+		return Inject{}, fmt.Errorf("%s: credential names a secret of the gate's secrets file (\"ha-token\": lower-case letters, digits, '_', '-' or '.', at most 32), never its value", key)
 	}
 	for k, v := range map[string]string{"credential": inj.Credential, "note": inj.Note} {
-		if err := kconfig.CheckValue(product.P, "inject "+ri.ID+" "+k, v); err != nil {
+		if err := kconfig.CheckValue(product.P, key+" "+k, v); err != nil {
 			return Inject{}, err
 		}
 	}
 	for _, m := range ri.Methods {
 		m = strings.ToUpper(strings.TrimSpace(m))
 		if !methodRe.MatchString(m) {
-			return Inject{}, fmt.Errorf("inject %s: invalid method", ri.ID)
+			return Inject{}, fmt.Errorf("%s: invalid method", key)
 		}
 		if m == "TRACE" || m == "TRACK" || m == "CONNECT" {
 			// TRACE and TRACK echo the request, its header included.
-			return Inject{}, fmt.Errorf("inject %s: the gate never injects into %s", ri.ID, m)
+			return Inject{}, fmt.Errorf("%s: the gate never injects into %s", key, m)
 		}
 		inj.Methods = append(inj.Methods, m)
 	}
 	for _, path := range ri.Paths {
 		if !strings.HasPrefix(path, "/") {
-			return Inject{}, fmt.Errorf("inject %s: a path must start with /", ri.ID)
+			return Inject{}, fmt.Errorf("%s: a path must start with /", key)
 		}
-		if err := kconfig.CheckValue(product.P, "inject "+ri.ID+" path", path); err != nil {
+		if err := kconfig.CheckValue(product.P, key+" path", path); err != nil {
 			return Inject{}, err
 		}
 		inj.Paths = append(inj.Paths, path)

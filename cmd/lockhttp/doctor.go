@@ -160,7 +160,7 @@ func doctorChecks(o doctorOpts) ([]verbs.Check, []repair) {
 	if o.gate != "" {
 		c, err := net.DialTimeout("tcp", o.gate, 3*time.Second)
 		if err != nil {
-			add("gate", verbs.StatusFail, err.Error(), "")
+			add("gate", verbs.StatusFail, "no gate answers on --gate ("+netErrKind(err)+")", "")
 		} else {
 			_ = c.Close()
 			add("gate", verbs.StatusOK, "answers on "+o.gate, "")

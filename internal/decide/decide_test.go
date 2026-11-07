@@ -392,3 +392,25 @@ func TestClaudeAmbiguity(t *testing.T) {
 		t.Fatalf("two Authorization headers: %+v", d)
 	}
 }
+
+// The mcp_servers warning (shown and audited) names the server without the
+// userinfo, query or fragment of its URL, which may carry a credential.
+func TestMCPServerWarningHidesCredentials(t *testing.T) {
+	const canary = "glsa_CanarySecretToken123"
+	for _, u := range []string{
+		"https://user:" + canary + "@mcp.example/sse",
+		"https://mcp.example/sse?token=" + canary,
+		"https://mcp.example/sse#" + canary,
+		"not a url " + canary,
+	} {
+		body := `{"mcp_servers":[{"type":"url","url":"` + u + `","name":"x"}]}`
+		d := claudeMessages(post("api.anthropic.com", "/v1/messages", "application/json", body))
+		w := strings.Join(d.Warnings, " ")
+		if d.Verdict != Ask || strings.Contains(w, canary) || strings.Contains(w, "user") || !strings.Contains(w, "mcp_servers") {
+			t.Errorf("%s: %+v", u, d)
+		}
+		if strings.Contains(u, "mcp.example") && !strings.Contains(w, "https://mcp.example/sse") {
+			t.Errorf("%s: the server is not named: %s", u, w)
+		}
+	}
+}

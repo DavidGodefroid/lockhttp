@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -181,10 +182,10 @@ func claudeMessages(r Request) Decision {
 			if err != nil {
 				return ask("an mcp_servers entry is ambiguous")
 			}
-			var url, name string
-			_ = json.Unmarshal(m["url"], &url)
+			var addr, name string
+			_ = json.Unmarshal(m["url"], &addr)
 			_ = json.Unmarshal(m["name"], &name)
-			warns = append(warns, fmt.Sprintf("mcp_servers: %q %s (the API calls this server for the agent)", name, url))
+			warns = append(warns, fmt.Sprintf("mcp_servers: %q %s (the API calls this server for the agent)", name, mcpServerURL(addr)))
 		}
 	}
 	if raw, ok := top["tools"]; ok && string(raw) != "null" {
@@ -233,4 +234,20 @@ func isClientTool(base string) bool {
 		return true
 	}
 	return false
+}
+
+// mcpServerURL is an MCP server URL for the warnings (shown and audited):
+// without its userinfo, query or fragment, which may carry a credential.
+// The host and path stay: the human decides on the server they name.
+func mcpServerURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "(not an absolute URL)"
+	}
+	hidden := u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != ""
+	u.User, u.RawQuery, u.ForceQuery, u.Fragment, u.RawFragment = nil, "", false, "", ""
+	if hidden {
+		return u.String() + " (credentials, query or fragment not shown)"
+	}
+	return u.String()
 }

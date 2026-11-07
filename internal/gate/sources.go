@@ -58,10 +58,11 @@ func parseSources(b []byte) (*sourceMap, error) {
 		return nil, fmt.Errorf("sources: version %d, this gate reads version %d", f.Version, ContractVersion)
 	}
 	m := &sourceMap{byIP: map[netip.Addr]wire.Source{}, byName: map[string]wire.Source{}, agents: map[string]wire.Source{}}
-	for _, n := range f.Networks {
+	for i, n := range f.Networks {
 		ip, err := netip.ParseAddr(n.LocalIP)
 		if err != nil || n.Container == "" {
-			return nil, fmt.Errorf("sources: invalid network entry %q", n.LocalIP)
+			// The entry's place, never its values.
+			return nil, fmt.Errorf("sources: networks entry %d: local_ip must be an IP address and container is required", i+1)
 		}
 		s := wire.Source{Container: n.Container, Project: n.Project}
 		m.byIP[ip.Unmap()] = s
