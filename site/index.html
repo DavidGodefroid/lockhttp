@@ -64,7 +64,7 @@
       <pre tabindex="0" aria-label="Install commands"><code><span class="cmd">brew trust davidgodefroid/tap</span>
 <span class="cmd">brew install davidgodefroid/tap/lox davidgodefroid/tap/lockhttp</span>
 <span class="cmd">brew install davidgodefroid/tap/lea</span></code></pre>
-      <p class="install-note">Needs Docker. The gate runs inside <a href="https://github.com/DavidGodefroid/lea">lea</a>, hence its formula. Then <code>lox add lockhttp</code>, <code>lox run</code>, and lea with <code>LEA_LOCKHTTP=1</code>. The whole family: <code>brew install davidgodefroid/tap/lockfamily</code>.</p>
+      <p class="install-note">Needs Docker. The gate runs inside <a href="https://github.com/DavidGodefroid/lea">lea</a>, hence its formula. Then <code>lox add lockhttp</code>, <code>lox run</code>, and <code>LEA_LOCKHTTP=1</code> in lea’s <code>lea.conf</code>. The whole family: <code>brew install davidgodefroid/tap/lockfamily</code>.</p>
     </div>
     <div class="actions">
       <a class="button primary" href="install/">Install guide</a>
@@ -169,8 +169,11 @@
 lox add lockhttp</code></pre></li>
     <li><p>In a terminal of its own, outside any agent, keep <code>lox run</code> open. Every held request shows up there for your decision.</p>
       <pre tabindex="0"><code>lox run</code></pre></li>
-    <li><p>Start lea with lockhttp on. If lea already runs, <code>lea stop</code> first: it brings the lock in at its next start.</p>
-      <pre tabindex="0"><code>LEA_LOCKHTTP=1 lea</code></pre></li>
+    <li><p>Turn lockhttp on in lea’s configuration, then restart lea. <code>LEA_LOCKHTTP=1 lea</code> is not enough: the configuration wins over the environment.</p>
+      <pre tabindex="0"><code>echo LEA_LOCKHTTP=1 &gt;&gt; ~/.config/lea/lea.conf
+lea stop --all
+lea</code></pre>
+      <p>lea-proxy and its gate are shared by every lea on the machine: lockhttp is on or off for all of them at once.</p></li>
   </ol>
   <div class="prose">
     <p>Ask your agent to read the docs of a trusted site: it goes through. Ask it to post somewhere: the request waits for your <code>y</code>.</p>

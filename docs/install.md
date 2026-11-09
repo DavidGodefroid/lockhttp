@@ -86,11 +86,13 @@ lox add lockhttp              # asks for the lock's name: profile add, the decla
 #   lox run                   # runs the hub and the console, registers the gate's key
 #   lox attach web            # the console's terminal: approve its first policy (detach: Ctrl-P Ctrl-Q)
 
-# 3. Start lea with LockHTTP on: its gate asks the hub. If lea already runs,
-#    `lox add` said "lea gets lock NAME at its next start: lea stop, then lea":
-#    lea mounts the locks' sockets when its container starts, so lea stop,
-#    then lea brings the new lock in.
-export LEA_LOCKHTTP=1
+# 3. Turn LockHTTP on in lea's configuration, then restart lea: its gate asks
+#    the hub. LEA_LOCKHTTP=1 in the environment alone is ignored (lea's
+#    configuration wins and lea warns). lea mounts the locks' sockets when its
+#    container starts, and lea-proxy and its gate are shared by every lea on
+#    the machine (on or off for all of them), so stop them all.
+echo LEA_LOCKHTTP=1 >> ~/.config/lea/lea.conf
+lea stop --all
 lea
 
 # 4. Approve the held requests on a facade of the hub

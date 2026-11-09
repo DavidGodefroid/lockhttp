@@ -97,11 +97,20 @@ commands and the setup by hand: [docs/install.md](docs/install.md).
    lox run
    ```
 
-3. Start lea with lockhttp on (`lea stop` first if it already runs):
+3. Turn lockhttp on in lea's configuration, then restart lea.
+   `LEA_LOCKHTTP=1 lea` is not enough: lea's configuration wins over the
+   environment.
 
    ```sh
-   LEA_LOCKHTTP=1 lea
+   echo LEA_LOCKHTTP=1 >> ~/.config/lea/lea.conf
+   lea stop --all
+   lea
    ```
+
+   lea-proxy and its gate are shared by every lea on the machine: lockhttp is
+   on or off for all of them at once, and once it is on, a lea whose projects
+   directory has no lockhttp lock does not start. `lea doctor` reports
+   the gate's state.
 
 4. Ask your agent to read the docs of a trusted site: it goes through. Ask
    it to post somewhere: the request waits for your `y`.

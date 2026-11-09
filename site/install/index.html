@@ -75,8 +75,11 @@
 lox add lockhttp</code></pre></li>
     <li><p>In a terminal of its own, outside lea and any agent, keep <code>lox run</code> open. Every held request shows up there for your decision.</p>
       <pre tabindex="0"><code>lox run</code></pre></li>
-    <li><p>Start lea with lockhttp on. If lea already runs, <code>lea stop</code> first: lea mounts the locks’ sockets when its container starts.</p>
-      <pre tabindex="0"><code>LEA_LOCKHTTP=1 lea</code></pre></li>
+    <li><p>Turn lockhttp on in lea’s configuration, then restart lea: lea mounts the locks’ sockets when its container starts. <code>LEA_LOCKHTTP=1 lea</code> is not enough: the configuration wins over the environment.</p>
+      <pre tabindex="0"><code>echo LEA_LOCKHTTP=1 &gt;&gt; ~/.config/lea/lea.conf
+lea stop --all
+lea</code></pre>
+      <p>lea-proxy and its gate are shared by every lea on the machine: lockhttp is on or off for all of them at once, and once it is on, a lea whose projects directory has no lockhttp lock does not start. <code>lea doctor</code> reports the gate’s state.</p></li>
   </ol>
   <div class="prose">
     <p>lea reads <code>.lockfamily/up.json</code> only at the root of its projects directory: run <code>lox add</code> there, not in a project inside it. <a href="https://github.com/DavidGodefroid/lockhub/blob/main/docs/lox-add.md">How <code>lox add</code> works</a>.</p>

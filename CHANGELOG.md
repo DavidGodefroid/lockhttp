@@ -6,6 +6,14 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The quick start with lea (README, `docs/install.md`, the site) no longer
+  says `LEA_LOCKHTTP=1 lea`, which lea ignores (its configuration wins over
+  the environment): it sets `LEA_LOCKHTTP=1` in `~/.config/lea/lea.conf`,
+  then `lea stop --all` and `lea`, and says that lea-proxy and its gate are
+  shared by every lea on the machine (#48).
+
 ## [0.9.1] - 2026-11-13
 
 Built on lockkit v0.18.0.
