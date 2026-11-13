@@ -86,6 +86,24 @@ exit 0
 `)
 }
 
+// fakeUname makes uname -s print sysname, so the launcher picks that OS's
+// managed directory whatever the host (the macOS runner prints Darwin);
+// every other uname call is the real one.
+func (f *launcherFixture) fakeUname(t *testing.T, sysname string) {
+	t.Helper()
+	real, err := exec.LookPath("uname")
+	if err != nil {
+		t.Skip("no uname")
+	}
+	uname := filepath.Join(f.bin, "uname")
+	if err := os.Remove(uname); err != nil {
+		t.Fatal(err)
+	}
+	writeExec(t, uname, `#!/bin/sh
+case "$1" in -s) echo `+sysname+` ;; *) exec '`+real+`' "$@" ;; esac
+`)
+}
+
 // setVersion makes the launcher one a release installed, without digests
 // (installed with LOCKHTTP_SKIP_COSIGN=1).
 func (f *launcherFixture) setVersion(t *testing.T, v string) {
@@ -343,6 +361,7 @@ func hostname(t *testing.T) string {
 // locks), before the image; without one, nothing is.
 func TestLauncherManagedMount(t *testing.T) {
 	f := newLauncherFixture(t)
+	f.fakeUname(t, "Linux")
 	cadir := filepath.Join(f.root, "ca")
 	commands := [][]string{
 		{"managed", "show"}, {"managed", "check", "--profile", "prod"}, {"policy", "show"}, {"console", "--profile", "uat"},
@@ -392,17 +411,7 @@ func TestLauncherManagedMount(t *testing.T) {
 // /etc/lockfamily; the Linux path is not looked at.
 func TestLauncherManagedMountMacOS(t *testing.T) {
 	f := newLauncherFixture(t)
-	real, err := exec.LookPath("uname")
-	if err != nil {
-		t.Skip("no uname")
-	}
-	uname := filepath.Join(f.bin, "uname")
-	if err := os.Remove(uname); err != nil {
-		t.Fatal(err)
-	}
-	writeExec(t, uname, `#!/bin/sh
-case "$1" in -s) echo Darwin ;; -m) echo arm64 ;; *) exec '`+real+`' "$@" ;; esac
-`)
+	f.fakeUname(t, "Darwin")
 	if err := os.MkdirAll(f.managed, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -431,6 +440,7 @@ case "$1" in -s) echo Darwin ;; -m) echo arm64 ;; *) exec '`+real+`' "$@" ;; esa
 // stops the launcher before docker runs.
 func TestLauncherManagedRefused(t *testing.T) {
 	f := newLauncherFixture(t)
+	f.fakeUname(t, "Linux")
 	if err := os.MkdirAll(filepath.Dir(f.managed), 0o755); err != nil {
 		t.Fatal(err)
 	}
