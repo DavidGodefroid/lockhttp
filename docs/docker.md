@@ -16,8 +16,7 @@ no other `lockhttp` on the host.
 | release archives | the launcher (`scripts/lockhttp`), the binary, `LICENSE`, `NOTICE`, `README.md`, `CHANGELOG.md`, `SECURITY.md`; `install.sh` takes only the launcher |
 
 No host packages (`.deb`, `.rpm`, `.apk`), no host binary, no system
-account on the host. The image refuses `lockhttp install` and
-`lockhttp setup`.
+account on the host.
 
 ## The image
 

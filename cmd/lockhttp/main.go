@@ -114,9 +114,6 @@ func run(e env, args []string) int {
 	case "help", "-h", "--help":
 		fmt.Fprint(e.stdout, usageText)
 		return exitOK
-	case "install", "setup":
-		fmt.Fprintln(e.stderr, "lockhttp: runs in Docker: there is nothing to install on the host; install the launcher (scripts/install.sh) and see docs/docker.md")
-		return exitUsage
 	case "policy":
 		return runPolicy(e, args[1:])
 	case "init":

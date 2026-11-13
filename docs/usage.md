@@ -42,13 +42,6 @@ Positional arguments are refused.
 | 2 | reserved ("no console" in the other Lock family tools; not used) |
 | 3 | usage or configuration error |
 
-## `lockhttp install`, `lockhttp setup`
-
-Refused (exit 3): lockhttp runs in Docker and there is nothing to install
-on the host. Install the launcher with `scripts/install.sh`
-([docker.md](docker.md#install-and-update)); a former host install is
-removed as in [Migrating from a host install](docker.md#migrating-from-a-host-install).
-
 ## Launcher verbs
 
 `lox add` sets up every lock of a project through the same three verbs
