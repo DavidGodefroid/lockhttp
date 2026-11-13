@@ -119,7 +119,7 @@ first, then the flag.
 
 | Subcommand | Effect |
 |---|---|
-| `show` | Prints the file. |
+| `show` | Prints the file, then one `# profile <name> (managed)` comment line per profile of the company's managed configuration. |
 | `edit` | Opens the file in `$EDITOR` (`vi` when unset) in the container, then parses every profile in it. A file that does not parse exits 3, and the console keeps the approved policy until it does; otherwise it prints `saved: the console shows any loosening for approval (:review)`. |
 | `path` | Prints the file's path (`/home/lockhttp/.config/lockhttp/config.toml` in the image). |
 
@@ -170,6 +170,14 @@ In the console:
 | `:status` | The console's state. |
 | `:quit` | Stop the console. |
 
+Under the company's managed configuration ([configuration.md](configuration.md#managed-configuration)),
+the console prints `Managed by <organisation> (sha256:…)` at start and
+checks the policy against `[lockhttp.bounds]`: a policy beyond it is
+refused with one `blocked by company policy: …` line per key, without a
+prompt, and the console exits 3; a change beyond it while the console runs
+is refused at the next poll, never pending. A managed file that cannot be
+read, is not root's or does not verify is a refusal to start (exit 3).
+
 What an approval on the hub means:
 
 | Request | Approved |
@@ -184,6 +192,38 @@ request's header names, lea's task metadata, the rule that decided,
 warnings in red, the refs of a git push, a masked body preview (first 1 KiB
 of a textual body, personal data and credentials masked), and the number of
 distinct requests pending under the same container, method, host and path.
+
+## `lockhttp managed`
+
+```
+lockhttp managed show
+lockhttp managed check [--profile P] [--config FILE]
+```
+
+The company's managed configuration (`/etc/lockfamily/managed.toml`, see
+[configuration.md](configuration.md#managed-configuration)), as the
+console applies it. The launcher runs it as the console account, with its
+home volume and the host's `/etc/lockfamily` read-only.
+
+| Subcommand | Effect |
+|---|---|
+| `show` | Prints the file's `path`, `organisation`, `fingerprint`, `signed` (`yes` or `no`) and lockhttp's `bounds`, `defaults` and `profiles`, managed rules included. |
+| `check` | Loads the console's policy file as the console does and checks every profile, or the one named, against the bounds and the managed rules. It opens no connection. |
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--profile P` | every profile | `check`: the profile to check. |
+| `--config FILE` | `~/.config/lockhttp/config.toml` | `check`: the policy file. |
+
+Output and exit codes are a contract (`lox` runs `managed check` before it
+starts the lock):
+
+| Case | `show` | `check` |
+|---|---|---|
+| No managed file | `no managed configuration`, exit 0 | `no managed configuration`, exit 0 |
+| Within the bounds | the file, exit 0 | `profile P: within the company's managed configuration` per profile, exit 0 |
+| Beyond the bounds | | one `blocked by company policy: <key> … (profile P: …)` line per violation on stdout, exit 3 |
+| A refused file | the lockkit error on stderr, exit 3 | `blocked by company policy: <the lockkit error>`, exit 3 |
 
 ## `lockhttp doctor`
 
@@ -206,9 +246,13 @@ exactly when no check fails (a warning does not fail), 1 otherwise.
 
 The checks: `setup`, the separated setup (the image's
 `/etc/lockhttp/system.toml`, and `allowed_uids` when set); `agent`, nothing
-to wire; `policy`, the project's `.lockhttp/config.toml` (missing: run
-`lockhttp profile add`), each profile parsed, with its mode, heuristics
-and counts, a warning in shadow mode; `permissions`, the policy and its
+to wire; `managed`, the company's managed configuration (`Managed by …
+(sha256:…)`, `no managed configuration`, or a failure with the lockkit
+error); `policy`, the project's `.lockhttp/config.toml` (missing: run
+`lockhttp profile add`), each profile parsed as the console loads it, with
+its mode, heuristics and counts, a warning in shadow mode, a failure with
+the `blocked by company policy: …` lines when it goes beyond the managed
+bounds; `permissions`, the policy and its
 directory writable by their owner only (`--fix` removes the others' write
 permission); `ca` and `gate`.
 

@@ -6,6 +6,29 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- The company's managed configuration (lockkit `managed`, lockfamily
+  `docs/managed.md`): lockhttp applies the `[lockhttp]` section of
+  `/etc/lockfamily/managed.toml`. `[lockhttp.profiles.<name>]` are served
+  as written and cannot be redefined in the policy file;
+  `[lockhttp.defaults]` fill the keys a profile leaves unset;
+  `[lockhttp.bounds]` (`production`, `mode`, `heuristics`, `buffer_limit`,
+  `connect_grant`, `idle_timeout`, `max_session`, allowed `trusted`,
+  `splice`, `redirect_cdn` and `internal_hosts`, required `deny`) is a
+  ceiling the console checks at start and at every poll: a policy beyond it
+  is refused (`blocked by company policy: …`, exit 3, audited
+  `refused-managed`), never asked about. `[[lockhttp.bounds.rules]]` are
+  deny or ask rules no user rule, grant or shadow mode lifts; they are part
+  of the policy's fingerprint (`managed_rules`). Without a managed file
+  nothing changes (#49).
+- `lockhttp managed show` and `lockhttp managed check [--profile P]`
+  (exit 3 and one line per violation; `lox` runs it before it starts the
+  lock); `doctor` gains a `managed` check and checks the project's profiles
+  against the bounds; `policy show` lists the managed profiles. The
+  launcher mounts the host's `/etc/lockfamily` read-only for `console`,
+  `policy`, `managed` and the launcher verbs (#49).
+
 ### Security
 
 - Configuration and usage errors no longer repeat the value given, which
@@ -37,6 +60,9 @@ uses [Semantic Versioning](https://semver.org/).
   line names the hub host only.
 - The `mcp_servers` warning keeps the URL's host and path: a secret in the
   path still shows.
+- lockkit v0.18.0 (#49).
+- The gate checks the deny list (and the managed deny rules) on a CONNECT
+  before a connect grant too, not only before decryption (#49).
 
 ### Removed
 
