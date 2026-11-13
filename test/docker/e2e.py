@@ -55,20 +55,41 @@ def launcher(*args, env=None, check_=True, cwd=None):
     return sh("sh", LAUNCHER, *args, check_=check_, env=e, stdin=subprocess.DEVNULL, cwd=cwd)
 
 
+# MANAGED_VOLUME holds the company's managed file the managed checks place
+# at /etc/lockfamily in the containers (through LOCKHTTP_DOCKER_ARGS).
+MANAGED_VOLUME = "lockhttp-e2e-managed"
+
+MANAGED = """version = 1
+organisation = "Example Corp"
+
+[lockhttp.bounds]
+mode = "enforce"
+"""
+
+
 def cleanup():
     sh("docker", "rm", "-f", "lockhttp-console", "lockhttp-gate", check_=False)
-    sh("docker", "volume", "rm", "-f", "lockhttp-run", "lockhttp-home", check_=False)
+    sh("docker", "volume", "rm", "-f", "lockhttp-run", "lockhttp-home", MANAGED_VOLUME, check_=False)
+
+
+def place_managed(image, mode):
+    """Writes MANAGED into MANAGED_VOLUME as root, the file at mode, the
+    directory root's 0755: what an admin's package installs."""
+    sh("docker", "run", "-i", "--rm", "--user", "0:0", "-v", MANAGED_VOLUME + ":/m", "--entrypoint", "sh", image,
+       "-c", f"cat > /m/managed.toml && chown 0:0 /m /m/managed.toml && chmod 0755 /m && chmod {mode} /m/managed.toml",
+       input=MANAGED)
 
 
 class Console:
     """The console in a pseudo-terminal, approving every prompt."""
 
-    def __init__(self, *args):
+    def __init__(self, *args, env=None):
         self.out = b""
         self.lock = threading.Lock()
         self.answered = 0
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
+            os.environ.update(env or {})
             os.execvp("sh", ["sh", LAUNCHER, "console", *args])
         threading.Thread(target=self.pump, daemon=True).start()
 
@@ -162,6 +183,35 @@ def main():
             check(console.wait_for("Policy only"), "the console is policy-only", console.text())
             check("lockhub at" not in console.text(), "the console asks no hub", console.text())
             sh("docker", "rm", "-f", "lockhttp-console", check_=False)
+
+        # The company's managed file, root-owned in the container (0:0,
+        # 0644, its directory 0755), in a release image (no test tag): the
+        # console names it and refuses a shadow profile beyond its bounds.
+        managed_env = {"LOCKHTTP_DOCKER_ARGS": "-v " + MANAGED_VOLUME + ":/etc/lockfamily:ro"}
+        place_managed(image, "0644")
+        r = launcher("managed", "show", env=managed_env, check_=False)
+        check(r.returncode == 0 and "path: /etc/lockfamily/managed.toml" in r.stdout and "organisation: Example Corp" in r.stdout
+              and "mode = enforce" in r.stdout, "managed show reads the root-owned file", r.stdout + r.stderr)
+        shadow = "[profiles.default]\nmode = \"shadow\"\n"
+        sh("docker", "run", "-i", "--rm", "--user", "lockhttp", "-v", "lockhttp-home:/home/lockhttp", "--entrypoint", "sh", image,
+           "-c", "umask 077 && cat > /home/lockhttp/.config/lockhttp/config.toml", input=shadow)
+        r = launcher("managed", "check", env=managed_env, check_=False)
+        check(r.returncode == 3 and r.stdout == "blocked by company policy: lockhttp.bounds.mode = enforce (profile default: mode = shadow)\n",
+              "managed check: the violation line and exit 3", f"exit {r.returncode}\n{r.stdout}{r.stderr}")
+        console = Console(env=managed_env)
+        check(console.wait_for("Managed by Example Corp (sha256:"), "the console names the managed file", console.text())
+        check(console.wait_for("blocked by company policy: lockhttp.bounds.mode = enforce (profile default: mode = shadow)"),
+              "the console refuses a shadow profile beyond the bounds", console.text())
+        check(console.answered == 0 and "Listening on" not in console.text(), "no prompt, no socket", console.text())
+        sh("docker", "rm", "-f", "lockhttp-console", check_=False)
+        # The same file writable by others than root: a refusal to start.
+        place_managed(image, "0666")
+        console = Console(env=managed_env)
+        check(console.wait_for("must be writable by root only"), "a managed file others may write is a refusal to start", console.text())
+        check("Listening on" not in console.text(), "no socket under a badly owned managed file", console.text())
+        sh("docker", "rm", "-f", "lockhttp-console", check_=False)
+        r = launcher("managed", "show", env=managed_env, check_=False)
+        check(r.returncode == 3 and "must be writable by root only" in r.stderr, "managed show: the lockkit error, exit 3", r.stdout + r.stderr)
 
         # The hub flags lox run gives the other locks' consoles are refused.
         r = launcher("console", "--hub", "http://lockhub:8443", "--hub-plain-http", "--hub-key-file", "/run/lockfamily/hub.pub", "--instance", "web", check_=False)

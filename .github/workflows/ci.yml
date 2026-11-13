@@ -40,6 +40,17 @@ jobs:
             grep -E -- '--- FAIL|_test\.go:[0-9]+:|^FAIL|panic:' test.log | head -40 | sed 's/^/::error::/'
             exit 1
           }
+      # The managed-configuration tests place a managed file through
+      # managed.SetTestPath, which only this tag builds: a release build
+      # never carries it.
+      - name: go test -tags lockfamily_managed_test
+        shell: bash
+        run: |
+          set -o pipefail
+          go test -tags lockfamily_managed_test ./... 2>&1 | tee test-managed.log || {
+            grep -E -- '--- FAIL|_test\.go:[0-9]+:|^FAIL|panic:' test-managed.log | head -40 | sed 's/^/::error::/'
+            exit 1
+          }
 
   # Windows: the module builds and its unit tests run, but lockhttp itself
   # (gate and console) refuses to run there and no Windows binary is
@@ -114,8 +125,8 @@ jobs:
         with:
           go-version: "1.26.x"
           check-latest: true
-      - name: go test -tags integration
-        run: go test -tags integration -count=1 -timeout 15m ./test/integration/...
+      - name: go test -tags integration,lockfamily_managed_test
+        run: go test -tags integration,lockfamily_managed_test -count=1 -timeout 15m ./test/integration/...
 
   # The image of docs/docker.md, driven through the launcher as a user
   # would: the console in a pseudo-terminal, the gate refused without its
