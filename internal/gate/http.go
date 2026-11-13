@@ -148,7 +148,7 @@ func (g *Gate) serveHTTP(ctx context.Context, w io.Writer, br *bufio.Reader, req
 	}
 	fp := RequestFingerprint(src.Container, req.Method, target, req.Header, bodyFP)
 	var d decide.Decision
-	hard, isHard := decide.Hard(pol, r)
+	hard, isHard := decide.Hard(pol, r, g.cfg.Now())
 	switch {
 	case isHard:
 		d = hard
