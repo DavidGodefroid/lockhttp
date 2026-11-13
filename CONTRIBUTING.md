@@ -143,8 +143,10 @@ linux and darwin archives on amd64 and arm64 (each with the launcher),
 signs `checksums.txt` with cosign (keyless) and attaches an SBOM per
 archive. Its `image` jobs build the image on native amd64 and arm64
 runners, push `ghcr.io/davidgodefroid/lockhttp:X.Y.Z-ARCH`, join them in
-the manifest `:X.Y.Z` and sign it with cosign by digest. Until
-v1.0.0, every release is published as a GitHub pre-release. To check the
+the manifest `:X.Y.Z` and sign it with cosign by digest. A tag with a
+semver pre-release suffix (`v0.9.0-rc.1`) is published as a GitHub
+pre-release; any other tag (`v0.9.0`) is a full release, marked Latest
+(GoReleaser's `prerelease: auto`). To check the
 configuration locally without signing or publishing (needs `goreleaser`,
 and `syft` for the SBOMs):
 
@@ -186,3 +188,17 @@ git verify-tag vX.Y.Z
 
 with a key published on the maintainer's GitHub profile, which is where
 `SECURITY.md` sends users to verify it.
+
+### v1.0.0 checklist
+
+0.x releases are full releases too; v1.0.0 is tagged once all of these hold:
+
+- the policy format and the CLI flags are frozen, and a breaking change
+  needs a major bump;
+- the threat model ([docs/security-model.md](docs/security-model.md),
+  including the T19 residual risks) has been re-reviewed;
+- an independent security review of the gate and of credential injection
+  has been done;
+- hub mode and the `lox run` integration are complete;
+- rootless Podman and macOS (Docker Desktop) are tested;
+- the upgrade path from 0.x is documented.

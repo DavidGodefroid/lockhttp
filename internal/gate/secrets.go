@@ -2,6 +2,7 @@ package gate
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,10 +38,15 @@ type secretsFile struct {
 type Secrets struct {
 	path string
 
-	mu      sync.Mutex
-	vals    map[string]string
-	err     error
+	mu   sync.Mutex
+	vals map[string]string
+	err  error
+	// modTime, size, mode and sum identify the file last loaded: a
+	// rewrite that keeps the mtime still changes the sum.
 	modTime time.Time
+	size    int64
+	mode    os.FileMode
+	sum     [sha256.Size]byte
 	// known keeps every value ever loaded, for the leak check: a secret
 	// rotated out is still not sent by the agent.
 	known map[string]string
@@ -62,23 +68,32 @@ func (s *Secrets) Err() error {
 	return s.err
 }
 
-// Reload reads the file again when it changed.
+// Reload reads the file again when it changed: its mtime, size, mode or
+// the sha256 of its content (the file is read on every call, so a rewrite
+// within one mtime tick, or one that keeps the mtime, is not missed).
 func (s *Secrets) Reload() {
 	if s == nil || s.path == "" {
 		return
 	}
 	fi, err := os.Stat(s.path)
+	var b []byte
+	if err == nil {
+		b, err = os.ReadFile(s.path)
+	}
+	sum := sha256.Sum256(b)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err == nil && s.vals != nil && fi.ModTime().Equal(s.modTime) {
+	if err == nil && s.vals != nil && fi.ModTime().Equal(s.modTime) &&
+		fi.Size() == s.size && fi.Mode() == s.mode && sum == s.sum {
 		return
 	}
-	vals, err := loadSecrets(s.path, fi, err)
+	vals, err := loadSecrets(s.path, fi, b, err)
 	if err != nil {
 		s.vals, s.err = nil, err
 		return
 	}
-	s.vals, s.err, s.modTime = vals, nil, fi.ModTime()
+	s.vals, s.err = vals, nil
+	s.modTime, s.size, s.mode, s.sum = fi.ModTime(), fi.Size(), fi.Mode(), sum
 	for k, v := range vals {
 		if _, ok := s.known[k+"\x00"+v]; !ok {
 			s.known[k+"\x00"+v] = v
@@ -87,16 +102,14 @@ func (s *Secrets) Reload() {
 	}
 }
 
-func loadSecrets(path string, fi os.FileInfo, statErr error) (map[string]string, error) {
-	if statErr != nil {
-		return nil, fmt.Errorf("secrets file: %w", statErr)
+// loadSecrets parses b, the content of the file at path (fi its stat, err
+// the error of reading it).
+func loadSecrets(path string, fi os.FileInfo, b []byte, err error) (map[string]string, error) {
+	if err != nil {
+		return nil, fmt.Errorf("secrets file: %w", err)
 	}
 	if runtime.GOOS != "windows" && fi.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("secrets file %s is readable by others (mode %o): chmod 0600", path, fi.Mode().Perm())
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("secrets file: %w", err)
 	}
 	var f secretsFile
 	dec := json.NewDecoder(bytes.NewReader(b))
