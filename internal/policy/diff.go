@@ -60,6 +60,7 @@ func (p Policy) Diff(approved kconfig.Policy) []kconfig.Change {
 	out = append(out, kconfig.SetDiff("redirect_cdn", a.RedirectCDN, p.RedirectCDN, false)...)
 	out = append(out, kconfig.SetDiff("internal_hosts", ihTexts(a.Internal), ihTexts(p.Internal), false)...)
 	out = append(out, diffRules(a.Rules, p.Rules)...)
+	out = append(out, diffManagedRules(a.ManagedRules, p.ManagedRules)...)
 	// An injection added or changed loosens: it lets a request carry a
 	// credential the agent never had. Removing one tightens.
 	out = append(out, kconfig.SetDiff("inject", injectTexts(a.Inject), injectTexts(p.Inject), false)...)
@@ -229,6 +230,9 @@ func (p Policy) Describe() []string {
 	}
 	for _, r := range p.Rules {
 		out = append(out, "rule "+r.ID+": "+r.String())
+	}
+	for _, r := range p.ManagedRules {
+		out = append(out, "managed rule "+r.ID+": "+r.String()+" (the company's managed configuration)")
 	}
 	for _, i := range p.Inject {
 		out = append(out, "inject "+i.String()+" (the gate adds the header; the agent never sees the secret)")
