@@ -20,8 +20,12 @@
 #   ca                    as you, with the --dir directory mounted
 #   anything else         as the image's default account (gate)
 #
-# `lockhttp update` updates this launcher and its image; `lockhttp version`
-# prints both versions.
+# The company's managed directory, when this machine has one
+# (/etc/lockfamily on Linux, /Library/Application Support/lockfamily on
+# macOS), is mounted read-only on /etc/lockfamily in every container, where
+# lockkit reads managed.toml in the image, as lox run mounts it in its
+# locks. `lockhttp update` updates this launcher and its image; `lockhttp
+# version` prints both versions.
 #
 # Environment:
 #   LOCKHTTP_IMAGE        image to run (default: the release image of this
@@ -62,14 +66,36 @@ fi
 tty=-i
 if [ -t 0 ] && [ -t 1 ]; then tty=-it; fi
 
-# docker_run ARGS...: docker run, LOCKHTTP_DOCKER_ARGS, then ARGS (the
-# account, the volumes, the image and its command).
+# The company-managed directory of this machine (lockkit's
+# managed.DefaultPath): managed.toml, its signature bundle, signer.toml and
+# lox's managed.toml.verified stamp. Every container mounts it read-only on
+# /etc/lockfamily, the path lockkit reads in the (Linux) image, as lox run
+# mounts it in its locks (lockhub#179): the commands see the bounds the
+# console enforces. lockkit's ownership checks still apply in the
+# container: a bind mount keeps the files' owner and mode.
+case "$(uname -s)" in
+Darwin) managed_dir="/Library/Application Support/lockfamily" ;;
+*) managed_dir=/etc/lockfamily ;;
+esac
+
+# docker_run ARGS...: docker run, the managed directory,
+# LOCKHTTP_DOCKER_ARGS, then ARGS (the account, the volumes, the image and
+# its command).
 docker_run() {
 	command -v docker >/dev/null 2>&1 || die "docker is required: lockhttp runs in Docker (docs/docker.md)"
+	# No managed directory: no mount, no managed policy. One that is not a
+	# directory (a file, a dangling link) is refused, as lockkit refuses it
+	# on the host.
+	managed_mount=
+	if [ -e "$managed_dir" ] || [ -L "$managed_dir" ]; then
+		[ -d "$managed_dir" ] || die "$managed_dir is not a directory: lockhttp cannot mount the company-managed configuration"
+		mountable "$managed_dir"
+		managed_mount="$managed_dir:/etc/lockfamily:ro"
+	fi
 	# LOCKHTTP_DOCKER_ARGS is split on spaces, never globbed.
 	set -f
 	# shellcheck disable=SC2086 # LOCKHTTP_DOCKER_ARGS is split on purpose
-	exec docker run --rm ${LOCKHTTP_DOCKER_ARGS:-} "$@"
+	exec docker run --rm ${managed_mount:+-v} ${managed_mount:+"$managed_mount"} ${LOCKHTTP_DOCKER_ARGS:-} "$@"
 }
 
 # has_flag FLAG ARGS...: whether ARGS hold FLAG or FLAG=...
@@ -268,10 +294,6 @@ update() {
 confine="--cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m --pids-limit 256 --memory 1g"
 home="-v lockhttp-home:/home/lockhttp"
 run="-v lockhttp-run:/run/lockhttp"
-# The company's managed configuration (/etc/lockfamily), read-only, for
-# the commands that apply it: root-owned on the host, it stays so inside.
-managed=""
-if [ -d /etc/lockfamily ]; then managed="-v /etc/lockfamily:/etc/lockfamily:ro"; fi
 
 cmd="${1:-}"
 case "$cmd" in
@@ -292,11 +314,11 @@ console)
 	# No log driver: docker's json-file log would keep every approval
 	# screen (masked previews included) for anyone who runs docker logs.
 	# shellcheck disable=SC2086 # $run and $home are two words each
-	docker_run "$tty" --name lockhttp-console --log-driver none --user lockhttp $confine $run $home $managed "$image" "$@"
+	docker_run "$tty" --name lockhttp-console --log-driver none --user lockhttp $confine $run $home "$image" "$@"
 	;;
 policy | managed)
 	# shellcheck disable=SC2086
-	docker_run "$tty" --user lockhttp $confine $home $managed "$image" "$@"
+	docker_run "$tty" --user lockhttp $confine $home "$image" "$@"
 	;;
 profile | init | doctor)
 	# The launcher verbs run as you on the project, mounted at its own
@@ -328,7 +350,7 @@ profile | init | doctor)
 	mountable "$root"
 	mountable "$workdir"
 	# shellcheck disable=SC2086,SC2046 # $confine and $(userns) are split on purpose
-	docker_run "$tty" $(userns) --user "$(id -u):$(id -g)" $confine $managed -v "$root:$root" -w "$workdir" "$image" "$@"
+	docker_run "$tty" $(userns) --user "$(id -u):$(id -g)" $confine -v "$root:$root" -w "$workdir" "$image" "$@"
 	;;
 gate)
 	shift

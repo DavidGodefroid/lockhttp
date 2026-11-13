@@ -85,6 +85,29 @@ the console.
 The `ca` command creates `DIR` on the host (`mkdir -p`) before it starts
 the container, then mounts it at its own path.
 
+### The company's managed configuration
+
+When this machine has the Lock Family's managed directory
+(`/etc/lockfamily` on Linux, `/Library/Application Support/lockfamily` on
+macOS: [configuration.md](configuration.md)), the launcher mounts it
+read-only on `/etc/lockfamily` in every container it runs (`-v
+DIR:/etc/lockfamily:ro`, before `$LOCKHTTP_DOCKER_ARGS`), the path the
+image reads `managed.toml` from, as `lox run` mounts it in its locks. So
+`lockhttp managed show`, `managed check`, `policy`, `doctor`, `profile`,
+`init`, the console and the gate see the bounds the locks enforce. The
+whole directory is mounted: the signature bundle, `signer.toml` and the
+`managed.toml.verified` stamp come along. Ownership is checked in the
+container as on the host (a bind mount keeps owner and mode): the file and
+the directory must be root's and writable by root only. No directory: no
+mount, and lockhttp runs without a managed policy. A path that is not a
+directory (a file, a dangling link) or holds a `:` stops the launcher
+before `docker run`.
+
+On macOS, Docker Desktop shares `/Users`, `/Volumes`, `/private`, `/tmp`
+and `/var/folders` only: add `/Library/Application Support/lockfamily` in
+Settings > Resources > File sharing, or the launcher's commands fail with
+`mounts denied` (never without the policy).
+
 ## Version pinning
 
 `install.sh` and `lockhttp update` write two lines of the launcher:
