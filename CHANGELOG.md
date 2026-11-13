@@ -6,6 +6,25 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-13
+
+Built on lockkit v0.18.0. The first full (non pre-release) GitHub release.
+
+### Breaking and behaviour changes
+
+- **Breaking:** `lockhttp install` and `lockhttp setup` are removed; they
+  are now unknown commands (still exit 3). `lox` installs and updates
+  lockhttp (#40).
+- **Behaviour:** the gate checks the deny list (and the managed deny rules)
+  on a CONNECT before a connect grant too, not only before decryption: a
+  host a connect grant used to open is refused when a deny rule matches it
+  (#49).
+- **Behaviour:** with `/etc/lockfamily/managed.toml` present, a policy
+  beyond its `[lockhttp.bounds]` is refused at start and at every poll
+  (exit 3), never asked about (#49).
+- **Behaviour:** `vX.Y.Z` tags are published as full releases marked
+  Latest, no longer as GitHub pre-releases (#44).
+
 ### Added
 
 - The company's managed configuration (lockkit `managed`, lockfamily
@@ -414,7 +433,8 @@ separate signer, Claude API allowlist) available behind `--ca-cert` and
 - Release pipeline: goreleaser, cosign keyless signatures, SBOMs,
   SHA-pinned actions, `scripts/install.sh` with signature verification.
 
-[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.9.0
 [0.8.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.8.1
 [0.8.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.8.0
 [0.7.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.7.1
