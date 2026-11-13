@@ -71,7 +71,9 @@ func runConsole(e env, args []string) int {
 	})
 	if err != nil {
 		fmt.Fprintln(e.stderr, "lockhttp console:", err)
-		if errors.Is(err, console.ErrConfig) {
+		// Refused by the company's managed configuration: no human can
+		// approve past it, as for a configuration error.
+		if errors.Is(err, console.ErrConfig) || errors.Is(err, console.ErrManaged) {
 			return exitUsage
 		}
 		return exitFail
@@ -106,6 +108,14 @@ func runPolicy(e env, args []string) int {
 			return exitFail
 		}
 		_, _ = e.stdout.Write(b)
+		// The company's profiles, served besides the file's.
+		if _, mg, err := loadManaged(); err != nil {
+			fmt.Fprintln(e.stdout, "# the company's managed configuration is refused: "+safe(err.Error()))
+		} else {
+			for _, n := range mg.ProfileNames() {
+				fmt.Fprintf(e.stdout, "# profile %s (managed): the company's managed configuration (lockhttp managed show)\n", n)
+			}
+		}
 	case "edit":
 		if _, err := os.Stat(path); err != nil {
 			fmt.Fprintln(e.stderr, "lockhttp policy:", err, "("+noPolicyHint+")")
@@ -132,10 +142,14 @@ func runPolicy(e env, args []string) int {
 			fmt.Fprintln(e.stderr, "lockhttp policy:", err)
 			return exitFail
 		}
-		names, err := policy.Profiles(b, path)
+		_, mg, err := loadManaged()
+		var names []string
+		if err == nil {
+			names, err = policy.Profiles(b, path)
+		}
 		if err == nil {
 			for _, n := range names {
-				if _, err = policy.Parse(b, path, n); err != nil {
+				if _, err = policy.ParseManaged(b, path, n, mg); err != nil {
 					break
 				}
 			}

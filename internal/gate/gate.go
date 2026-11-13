@@ -486,12 +486,14 @@ func (g *Gate) connect(ctx context.Context, c net.Conn, br *bufio.Reader, req *h
 	if pol != nil {
 		_, internal = pol.InternalHost(host)
 	}
+	// The deny list and a managed deny rule: before the decryption and
+	// before a connect grant, which neither lifts.
+	if d, stop := decide.Hard(pol, r, g.cfg.Now()); stop {
+		g.refuse(c, d, id, src, t, true)
+		return
+	}
 	mitm := g.cfg.Certs != nil && port == 443 && !internal && (pol == nil || !pol.Spliced(host))
 	if mitm {
-		if pol != nil && pol.Denied(host) {
-			g.refuse(c, decide.Decision{Verdict: decide.Deny, Rule: "deny-list", Code: product.CodeRule, Reason: host + " is on the policy's deny list"}, id, src, t, true)
-			return
-		}
 		g.mitm(ctx, c, br, host, port, src)
 		return
 	}

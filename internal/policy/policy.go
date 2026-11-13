@@ -16,6 +16,7 @@ import (
 
 	kconfig "github.com/DavidGodefroid/lockkit/config"
 	"github.com/DavidGodefroid/lockkit/console"
+	"github.com/DavidGodefroid/lockkit/managed"
 
 	"github.com/DavidGodefroid/lockhttp/internal/product"
 )
@@ -82,6 +83,11 @@ type Policy struct {
 	// when empty, so that a policy without injection keeps its
 	// fingerprint.
 	Inject []Inject `json:"inject,omitempty"`
+	// ManagedRules are the company's [[lockhttp.bounds.rules]]: deny or
+	// ask rules matched before Rules, whose verdict no rule lifts. Omitted
+	// when empty, so that a policy without a managed file keeps its
+	// fingerprint.
+	ManagedRules []Rule `json:"managed_rules,omitempty"`
 }
 
 // InternalHost is a host of the user's internal-hosts list: it may resolve
@@ -157,17 +163,46 @@ type file struct {
 // form. Any unknown key, any key that looks like a secret, and any rule
 // that would let auto mode answer a forbidden class is refused.
 func Parse(data []byte, name, profile string) (Policy, error) {
+	return ParseManaged(data, name, profile, nil)
+}
+
+// ParseManaged is Parse under the company's managed configuration mg (nil:
+// none): a managed profile is served as the company wrote it, and a file
+// profile of the same name is refused; a file profile takes the managed
+// defaults for the keys it leaves unset. Both carry the managed rules.
+// Whether the result is within the bounds is the console's check.
+func ParseManaged(data []byte, name, profile string, mg *Managed) (Policy, error) {
 	var f file
-	if _, err := kconfig.Decode(product.P, data, name, &f); err != nil {
+	md, err := kconfig.Decode(product.P, data, name, &f)
+	if err != nil {
 		return Policy{}, err
+	}
+	if mg != nil {
+		user := map[string]Policy{}
+		for k := range f.Profiles {
+			user[k] = Policy{}
+		}
+		if _, err := managed.MergeProfiles(mg.profiles, nil, user); err != nil {
+			return Policy{}, fmt.Errorf("%s: %w", name, err)
+		}
+		if p, ok := mg.profiles[profile]; ok {
+			return p.Clone(), nil
+		}
 	}
 	r, ok := f.Profiles[profile]
 	if !ok {
 		return Policy{}, fmt.Errorf("%s: no profile of that name (--profile)", name)
 	}
+	if mg != nil {
+		mg.defaults.apply(&r, func(k string) bool { return md.IsDefined("profiles", profile, k) })
+	}
 	p, err := fromRaw(profile, r)
 	if err != nil {
 		return Policy{}, fmt.Errorf("%s: profile %s: %w", name, profile, err)
+	}
+	if mg != nil {
+		p.ManagedRules = slices.Clone(mg.Rules)
+		p = Canonical(p)
 	}
 	return p, nil
 }
@@ -239,39 +274,18 @@ func fromRaw(name string, r raw) (Policy, error) {
 		}
 	}
 	for i, e := range r.RedirectCDN {
-		key := entry("redirect_cdn", i)
-		from, to, ok := strings.Cut(e, ">")
-		if !ok {
-			return Policy{}, fmt.Errorf(`%s: entries are "origin>cdn"`, key)
-		}
-		f, err := CheckHostPattern(key+" origin", strings.TrimSpace(from), false)
+		c, err := redirectFromRaw(entry("redirect_cdn", i), e)
 		if err != nil {
 			return Policy{}, err
 		}
-		t, err := CheckHostPattern(key+" cdn", strings.TrimSpace(to), false)
-		if err != nil {
-			return Policy{}, err
-		}
-		p.RedirectCDN = append(p.RedirectCDN, f+">"+t)
+		p.RedirectCDN = append(p.RedirectCDN, c)
 	}
 	for i, ih := range r.Internal {
-		key := entry("internal_hosts", i)
-		h, err := CheckHostPattern(key+" host", ih.Host, true)
+		h, err := internalFromRaw(entry("internal_hosts", i), ih)
 		if err != nil {
 			return Policy{}, err
 		}
-		if strings.HasPrefix(h, "*.") {
-			return Policy{}, fmt.Errorf("%s: name an exact host, not a pattern", key)
-		}
-		if len(ih.Ports) == 0 {
-			return Policy{}, fmt.Errorf("%s: list its ports", key)
-		}
-		for _, port := range ih.Ports {
-			if port < 1 || port > 65535 {
-				return Policy{}, fmt.Errorf("%s: ports are 1 to 65535", key)
-			}
-		}
-		p.Internal = append(p.Internal, InternalHost{Host: h, Ports: ih.Ports, Read: ih.Read})
+		p.Internal = append(p.Internal, h)
 	}
 	if p.Inject, err = injectsFromRaw(r.Inject, p); err != nil {
 		return Policy{}, err
@@ -300,6 +314,43 @@ func fromRaw(name string, r raw) (Policy, error) {
 		}
 	}
 	return p, nil
+}
+
+// redirectFromRaw checks one "origin>cdn" entry.
+func redirectFromRaw(key, e string) (string, error) {
+	from, to, ok := strings.Cut(e, ">")
+	if !ok {
+		return "", fmt.Errorf(`%s: entries are "origin>cdn"`, key)
+	}
+	f, err := CheckHostPattern(key+" origin", strings.TrimSpace(from), false)
+	if err != nil {
+		return "", err
+	}
+	t, err := CheckHostPattern(key+" cdn", strings.TrimSpace(to), false)
+	if err != nil {
+		return "", err
+	}
+	return f + ">" + t, nil
+}
+
+// internalFromRaw checks one internal host.
+func internalFromRaw(key string, ih rawIH) (InternalHost, error) {
+	h, err := CheckHostPattern(key+" host", ih.Host, true)
+	if err != nil {
+		return InternalHost{}, err
+	}
+	if strings.HasPrefix(h, "*.") {
+		return InternalHost{}, fmt.Errorf("%s: name an exact host, not a pattern", key)
+	}
+	if len(ih.Ports) == 0 {
+		return InternalHost{}, fmt.Errorf("%s: list its ports", key)
+	}
+	for _, port := range ih.Ports {
+		if port < 1 || port > 65535 {
+			return InternalHost{}, fmt.Errorf("%s: ports are 1 to 65535", key)
+		}
+	}
+	return InternalHost{Host: h, Ports: slices.Clone(ih.Ports), Read: ih.Read}, nil
 }
 
 var (
@@ -388,13 +439,10 @@ func Canonical(p Policy) Policy {
 	}
 	slices.SortFunc(ih, func(a, b InternalHost) int { return strings.Compare(a.Host, b.Host) })
 	p.Internal = ih
-	rules := make([]Rule, 0, len(p.Rules))
-	for _, r := range p.Rules {
-		r.Methods = kconfig.SortedSet(r.Methods)
-		rules = append(rules, r)
+	p.Rules = canonicalRules(p.Rules)
+	if p.ManagedRules = canonicalRules(p.ManagedRules); len(p.ManagedRules) == 0 {
+		p.ManagedRules = nil
 	}
-	slices.SortFunc(rules, func(a, b Rule) int { return strings.Compare(a.ID, b.ID) })
-	p.Rules = rules
 	if len(p.Inject) == 0 {
 		p.Inject = nil
 	} else {
@@ -402,6 +450,17 @@ func Canonical(p Policy) Policy {
 		slices.SortFunc(p.Inject, func(a, b Inject) int { return strings.Compare(a.ID, b.ID) })
 	}
 	return p
+}
+
+// canonicalRules sorts rules by id, each with its methods sorted.
+func canonicalRules(in []Rule) []Rule {
+	rules := make([]Rule, 0, len(in))
+	for _, r := range in {
+		r.Methods = kconfig.SortedSet(r.Methods)
+		rules = append(rules, r)
+	}
+	slices.SortFunc(rules, func(a, b Rule) int { return strings.Compare(a.ID, b.ID) })
+	return rules
 }
 
 // Clone returns a deep copy of p.
@@ -416,17 +475,22 @@ func (p Policy) Clone() Policy {
 		h.Ports = slices.Clone(h.Ports)
 		q.Internal = append(q.Internal, h)
 	}
-	q.Rules = nil
-	for _, r := range p.Rules {
-		r.Methods = slices.Clone(r.Methods)
-		q.Rules = append(q.Rules, r)
-	}
+	q.Rules, q.ManagedRules = cloneRules(p.Rules), cloneRules(p.ManagedRules)
 	q.Inject = nil
 	for _, i := range p.Inject {
 		i.Methods, i.Paths = slices.Clone(i.Methods), slices.Clone(i.Paths)
 		q.Inject = append(q.Inject, i)
 	}
 	return q
+}
+
+func cloneRules(in []Rule) []Rule {
+	var out []Rule
+	for _, r := range in {
+		r.Methods = slices.Clone(r.Methods)
+		out = append(out, r)
+	}
+	return out
 }
 
 // Profile implements console.Policy: the gate needs no secret.

@@ -6,7 +6,7 @@
 #   console               as the console account (lockhttp), in a container
 #                         named lockhttp-console, with the socket and home
 #                         volumes
-#   policy                as the console account, with its home volume (the
+#   policy, managed       as the console account, with its home volume (the
 #                         console's policy lives there)
 #   profile, init, doctor as you, with the project mounted at its own path
 #                         and the current directory as the working
@@ -268,6 +268,10 @@ update() {
 confine="--cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m --pids-limit 256 --memory 1g"
 home="-v lockhttp-home:/home/lockhttp"
 run="-v lockhttp-run:/run/lockhttp"
+# The company's managed configuration (/etc/lockfamily), read-only, for
+# the commands that apply it: root-owned on the host, it stays so inside.
+managed=""
+if [ -d /etc/lockfamily ]; then managed="-v /etc/lockfamily:/etc/lockfamily:ro"; fi
 
 cmd="${1:-}"
 case "$cmd" in
@@ -288,11 +292,11 @@ console)
 	# No log driver: docker's json-file log would keep every approval
 	# screen (masked previews included) for anyone who runs docker logs.
 	# shellcheck disable=SC2086 # $run and $home are two words each
-	docker_run "$tty" --name lockhttp-console --log-driver none --user lockhttp $confine $run $home "$image" "$@"
+	docker_run "$tty" --name lockhttp-console --log-driver none --user lockhttp $confine $run $home $managed "$image" "$@"
 	;;
-policy)
+policy | managed)
 	# shellcheck disable=SC2086
-	docker_run "$tty" --user lockhttp $confine $home "$image" "$@"
+	docker_run "$tty" --user lockhttp $confine $home $managed "$image" "$@"
 	;;
 profile | init | doctor)
 	# The launcher verbs run as you on the project, mounted at its own
@@ -324,7 +328,7 @@ profile | init | doctor)
 	mountable "$root"
 	mountable "$workdir"
 	# shellcheck disable=SC2086,SC2046 # $confine and $(userns) are split on purpose
-	docker_run "$tty" $(userns) --user "$(id -u):$(id -g)" $confine -v "$root:$root" -w "$workdir" "$image" "$@"
+	docker_run "$tty" $(userns) --user "$(id -u):$(id -g)" $confine $managed -v "$root:$root" -w "$workdir" "$image" "$@"
 	;;
 gate)
 	shift

@@ -148,7 +148,9 @@ error while deciding: deny.
 </table>
 
 More: [the verdicts, refusal codes and the Claude API rules](docs/how-it-works.md),
-and [the policy keys](docs/configuration.md).
+and [the policy keys](docs/configuration.md). A company bounds lockhttp
+with the Lock Family's [managed configuration](https://github.com/DavidGodefroid/lockfamily/blob/main/docs/managed.md)
+([lockhttp's section](docs/configuration.md#managed-configuration)).
 
 ## How it works
 
@@ -201,7 +203,7 @@ Every rule: [docs/safety.md](docs/safety.md). Threat model:
 |---|---|
 | [docs/install.md](docs/install.md) | install paths, the launcher's commands, the setup with lea by hand |
 | [docs/how-it-works.md](docs/how-it-works.md) | the pieces, verdicts, what the agent sees, the Claude API checks, limits |
-| [docs/configuration.md](docs/configuration.md) | the policy file, every profile key, policy examples |
+| [docs/configuration.md](docs/configuration.md) | the policy file, every profile key, policy examples, the company's managed configuration |
 | [docs/policy.md](docs/policy.md) | the policy reference: evaluation order, credential injection, shadow mode, loosenings |
 | [docs/usage.md](docs/usage.md) | every command and flag, exit codes, files, audit records |
 | [docs/docker.md](docs/docker.md) | the image, its accounts and volumes, update, migrating from a host install |

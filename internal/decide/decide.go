@@ -181,18 +181,21 @@ func isMetadata(host string) bool {
 func Evaluate(p *policy.Policy, r Request, now time.Time, creds Credentials) Decision {
 	d := evaluate(p, r, now, creds)
 	if p != nil && p.Mode == policy.ModeShadow && d.Verdict != Free && !strings.HasPrefix(d.Rule, "floor:") &&
-		d.Code != product.CodeSecretEgress && d.Rule != "deny-list" {
+		d.Code != product.CodeSecretEgress && d.Rule != "deny-list" && !strings.HasPrefix(d.Rule, policy.ManagedRulePrefix) {
 		d.Shadow, d.Verdict = d.Verdict, Free
 	}
 	return d
 }
 
 // Hard is what no grant, rule or shadow mode lifts beyond the floor: the
-// deny list and a secret sent outside its hosts. The gate checks it before
-// a single-use or redirect grant too.
-func Hard(p *policy.Policy, r Request) (Decision, bool) {
+// deny list, a managed deny rule and a secret sent outside its hosts. The
+// gate checks it before a single-use, redirect or connect grant too.
+func Hard(p *policy.Policy, r Request, now time.Time) (Decision, bool) {
 	if p != nil && p.Denied(r.Host) {
 		return deny("deny-list", product.CodeRule, r.Host+" is on the policy's deny list"), true
+	}
+	if rule, v, ok := managedRule(p, r, now); ok && v == policy.VerdictDeny {
+		return deny(policy.ManagedRulePrefix+rule.ID, product.CodeRule, "rule "+rule.ID+" of the company's managed configuration denies it"), true
 	}
 	// A credential outside its host is denied, whatever rule would let
 	// the request pass.
@@ -205,10 +208,54 @@ func Hard(p *policy.Policy, r Request) (Decision, bool) {
 }
 
 func evaluate(p *policy.Policy, r Request, now time.Time, creds Credentials) Decision {
-	host := r.Host
-	if d, ok := Hard(p, r); ok {
+	if d, ok := Hard(p, r, now); ok {
 		return d
 	}
+	return atLeastManaged(p, r, now, evaluateBase(p, r, now, creds))
+}
+
+// atLeastManaged makes d at least as strict as the managed rule matching
+// r: a managed ask makes a free or auto decision a human's, and names the
+// managed rule, which shadow mode then never relaxes. A managed deny
+// returned in Hard.
+func atLeastManaged(p *policy.Policy, r Request, now time.Time, d Decision) Decision {
+	rule, _, ok := managedRule(p, r, now)
+	if !ok || d.Verdict == Deny {
+		return d
+	}
+	d.Verdict, d.NeverAuto, d.Rule = Ask, true, policy.ManagedRulePrefix+rule.ID
+	d.Warnings = append(d.Warnings, "the company's managed configuration asks a human (rule "+rule.ID+")")
+	return d
+}
+
+// managedRule is the strictest active managed rule matching r, the most
+// specific one among equals, and the verdict it sets. At the domain a rule
+// with methods or a path matches too, and asks: the gate cannot tell which
+// requests the tunnel will carry.
+func managedRule(p *policy.Policy, r Request, now time.Time) (policy.Rule, string, bool) {
+	if p == nil {
+		return policy.Rule{}, "", false
+	}
+	var best policy.Rule
+	bestV, bestScore := "", -1
+	for _, rule := range p.ManagedRules {
+		if !ruleMatches(rule, r, now, true) {
+			continue
+		}
+		v := rule.Verdict
+		if r.Phase == PhaseConnect && (len(rule.Methods) > 0 || rule.Path != "") {
+			v = policy.VerdictAsk
+		}
+		s := specificity(rule)
+		if bestScore < 0 || (v == policy.VerdictDeny && bestV != policy.VerdictDeny) || (v == bestV && s > bestScore) {
+			best, bestV, bestScore = rule, v, s
+		}
+	}
+	return best, bestV, bestScore >= 0
+}
+
+func evaluateBase(p *policy.Policy, r Request, now time.Time, creds Credentials) Decision {
+	host := r.Host
 	// Internal hosts (D-ih): spliced, decided at the domain.
 	if p != nil {
 		if ih, ok := p.InternalHost(host); ok {
@@ -356,19 +403,7 @@ func bestRule(p *policy.Policy, r Request, now time.Time) (policy.Rule, bool) {
 	var best policy.Rule
 	bestScore := -1
 	for _, rule := range p.Rules {
-		if !rule.Active(now) || !policy.HostMatch(rule.Host, r.Host) {
-			continue
-		}
-		if rule.Container != "" && rule.Container != r.Container {
-			continue
-		}
-		if r.Phase == PhaseConnect {
-			// At the domain the method and path are unknown: only a
-			// rule without either decides; a narrower rule asks.
-			if len(rule.Methods) > 0 || rule.Path != "" {
-				continue
-			}
-		} else if !rule.MatchesMethod(r.Method) || !rule.MatchesPath(r.Path) {
+		if !ruleMatches(rule, r, now, false) {
 			continue
 		}
 		if s := specificity(rule); s > bestScore {
@@ -376,6 +411,23 @@ func bestRule(p *policy.Policy, r Request, now time.Time) (policy.Rule, bool) {
 		}
 	}
 	return best, bestScore >= 0
+}
+
+// ruleMatches reports whether rule applies to r at now. At the domain the
+// method and path are unknown: a rule with either matches only when
+// narrowAtConnect is set (a managed rule, which then asks); otherwise only
+// a rule without either decides, and a narrower rule asks.
+func ruleMatches(rule policy.Rule, r Request, now time.Time, narrowAtConnect bool) bool {
+	if !rule.Active(now) || !policy.HostMatch(rule.Host, r.Host) {
+		return false
+	}
+	if rule.Container != "" && rule.Container != r.Container {
+		return false
+	}
+	if r.Phase == PhaseConnect {
+		return narrowAtConnect || (len(rule.Methods) == 0 && rule.Path == "")
+	}
+	return rule.MatchesMethod(r.Method) && rule.MatchesPath(r.Path)
 }
 
 func specificity(r policy.Rule) int {
