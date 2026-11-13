@@ -108,5 +108,5 @@ git verify-tag vX.Y.Z
 
 ## Supported versions
 
-Releases before v1.0.0 are pre-releases. Only the latest release receives
-security fixes.
+Only the latest release receives security fixes. Before v1.0.0, a minor
+version may still change the policy format.

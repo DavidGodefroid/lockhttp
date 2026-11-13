@@ -22,9 +22,16 @@ uses [Semantic Versioning](https://semver.org/).
   Profile names are keys and file paths are still named. The `mcp_servers`
   warning (shown and audited) names the server URL without its userinfo,
   query or fragment.
+- The gate reloads its secrets file when its content changes even if the
+  rewrite keeps the size and the mtime (a rotation within one mtime tick):
+  it compares the sha256 of the content too (#44).
 
 ### Changed
 
+- Releases are no longer GitHub pre-releases: a plain `vX.Y.Z` tag is
+  published as a full release marked Latest, and only a tag with a
+  pre-release suffix (`vX.Y.Z-rc.N`) stays a pre-release, as for the other
+  Locks. CONTRIBUTING.md lists what v1.0.0 waits for (#44).
 - `--hub` refuses a URL with a user, password, query or fragment before
   lockkit (the hub authenticates the instance key), and the gate's start
   line names the hub host only.

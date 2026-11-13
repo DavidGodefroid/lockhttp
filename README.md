@@ -37,7 +37,7 @@ else waits for **your** approval on
 [lockhub](https://github.com/DavidGodefroid/lockhub), where the agent cannot reach it.
 
 > [!NOTE]
-> **Pre-release** (`v0.8.x`), built on [lockkit](https://github.com/DavidGodefroid/lockkit) v0.13.0.
+> **0.x**: the policy format may still change between minor versions. Built on [lockkit](https://github.com/DavidGodefroid/lockkit) v0.14.1.
 > Command names are fixed; flags may still move. Design decisions: [docs/decisions.md](docs/decisions.md).
 
 ## Why lockhttp

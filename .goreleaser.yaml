@@ -88,7 +88,7 @@ release:
   github:
     owner: DavidGodefroid
     name: lockhttp
-  # Every release is a GitHub pre-release until v1.0.0 (`auto` would publish
-  # v0.1.0 as a full release). Switch back to `auto` at v1.0.0.
-  prerelease: true
+  # A tag with a semver pre-release suffix (v0.9.0-rc.1) is published as a
+  # GitHub pre-release; any other tag (v0.9.0) is a full release.
+  prerelease: auto
   draft: false

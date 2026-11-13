@@ -3,6 +3,7 @@
 package gate
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,6 +41,60 @@ func TestSecretsLoad(t *testing.T) {
 	}
 	if _, ok := s.Leak([]byte(haSecret)); !ok {
 		t.Fatal("a rotated-out value must stay in the leak check")
+	}
+}
+
+// A rewrite that keeps the size and the mtime (a rotation within one
+// mtime tick) is still reloaded: Reload compares the content's sha256.
+func TestSecretsReloadSameMtime(t *testing.T) {
+	p := writeSecrets(t, map[string]string{"ha-token": haSecret})
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewSecrets(p)
+	rotated := strings.Repeat("r", len(haSecret))
+	rewrite := func(content string) {
+		t.Helper()
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, fi.ModTime(), fi.ModTime()); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := os.Stat(p); err != nil || !got.ModTime().Equal(fi.ModTime()) {
+			t.Fatalf("mtime not set back: %v", err)
+		}
+	}
+	rewrite(`{"version":1,"secrets":{"ha-token":"` + rotated + `"}}`)
+	s.Reload()
+	if v, err := s.Value("ha-token"); err != nil || v != rotated {
+		t.Fatalf("same-mtime rewrite not reloaded: %q %v", v, err)
+	}
+	for _, v := range []string{haSecret, rotated} {
+		if name, ok := s.Leak([]byte(v)); !ok || name != "ha-token" {
+			t.Fatalf("%q not in the leak check", v)
+		}
+	}
+
+	// Unchanged: not parsed again, the forms are kept.
+	vals, forms := s.vals, s.Forms()
+	s.Reload()
+	if fmt.Sprintf("%p", s.vals) != fmt.Sprintf("%p", vals) || s.Forms() != forms {
+		t.Fatal("an unchanged file was parsed again")
+	}
+
+	// Invalid with the same mtime: fail-closed, the values stay leaks.
+	rewrite(`{"version":1,"secrets":{"ha-token":"` + rotated + `"`)
+	s.Reload()
+	if s.Err() == nil {
+		t.Fatal("an invalid same-mtime rewrite must set Err")
+	}
+	if _, err := s.Value("ha-token"); err == nil {
+		t.Fatal("an invalid file must refuse every injection")
+	}
+	if _, ok := s.Leak([]byte(rotated)); !ok {
+		t.Fatal("the last values must stay in the leak check")
 	}
 }
 
