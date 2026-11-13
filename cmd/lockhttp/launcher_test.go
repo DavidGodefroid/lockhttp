@@ -208,6 +208,7 @@ func TestLauncherAccountsPerCommand(t *testing.T) {
 	}{
 		{[]string{"init", "claude"}, nil, [][]string{{"--user", me}, {"-v", f.project + ":" + f.project}, {"-w", f.project}}, [][]string{{"-v", "lockhttp-home:/home/lockhttp"}, {"-v", "lockhttp-run:/run/lockhttp"}}},
 		{[]string{"policy", "edit"}, nil, [][]string{{"--user", "lockhttp"}, {"-v", "lockhttp-home:/home/lockhttp"}}, [][]string{{"-v", "lockhttp-run:/run/lockhttp"}}},
+		{[]string{"managed", "check"}, nil, [][]string{{"--user", "lockhttp"}, {"-v", "lockhttp-home:/home/lockhttp"}}, [][]string{{"-v", "lockhttp-run:/run/lockhttp"}}},
 		{[]string{"doctor", "--fix", "--yes", "--json"}, nil, [][]string{{"--user", me}, {"-v", f.project + ":" + f.project}}, [][]string{{"-v", "lockhttp-home:/home/lockhttp"}, {"-v", "lockhttp-run:/run/lockhttp"}}},
 		{[]string{"profile", "add", "--non-interactive", "--json", "--profile", "web", "--trusted", "a.com b.com"}, nil, [][]string{{"--user", me}, {"-v", f.project + ":" + f.project}}, [][]string{{"-v", "lockhttp-home:/home/lockhttp"}, {"-v", "lockhttp-run:/run/lockhttp"}}},
 		{[]string{"gate", "--upstream", "http://squid:3128"}, []string{"gate", "--listen", "0.0.0.0:3130", "--upstream", "http://squid:3128"},

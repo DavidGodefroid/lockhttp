@@ -122,7 +122,7 @@ func LoadManaged(m *managed.File) (*Managed, error) {
 		p.ManagedRules = slices.Clone(mg.Rules)
 		p = Canonical(p)
 		if vs := mg.Check(p); len(vs) > 0 {
-			return nil, fmt.Errorf("managed: [%s.%s.%s]: %s", tool, managed.KindProfiles, name, vs[0])
+			return nil, fmt.Errorf("managed: [%s.%s.%s] is beyond the bounds: %s", tool, managed.KindProfiles, name, beyond(vs[0]))
 		}
 		mg.profiles[name] = p
 	}
@@ -274,9 +274,15 @@ func (mg *Managed) checkDefaults() error {
 	}
 	p = Canonical(p)
 	if vs := mg.Check(p); len(vs) > 0 {
-		return errors.New(vs[0].String())
+		return errors.New("beyond the bounds: " + beyond(vs[0]))
 	}
 	return nil
+}
+
+// beyond is a violation without the "blocked by company policy: " of its
+// String, for a load error that wraps it.
+func beyond(v managed.Violation) string {
+	return strings.TrimPrefix(v.String(), "blocked by company policy: ")
 }
 
 // ProfilesManaged lists the profiles a console may serve from the config

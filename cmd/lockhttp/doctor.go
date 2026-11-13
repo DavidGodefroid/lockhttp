@@ -12,11 +12,13 @@ import (
 	"time"
 
 	kconfig "github.com/DavidGodefroid/lockkit/config"
+	"github.com/DavidGodefroid/lockkit/managed"
 	"github.com/DavidGodefroid/lockkit/sysconf"
 	"github.com/DavidGodefroid/lockkit/ui"
 	"github.com/DavidGodefroid/lockkit/verbs"
 
 	"github.com/DavidGodefroid/lockhttp/internal/ca"
+	"github.com/DavidGodefroid/lockhttp/internal/httpconsole"
 	"github.com/DavidGodefroid/lockhttp/internal/policy"
 	"github.com/DavidGodefroid/lockhttp/internal/product"
 )
@@ -132,12 +134,22 @@ func doctorChecks(o doctorOpts) ([]verbs.Check, []repair) {
 
 	add("agent", verbs.StatusOK, "nothing to wire: lea routes the agent's HTTP through the gate", "")
 
+	m, mg, merr := loadManaged()
+	switch {
+	case merr != nil:
+		add("managed", verbs.StatusFail, safe(merr.Error()), "the console refuses to start until the company's managed configuration is fixed")
+	case m == nil:
+		add("managed", verbs.StatusOK, noManaged, "")
+	default:
+		add("managed", verbs.StatusOK, safe(m.Describe()), "")
+	}
+
 	root, found := kconfig.FindProjectRoot(product.P, o.cwd)
 	if !found {
 		add("policy", verbs.StatusFail, "no .lockhttp/config.toml in this directory or above", "lockhttp profile add")
 	} else {
 		path := kconfig.ProjectConfigPath(product.P, root)
-		checks = append(checks, policyChecks(path, o.profile)...)
+		checks = append(checks, policyChecks(path, o.profile, m, mg)...)
 		c, r := permissionCheck(path)
 		checks = append(checks, c...)
 		repairs = append(repairs, r...)
@@ -169,8 +181,10 @@ func doctorChecks(o doctorOpts) ([]verbs.Check, []repair) {
 	return checks, repairs
 }
 
-// policyChecks parses the project's policy: profile, or every profile.
-func policyChecks(path, profile string) []verbs.Check {
+// policyChecks parses the project's policy, profile or every profile, as
+// the console loads it under the managed file m (nil: none), and checks it
+// against m's bounds.
+func policyChecks(path, profile string, m *managed.File, mg *policy.Managed) []verbs.Check {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return []verbs.Check{{Check: "policy", Status: verbs.StatusFail, Detail: err.Error()}}
@@ -185,11 +199,19 @@ func policyChecks(path, profile string) []verbs.Check {
 		}
 	}
 	var out []verbs.Check
+	be := httpconsole.New(httpconsole.Options{Config: path})
 	for _, n := range names {
-		p, err := policy.Parse(data, path, n)
+		p, err := policy.ParseManaged(data, path, n, mg)
+		var beyond []string
+		if err == nil && m != nil {
+			beyond, err = checkProfile(be, data, path, n, m, mg)
+		}
 		switch {
 		case err != nil:
 			out = append(out, verbs.Check{Check: "policy", Status: verbs.StatusFail, Detail: err.Error()})
+		case len(beyond) > 0:
+			out = append(out, verbs.Check{Check: "policy", Status: verbs.StatusFail,
+				Detail: fmt.Sprintf("%s, profile %s: %s", path, n, safe(strings.Join(beyond, "; "))), Fix: "the console refuses it: bring the profile within the company's managed configuration"})
 		case p.Mode == policy.ModeShadow:
 			out = append(out, verbs.Check{Check: "policy", Status: verbs.StatusWarn,
 				Detail: fmt.Sprintf("%s, profile %s: shadow mode: what would ask or be denied passes (logged)", path, n)})

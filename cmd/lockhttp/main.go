@@ -68,6 +68,9 @@ Console account
                                    print, edit or locate the console's policy file
   console  [--profile P] [--config FILE]
                                    run the policy console (lox run runs it)
+  managed  show | check [--profile P] [--config FILE]
+                                   the company's managed configuration, and
+                                   whether the policy is within it
 
 Other human commands
   ca init  --dir DIR [--name NAME] [--force]
@@ -122,6 +125,8 @@ func run(e env, args []string) int {
 		return runProfile(e, args[1:])
 	case "console":
 		return runConsole(e, args[1:])
+	case "managed":
+		return runManaged(e, args[1:])
 	case "doctor":
 		return runDoctor(e, args[1:])
 	case "ca":
