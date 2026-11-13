@@ -203,7 +203,8 @@ lockhttp managed check [--profile P] [--config FILE]
 The company's managed configuration (`/etc/lockfamily/managed.toml`, see
 [configuration.md](configuration.md#managed-configuration)), as the
 console applies it. The launcher runs it as the console account, with its
-home volume and the host's `/etc/lockfamily` read-only.
+home volume and the host's managed directory read-only on `/etc/lockfamily`
+([docker.md](docker.md#the-companys-managed-configuration)).
 
 | Subcommand | Effect |
 |---|---|

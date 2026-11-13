@@ -6,6 +6,16 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The launcher mounts the machine's managed directory (`/etc/lockfamily`,
+  `/Library/Application Support/lockfamily` on macOS) read-only on
+  `/etc/lockfamily` in every container, as `lox run` does in its locks:
+  `version`, `gate`, `signer`, `ca` and the other commands now get it too,
+  not only `console`, `policy`, `managed` and the launcher verbs. A managed
+  path that is a file, a dangling link or holds a `:` stops the launcher
+  instead of being skipped (#57).
+
 ## [0.9.0] - 2026-11-13
 
 Built on lockkit v0.18.0. The first full (non pre-release) GitHub release.
