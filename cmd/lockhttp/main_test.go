@@ -55,10 +55,12 @@ func runEnv(t *testing.T, e env, args ...string) (int, string, string) {
 	return code, out.String(), errb.String()
 }
 
-func TestInstallRefused(t *testing.T) {
+// install and setup are unknown commands: lox installs and updates lockhttp
+// (#40).
+func TestInstallUnknown(t *testing.T) {
 	for _, c := range []string{"install", "setup"} {
 		code, _, errs := runEnv(t, env{}, c, "--yes")
-		if code != exitUsage || !strings.Contains(errs, "runs in Docker") {
+		if code != exitUsage || !strings.Contains(errs, "unknown command") {
 			t.Fatalf("%s: %d %s", c, code, errs)
 		}
 	}

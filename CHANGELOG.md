@@ -31,6 +31,12 @@ uses [Semantic Versioning](https://semver.org/).
 - The `mcp_servers` warning keeps the URL's host and path: a secret in the
   path still shows.
 
+### Removed
+
+- **Breaking:** `lockhttp install` and `lockhttp setup`, which only refused
+  (exit 3, "runs in Docker"): they are now unknown commands (still exit 3).
+  `lox` installs and updates lockhttp (#40).
+
 ## [0.8.1] - 2026-11-07
 
 Built on lockkit v0.14.1.

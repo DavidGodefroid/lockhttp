@@ -44,7 +44,7 @@ with Docker Desktop.
 
 `LOCKHTTP_IMAGE` runs an image of your own (`docker build -t lockhttp .`
 from a clone), `LOCKHTTP_DOCKER_ARGS` adds `docker run` arguments. There is
-no host install: the image refuses `lockhttp install`. Coming from v0.1.0's
+no host install. Coming from v0.1.0's
 `sudo lockhttp install`: [migrating from a host
 install](docker.md#migrating-from-a-host-install).
 
