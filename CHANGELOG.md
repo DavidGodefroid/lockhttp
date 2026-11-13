@@ -6,6 +6,10 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-13
+
+Built on lockkit v0.18.0.
+
 ### Fixed
 
 - The launcher mounts the machine's managed directory (`/etc/lockfamily`,
@@ -15,6 +19,8 @@ uses [Semantic Versioning](https://semver.org/).
   not only `console`, `policy`, `managed` and the launcher verbs. A managed
   path that is a file, a dangling link or holds a `:` stops the launcher
   instead of being skipped (#57).
+- The launcher's managed directory tests pin `uname -s`, so they check the
+  Linux and the macOS paths on any runner; they failed on macOS (#59).
 
 ## [0.9.0] - 2026-11-13
 
@@ -443,7 +449,8 @@ separate signer, Claude API allowlist) available behind `--ca-cert` and
 - Release pipeline: goreleaser, cosign keyless signatures, SBOMs,
   SHA-pinned actions, `scripts/install.sh` with signature verification.
 
-[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.9.1
 [0.9.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.9.0
 [0.8.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.8.1
 [0.8.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.8.0
