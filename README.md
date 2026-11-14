@@ -68,16 +68,14 @@ every command in the release's signed image. `lox` is lockhub's CLI, and the
 gate runs inside [lea](https://github.com/DavidGodefroid/lea). The whole
 family instead: `brew install davidgodefroid/tap/lockfamily`.
 
-Without Homebrew, the signed install script of a release:
+Without Homebrew, the Lock Family's installer puts the same tools in
+`~/.local/bin` ([lockfamily install](https://github.com/DavidGodefroid/lockfamily/blob/main/docs/install.md)):
 
 ```sh
-V=vX.Y.Z
-curl -fsSLO "https://raw.githubusercontent.com/DavidGodefroid/lockhttp/$V/scripts/install.sh"
-less install.sh
-LOCKHTTP_VERSION=$V sh install.sh
+curl -fsSL https://lockfamily.dev/install.sh | sh
 ```
 
-Linux and macOS; on Windows, WSL 2 with Docker Desktop. The launcher, its
+`LEA_LOCKHTTP=1` needs lea v0.16.0 or later to use this launcher. Linux and macOS; on Windows, WSL 2 with Docker Desktop. The launcher, its
 commands and the setup by hand: [docs/install.md](docs/install.md).
 
 ## Quick start

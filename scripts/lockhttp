@@ -1,7 +1,8 @@
 #!/bin/sh
 # lockhttp: the launcher. lockhttp runs in Docker; this script, installed as
-# `lockhttp` on the host by scripts/install.sh, runs every command in the
-# image, each with the account and the volumes it needs (docs/docker.md):
+# `lockhttp` on the host by brew or lockfamily's install.sh, runs every
+# command in the image, each with the account and the volumes it needs
+# (docs/docker.md):
 #
 #   console               as the console account (lockhttp), in a container
 #                         named lockhttp-console, with the socket and home
@@ -37,7 +38,8 @@
 #                         (default 127.0.0.1:3130)
 set -eu
 
-# scripts/install.sh and lockhttp update write the release version here,
+# The installers (brew, lockfamily's install.sh) and lockhttp update write
+# the release version here,
 # and the digest of its image once its cosign signature verifies: the
 # launcher then runs the image by digest, never by a tag that could move.
 launcher_version=dev
@@ -180,8 +182,8 @@ verified_digest() {
 }
 
 # update [vX.Y.Z]: replace this launcher with a release's (the cosign
-# signature of checksums.txt and the archive's checksum checked, as
-# scripts/install.sh does), then pull that release's image.
+# signature of checksums.txt and the archive's checksum checked), then pull
+# that release's image.
 update() {
 	if [ -n "${1:-}" ]; then
 		case "$1" in v*) check_tag "$1" ;; *) check_tag "v$1" ;; esac
@@ -220,9 +222,8 @@ update() {
 	case "$tag" in v*) ;; *) tag="v$tag" ;; esac
 	check_tag "$tag"
 	version="${tag#v}"
-	# The release workflow run for this very tag, as scripts/install.sh
-	# checks it: a tag moved to an older release's signed files does not
-	# verify.
+	# The release workflow run for this very tag: a tag moved to an older
+	# release's signed files does not verify.
 	identity="https://github.com/$repo/.github/workflows/release.yml@refs/tags/$tag"
 	if [ "$version" = "$launcher_version" ]; then
 		say "the launcher is already $tag"

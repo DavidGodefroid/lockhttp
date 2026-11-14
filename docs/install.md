@@ -8,29 +8,27 @@ How to install lockhttp, set it up with lea and lockhub, and the commands of its
 
 ## Install
 
-LockHTTP runs in Docker. On the host, `scripts/install.sh` installs only the
-`lockhttp` launcher, a shell script that runs every command in the release's
-image (`ghcr.io/davidgodefroid/lockhttp:X.Y.Z`, amd64 and arm64). With
-Homebrew: `brew trust davidgodefroid/tap` (Homebrew asks to trust a
-third-party tap once), then `brew install davidgodefroid/tap/lockhttp` (or
-`davidgodefroid/tap/lockfamily` for the whole family). Otherwise, download
-the script from the release you install, read it, then run it:
+LockHTTP runs in Docker. On the host there is only the `lockhttp` launcher,
+a shell script that runs every command in the release's image
+(`ghcr.io/davidgodefroid/lockhttp:X.Y.Z`, amd64 and arm64). With Homebrew:
+`brew trust davidgodefroid/tap` (Homebrew asks to trust a third-party tap
+once), then `brew install davidgodefroid/tap/lockhttp` (or
+`davidgodefroid/tap/lockfamily` for the whole family). Without Homebrew,
+the Lock Family's installer puts the same launcher in `~/.local/bin`
+([lockfamily install](https://github.com/DavidGodefroid/lockfamily/blob/main/docs/install.md)):
 
 ```sh
-V=vX.Y.Z
-curl -fsSLO "https://raw.githubusercontent.com/DavidGodefroid/lockhttp/$V/scripts/install.sh"
-less install.sh
-LOCKHTTP_VERSION=$V sh install.sh
+curl -fsSL https://lockfamily.dev/install.sh | sh
 ```
 
-It verifies the keyless cosign signature of `checksums.txt` against this
-repository's release workflow, checks the archive, verifies the image's
-cosign signature and writes its digest into the launcher, which runs the
-image by that digest. The launcher lands in `/usr/local/bin`, root-owned
-(`LOCKHTTP_INSTALL_DIR` to change it). cosign is required unless
-`LOCKHTTP_SKIP_COSIGN=1`, which verifies nothing and runs the image by its
-tag. Linux (Docker Engine) and macOS (Docker Desktop); on Windows, WSL 2
-with Docker Desktop.
+Both verify the keyless cosign signature of the release against this
+repository's release workflow and write the verified image digest into the
+launcher, which runs the image by that digest. lea's `LEA_LOCKHTTP=1` uses
+this launcher from lea v0.16.0 on (it checks the digest against its pin or
+with cosign); older lea accept only a root-owned `/usr/local/bin/lockhttp`,
+which lockhttp no longer installs (`scripts/install.sh` is gone since
+v0.11.0). Linux (Docker Engine) and macOS (Docker Desktop); on Windows,
+WSL 2 with Docker Desktop.
 
 | Command | Runs as | What it does |
 |---|---|---|

@@ -11,9 +11,9 @@ no other `lockhttp` on the host.
 
 | Where | What |
 |---|---|
-| host | `/usr/local/bin/lockhttp`: the launcher, root-owned (the agent's account cannot replace it), put there by `scripts/install.sh` |
+| host | the launcher `lockhttp`: brew's `bin` (`brew install davidgodefroid/tap/lockhttp`) or `~/.local/bin` ([lockfamily's install.sh](https://github.com/DavidGodefroid/lockfamily/blob/main/docs/install.md)) |
 | registry | `ghcr.io/davidgodefroid/lockhttp:X.Y.Z`, amd64 and arm64, signed with cosign by the release workflow; the launcher runs it by digest |
-| release archives | the launcher (`scripts/lockhttp`), the binary, `LICENSE`, `NOTICE`, `README.md`, `CHANGELOG.md`, `SECURITY.md`; `install.sh` takes only the launcher |
+| release archives | the launcher (`scripts/lockhttp`), the binary, `LICENSE`, `NOTICE`, `README.md`, `CHANGELOG.md`, `SECURITY.md`; brew and lockfamily's install.sh take only the launcher |
 
 No host packages (`.deb`, `.rpm`, `.apk`), no host binary, no system
 account on the host.
@@ -110,7 +110,8 @@ Settings > Resources > File sharing, or the launcher's commands fail with
 
 ## Version pinning
 
-`install.sh` and `lockhttp update` write two lines of the launcher:
+The installer (brew, lockfamily's install.sh) and `lockhttp update` write two
+lines of the launcher:
 
 ```sh
 launcher_version=X.Y.Z
@@ -144,17 +145,9 @@ the image's own version.
 
 ## Install and update
 
-Download the install script from the release you install, read it, then run
-it with that release:
-
-```sh
-V=vX.Y.Z
-curl -fsSLO "https://raw.githubusercontent.com/DavidGodefroid/lockhttp/$V/scripts/install.sh"
-less install.sh
-LOCKHTTP_VERSION=$V sh install.sh
-```
-
-`scripts/install.sh` and `lockhttp update [vX.Y.Z]` do the same steps:
+Install the launcher with Homebrew or lockfamily's install.sh
+([install.md](install.md#install)). `lockhttp update [vX.Y.Z]` replaces an
+installed launcher with a release's:
 
 0. check that the version is a release tag (`vX.Y.Z[-pre]`): it goes into
    URLs and into the launcher's text;
@@ -166,22 +159,15 @@ LOCKHTTP_VERSION=$V sh install.sh
    and is refused);
 4. `cosign verify` the image `ghcr.io/davidgodefroid/lockhttp:X.Y.Z` and take
    its digest;
-5. write the version and the digest into the launcher and install it,
-   mode `0755` (`install.sh`: in `/usr/local/bin`, or `LOCKHTTP_INSTALL_DIR`,
-   with `sudo` when the directory is not writable; `update`: over itself,
-   with `sudo` when needed);
-6. `update` then runs `docker pull` of the pinned image. `install.sh` leaves
-   the pull to Docker, on first use.
+5. write the version and the digest into the launcher and install it over
+   itself, mode `0755`, with `sudo` when needed;
+6. run `docker pull` of the pinned image.
 
 Any failed check stops before the launcher is replaced. cosign is required;
 `LOCKHTTP_SKIP_COSIGN=1` is the explicit way past it, and then neither the
-signature nor the image is verified. Without a version, `install.sh` takes
-the latest release (or the newest pre-release when there is no stable one)
-and `update` the newest entry of the releases feed.
-
-`install.sh` warns when Docker is missing, when the directory is not on your
-`PATH`, and when `/etc/lockhttp/system.toml` exists: a former host install
-([Migrating from a host install](#migrating-from-a-host-install)).
+signature nor the image is verified. Without a version, `update` takes the
+newest entry of the releases feed. A launcher installed by brew is updated
+by `brew upgrade` instead.
 
 ## Platforms
 
@@ -253,9 +239,10 @@ install` created there:
   (Linux);
 - `/usr/local/bin/lockhttp`, a root-owned copy of the binary.
 
-`install.sh` replaces `/usr/local/bin/lockhttp` with the launcher, and warns
-while `/etc/lockhttp/system.toml` exists. The rest stays until you remove
-it. First keep the old policy: it becomes the project's.
+Install the launcher ([install.md](install.md#install)), then remove the
+old root-owned binary (`sudo rm /usr/local/bin/lockhttp`): lea looks in
+`/usr/local/bin` first. The rest stays until you remove it. First keep the
+old policy: it becomes the project's.
 
 ```sh
 mkdir -p -m 0700 .lockhttp

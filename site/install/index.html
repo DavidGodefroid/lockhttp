@@ -89,14 +89,11 @@ lea</code></pre>
 
 <section aria-labelledby="script">
   <h2 id="script">Without Homebrew</h2>
-  <p class="prose">Download the install script from the release you install on the <a href="https://github.com/DavidGodefroid/lockhttp/releases">releases page</a>, read it, then run it with that release:</p>
-  <pre tabindex="0"><code>V=vX.Y.Z
-curl -fsSLO "https://raw.githubusercontent.com/DavidGodefroid/lockhttp/$V/scripts/install.sh"
-less install.sh
-LOCKHTTP_VERSION=$V sh install.sh
+  <p class="prose">The Lock Family’s installer puts the same tools as Homebrew in <code>~/.local/bin</code>, without sudo (<a href="https://github.com/DavidGodefroid/lockfamily/blob/main/docs/install.md">how it works</a>):</p>
+  <pre tabindex="0"><code>curl -fsSL https://lockfamily.dev/install.sh | sh
 lockhttp version</code></pre>
   <div class="prose">
-    <p>It verifies the cosign signature of the release’s checksums, the archive and the image. The launcher lands in <code>/usr/local/bin</code> and runs the image by its digest.</p>
+    <p>It verifies the cosign signature of each release and of its image. The launcher runs the image by its digest. lea uses this launcher from v0.16.0.</p>
     <p>cosign is required. Linux (Docker Engine) and macOS (Docker Desktop); on Windows, WSL 2 with Docker Desktop.</p>
   </div>
 </section>

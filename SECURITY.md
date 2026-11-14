@@ -72,15 +72,14 @@ cosign verify-blob --bundle checksums.txt.sigstore.json \
 sha256sum -c --ignore-missing checksums.txt
 ```
 
-`scripts/install.sh` and the launcher's `lockhttp update` run the same check
-and refuse to install without cosign (`LOCKHTTP_SKIP_COSIGN=1` is their
-explicit way past it).
+The launcher's `lockhttp update` runs the same check and refuses to update
+without cosign (`LOCKHTTP_SKIP_COSIGN=1` is its explicit way past it).
 
 ## Verifying the image
 
 The release image, `ghcr.io/davidgodefroid/lockhttp:X.Y.Z` (amd64 and
 arm64, one manifest), is signed with cosign, keylessly and by digest, by the
-same workflow run for the release's tag. `install.sh` and `lockhttp update`
+same workflow run for the release's tag. The installers and `lockhttp update`
 verify it and write its digest into the launcher (`image_digest=`), which
 runs the image by that digest, never by its tag. By hand:
 
