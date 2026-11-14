@@ -6,6 +6,10 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-14
+
+Built on lockkit v0.20.0.
+
 ### Added
 
 - `lockhttp console` takes `--runtime-gids GID,...` (lockkit's hub flags,
@@ -14,8 +18,8 @@ uses [Semantic Versioning](https://semver.org/).
   is unconfined (`runtime_group`), refused with `CodeUnconfined` unless the
   profile sets `unconfined = true` (non-production). An invalid list is a
   usage error (exit 3), and the other hub flags (`--hub`, `--instance`,
-  ...) are still refused: the console is policy-only. This release is the
-  first that takes the flag: lockhub adds `"lockhttp": "<this release>"`
+  ...) are still refused: the console is policy-only. v0.12.0 is the
+  first release that takes the flag: lockhub adds `"lockhttp": "v0.12.0"`
   to `family.RuntimeGIDsSince`.
 
 ## [0.11.0] - 2026-11-14
@@ -505,7 +509,8 @@ separate signer, Claude API allowlist) available behind `--ca-cert` and
 - Release pipeline: goreleaser, cosign keyless signatures, SBOMs,
   SHA-pinned actions, `scripts/install.sh` with signature verification.
 
-[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.12.0
 [0.11.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.11.0
 [0.10.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.10.0
 [0.9.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.9.1
