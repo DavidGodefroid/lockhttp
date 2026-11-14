@@ -12,7 +12,7 @@
   <a href="go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/DavidGodefroid/lockhttp?color=575146&logo=go&logoColor=white"></a>
 </p>
 
-<p align="center"><b>Let any AI agent use the web: reads of trusted hosts pass,<br>
+<p align="center"><b>Let an AI agent running in lea use the web: reads of trusted hosts pass,<br>
 anything that sends data or reaches an unknown host waits for you.</b></p>
 
 <p align="center">
@@ -32,9 +32,16 @@ anything that sends data or reaches an unknown host waits for you.</b></p>
 
 lockhttp is a Lock of the [Lock Family](https://github.com/DavidGodefroid/lockfamily),
 harness security for AI agents. It is the proxy every outbound HTTP(S)
-request of your agent goes through. Reads of hosts you trust pass; anything
-else waits for **your** approval on
+request of an agent running in [lea](https://github.com/DavidGodefroid/lea)
+goes through. Reads of hosts you trust pass; anything else waits for
+**your** approval on
 [lockhub](https://github.com/DavidGodefroid/lockhub), where the agent cannot reach it.
+
+> [!IMPORTANT]
+> **The agent must run inside lea.** lockhttp guards only the containers lea
+> starts with `LEA_LOCKHTTP=1`, whose only way out is lea's proxy. An agent
+> you start directly on your machine (outside lea) does not go through the
+> gate: lockhttp sees none of its requests and protects nothing there.
 
 > [!NOTE]
 > **0.x**: the policy format may still change between minor versions. Built on [lockkit](https://github.com/DavidGodefroid/lockkit) v0.14.1.
@@ -113,9 +120,9 @@ commands and the setup by hand: [docs/install.md](docs/install.md).
 4. Ask your agent to read the docs of a trusted site: it goes through. Ask
    it to post somewhere: the request waits for your `y`.
 
-lockhttp is a proxy, so it works with any agent and any HTTP client inside
-lea's containers (lea runs Claude Code today). The contract with lea:
-[docs/lea.md](docs/lea.md).
+lockhttp is a proxy, so inside lea's containers it works with any agent and
+any HTTP client (lea runs Claude Code today). Outside lea it is not on the
+path at all. The contract with lea: [docs/lea.md](docs/lea.md).
 
 ## Highlights
 
@@ -234,7 +241,7 @@ The site, [lockhttp.com](https://lockhttp.com), is built from [`site/`](site/).
 | [locksql](https://github.com/DavidGodefroid/locksql) | SQL databases: the agent queries, PII comes back masked; connections and writes wait for you. |
 | [lockmq](https://github.com/DavidGodefroid/lockmq) | RabbitMQ: masked queue inspection; connections, peeks and unmasked reads wait for you. |
 | [lockfile](https://github.com/DavidGodefroid/lockfile) | Files (S3, SFTP, disk): the agent asks yes/no questions about files it never reads. |
-| [lockhttp](https://github.com/DavidGodefroid/lockhttp) | Outbound HTTP(S): reads of trusted hosts pass; anything that sends data or reaches an unknown host waits for you. |
+| [lockhttp](https://github.com/DavidGodefroid/lockhttp) | Outbound HTTP(S) of agents in lea: reads of trusted hosts pass; anything that sends data or reaches an unknown host waits for you. |
 | [locklog](https://github.com/DavidGodefroid/locklog) | Logs: masked, bounded log search; the agent reads the logs, not the people in them. |
 | [lockssh](https://github.com/DavidGodefroid/lockssh) | Commands over SSH: allow-listed commands run at once, the rest waits for you; the key never leaves the console. |
 | [lockhub](https://github.com/DavidGodefroid/lockhub) | The approval hub and its `lox` CLI: `lox run` approves outside the agent's harness and never sees values in clear. |

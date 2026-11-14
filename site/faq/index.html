@@ -65,8 +65,8 @@
 </section>
 <section aria-labelledby="agents">
   <h2 id="agents">Which AI agents does it work with?</h2>
-  <p>Any agent and any HTTP client: lockhttp is a proxy, not an agent plugin. It sees requests, whatever tool sent them.</p>
-  <p>The agent must run in <a href="https://github.com/DavidGodefroid/lea">lea</a>, which runs Claude Code in containers today.</p>
+  <p>Any agent and any HTTP client inside <a href="https://github.com/DavidGodefroid/lea">lea</a>: lockhttp is a proxy, not an agent plugin. It sees the requests of lea’s containers, whatever tool sent them.</p>
+  <p>The agent must run in lea, which runs Claude Code in containers today. An agent run directly on your machine, outside lea, does not go through lockhttp: the gate never sees its requests and does not protect it.</p>
 </section>
 <section aria-labelledby="lea">
   <h2 id="lea">Do I need lea?</h2>
