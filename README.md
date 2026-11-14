@@ -44,7 +44,7 @@ goes through. Reads of hosts you trust pass; anything else waits for
 > gate: lockhttp sees none of its requests and protects nothing there.
 
 > [!NOTE]
-> **0.x**: the policy format may still change between minor versions. Built on [lockkit](https://github.com/DavidGodefroid/lockkit) v0.14.1.
+> **0.x**: the policy format may still change between minor versions. Built on [lockkit](https://github.com/DavidGodefroid/lockkit) v0.20.0.
 > Command names are fixed; flags may still move. Design decisions: [docs/decisions.md](docs/decisions.md).
 
 ## Why lockhttp
@@ -55,8 +55,10 @@ goes through. Reads of hosts you trust pass; anything else waits for
 - **Approval outside the agent.** Each held request becomes a `NeverAuto`
   ticket on lockhub, answered by a human in `lox run`. Nothing in the agent's
   process can switch it off.
-- **Credentials the agent never holds.** The gate can inject an API token
-  for one host and port; a credential sent to the wrong host is refused.
+- **Credentials the agent never holds.** With TLS decryption (or plain HTTP
+  to an internal host), the gate can inject an API token for one host and
+  port; a known credential format sent to the wrong host is refused once
+  the gate sees the request (decrypted or plain HTTP).
 - **Traced.** Every decision is tied to the container, the agent and the
   session that asked.
 
@@ -139,7 +141,8 @@ Every held request is a `NeverAuto` ticket: a human answers it. Only a
 
 **🔑 Credentials injected**<br>
 A policy `inject` entry has the gate add an `Authorization` header from its
-own secrets file. The agent never holds the token.
+own secrets file, on a decrypted request or plain HTTP to an internal host.
+The agent never holds the token.
 
 </td>
 </tr>
@@ -147,15 +150,16 @@ own secrets file. The agent never holds the token.
 <td valign="top">
 
 **🔁 LLM APIs checked as a relay**<br>
-With TLS decryption, the Claude API's `mcp_servers`, server tools and Files
-API wait for a human; plain messages pass.
+With TLS decryption, the Claude API's `mcp_servers`, code execution
+`container`, server tools other than `web_search`, and Files API wait for a
+human; plain messages, OAuth and body-less reads pass.
 
 </td>
 <td valign="top">
 
 **🧱 Fail closed**<br>
-No console: asks are refused at once. Unknown source, undecodable policy, an
-error while deciding: deny.
+No console, or a policy that does not decode: asks are refused at once.
+Unknown source, an error while deciding: deny.
 
 </td>
 </tr>
@@ -207,8 +211,11 @@ limits: [docs/how-it-works.md](docs/how-it-works.md).
   `unconfined = true` ([docs/policy.md](docs/policy.md#confined-agents)).
 - **The AI tightens, the human loosens.** Any change that widens what passes
   without a human waits for your `:review` in the console.
-- **Audit.** The gate's JSONL log and the console's audit share a
-  `request_id`, never a body, a query string or a header value.
+- **Audit.** The gate audits every decision and every hub ticket's outcome
+  in its JSONL log, with a `request_id`; never a body, a query string or a
+  header value (a decision's warnings may name a `/v1/messages` body's
+  `mcp_servers`). The console approves no request: it audits policy
+  reviews.
 - **Known limits.** Without decryption a `CONNECT` opens reads and writes,
   and whoever can run `docker` can reach the console's container.
 

@@ -25,8 +25,8 @@ console the only place a loosening of the policy is. In short:
   like `ask`), so
   nothing answers a held request but a human. Secrets are denied.
 - **A decision is shared only by identical requests.** Same container,
-  method, URL, significant headers and normalised body; anything else is
-  its own screen.
+  method, URL, media type, every end-to-end header and normalised body;
+  anything else is its own hub ticket.
 - **Hub-attached only.** The gate does not start without its hub flags,
   and nothing falls back to another approver when the hub is unreachable:
   the ticket stays pending until the hub answers.
@@ -43,8 +43,11 @@ console the only place a loosening of the policy is. In short:
 - **The AI tightens, the human loosens.** Any change that widens what passes
   without a human (a trusted host, a `free` rule, shadow mode, a
   longer grant, a removed deny...) waits for your `:review`.
-- **Traced.** The gate's JSONL audit and the console's audit carry
+- **Traced.** The gate audits every decision and every hub ticket's outcome
+  in its own JSONL (and lockhub keeps its tickets); each line carries
   `request_id`, `container`, `agent`, `attribution`, `via`, never a body, a
-  query string or a header value.
+  query string or a header value, except a decision's warnings, which can
+  name the `mcp_servers` (names and URLs) of a `/v1/messages` body. The
+  console approves no request: it reviews policy loosenings only.
 
 Threats, parades and residual risks: [docs/security-model.md](security-model.md).

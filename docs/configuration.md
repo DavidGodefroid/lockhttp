@@ -30,7 +30,7 @@ deny    = []                # always refused
 
 | Key | Default | Notes |
 |---|---|---|
-| `production` | `false` | No rule may be `auto` (an `auto` rule only asks), and the console treats the profile as production. |
+| `production` | `false` | No rule may be `auto`: such a rule is a parse error, and the file does not load. The console treats the profile as production. |
 | `unconfined` | `false` | `true` lets in an agent that does not run confined (a loosening; never with `production = true`, which then does not start). See [Confined agents](policy.md#confined-agents). |
 | `mode` | `enforce` | `shadow`: what would ask or be denied passes and is logged as such. |
 | `heuristics` | `shadow` | Exfiltration score: `off` (not computed), `shadow` (logged), `enforce` (a score ≥ 3 asks, `NeverAuto`, red). |
@@ -39,12 +39,13 @@ deny    = []                # always refused
 | `connect_grant` | `10m` | At least `1s`. |
 | `idle_timeout` | `24h` | Console session limit. |
 | `max_session` | `24h` | Console session limit. |
-| `trusted` | `[]` (`init` writes a docs set) | Reads (`GET`, `HEAD`, `OPTIONS` without body) are free. |
+| `trusted` | `[]` (`profile add` writes a docs set) | Reads (`GET`, `HEAD`, `OPTIONS` without body) are free. |
 | `splice` | `[]` | Never decrypted: decided at the domain. |
 | `deny` | `[]` | Always refused (`E_RULE`). |
 | `redirect_cdn` | `[]` | `"origin>cdn"`: a 3xx from origin to cdn lets the same container `GET` that exact URL once within 60 s. Eight GitHub, Docker, Go and PyPI pairs are built in. |
 | `[[profiles.P.internal_hosts]]` | none | `host`, `ports` (required), `read` (`false`). May resolve to a private address. |
 | `[[profiles.P.rules]]` | none | `id`, `container`, `host`, `methods`, `path`, `verdict`, `max_body`, `expires`, `note`. |
+| `[[profiles.P.inject]]` | none | `id`, `host`, `port`, `header`, `credential` (required), `scheme`, `container`, `methods`, `paths`, `note`. See [Credential injection](policy.md#credential-injection). |
 
 </details>
 

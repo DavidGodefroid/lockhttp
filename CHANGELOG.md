@@ -6,6 +6,19 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The README, `docs/`, `SECURITY.md`, `CONTRIBUTING.md` and the site say
+  what the code does (#73): approvals are hub tickets and the console only
+  reviews policy loosenings; the gate resolves names before the decision
+  when it has the hub's networks (a T2 residual); the Claude API allowlist
+  yields to a rule naming a Claude host and to shadow mode; `Cookie` is
+  scanned; credential injection and the secret check need decryption (or
+  plain HTTP to an internal host); managed rules in the evaluation order;
+  lea's CA, trust store, audit volume and proxy address; the supported
+  versions table up to v0.12.0. `pages.yml` pins its actions by commit
+  SHA, as `SECURITY.md` says.
+
 ## [0.12.0] - 2026-11-14
 
 Built on lockkit v0.20.0.

@@ -56,7 +56,7 @@
 
 <section class="hero" aria-labelledby="hero-title">
   <div class="hero-text">
-    <p class="eyebrow"><span class="badge">v0.9</span>A Lock of the Lock&nbsp;Family · open&nbsp;source · Apache&nbsp;2.0</p>
+    <p class="eyebrow"><span class="badge">v0.12</span>A Lock of the Lock&nbsp;Family · open&nbsp;source · Apache&nbsp;2.0</p>
     <h1 id="hero-title">Your agent browses. <span class="key">You hold the key.</span></h1>
     <p class="lead">Every outbound HTTP(S) request of your AI agent running in <a href="https://github.com/DavidGodefroid/lea">lea</a> goes through lockhttp. Reads of trusted hosts pass; anything that sends data or reaches an unknown host waits for you.</p>
     <div class="install">
@@ -117,8 +117,8 @@
 <tr><th scope="row">Writes to a trusted host still need a human</th><td class="no">No</td><td class="partial">With decryption</td></tr>
 <tr><th scope="row">Approval runs outside the agent, in another account</th><td class="no">No</td><td class="yes">Yes</td></tr>
 <tr><th scope="row">LLM APIs checked as a relay (the Claude API today)</th><td class="no">No</td><td class="partial">With decryption</td></tr>
-<tr><th scope="row">Credential sent outside its own host is denied</th><td class="no">No</td><td class="yes">Yes</td></tr>
-<tr><th scope="row">Credentials injected by the proxy, never held by the agent</th><td class="no">No</td><td class="yes">Yes</td></tr>
+<tr><th scope="row">A known credential format sent outside its own host is denied</th><td class="no">No</td><td class="partial">With decryption</td></tr>
+<tr><th scope="row">Credentials injected by the proxy, never held by the agent</th><td class="no">No</td><td class="partial">With decryption (or plain HTTP to an internal host)</td></tr>
 <tr><th scope="row">Policy loosening needs a human confirmation</th><td class="no">No</td><td class="yes">Yes</td></tr>
 <tr><th scope="row">Every request traced to container, agent and session</th><td class="no">No</td><td class="yes">Yes</td></tr>
 </tbody>
@@ -150,12 +150,12 @@
     <li><span class="icon" aria-hidden="true">👤</span><h3>Never answered automatically</h3><p>Every held request is a <code>NeverAuto</code> ticket: <code>lox run</code>’s auto mode never answers it, a human does. Only a <code>free</code> rule you confirmed lets a request pass unasked.</p></li>
     <li><span class="icon" aria-hidden="true">🔑</span><h3>Credentials injected</h3><p>The gate can add an <code>Authorization</code> header for one host and port, from its own secrets file. The agent calls the API without ever holding the token.</p></li>
     <li><span class="icon" aria-hidden="true">🧱</span><h3>Fail closed</h3><p>No console: an ask is refused at once (<code>E_NO_CONSOLE</code>). An unknown source, a policy that does not decode, an error while deciding: deny.</p></li>
-    <li><span class="icon" aria-hidden="true">🧩</span><h3>Identical, not similar</h3><p>A decision is shared only by requests of identical fingerprint: container, method, URL, significant headers and normalised body.</p></li>
+    <li><span class="icon" aria-hidden="true">🧩</span><h3>Identical, not similar</h3><p>A decision is shared only by requests of identical fingerprint: container, method, URL, every end-to-end header and normalised body.</p></li>
     <li><span class="icon" aria-hidden="true">🕶️</span><h3>Masked previews</h3><p>The approval screen shows a masked preview of the body (PII detectors, terminal sanitising, first 1 KiB), never the clear body.</p></li>
     <li><span class="icon" aria-hidden="true">🔐</span><h3>CA key out of the data plane</h3><p>For TLS decryption, a separate <code>lockhttp signer</code> holds the CA key and issues leaf certificates. The gate never sees the key.</p></li>
-    <li><span class="icon" aria-hidden="true">🌗</span><h3>Shadow mode</h3><p><code>mode = "shadow"</code> logs what would have asked or been denied and lets it pass, so you can tune the policy first. The floor and secret checks stay on.</p></li>
+    <li><span class="icon" aria-hidden="true">🌗</span><h3>Shadow mode</h3><p><code>mode = "shadow"</code> logs what would have asked or been denied and lets it pass, so you can tune the policy first. The floor, the secret checks, the deny list and the company’s managed rules stay on.</p></li>
     <li><span class="icon" aria-hidden="true">🏷️</span><h3>Refusals the agent can act on</h3><p>Every refusal carries a stable code (<code>X-LockHTTP-Code</code>), a request id and a retry rule: retry, ask the user, or stop.</p></li>
-    <li><span class="icon" aria-hidden="true">📜</span><h3>Full audit</h3><p>Free and denied requests go to the gate’s daily JSONL log, asks to the console’s audit, joined by <code>request_id</code>. Never a body or a secret.</p></li>
+    <li><span class="icon" aria-hidden="true">📜</span><h3>Full audit</h3><p>Every decision and every hub ticket’s outcome goes to the gate’s daily JSONL log, by <code>request_id</code>; lockhub keeps its tickets. Never a body or a secret.</p></li>
   </ul>
 </section>
 
@@ -227,7 +227,7 @@ lea</code></pre>
       </nav>
     </div>
     <div class="wrap footer-bottom">
-      <p>Release v0.9.x. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p>Release v0.12.x. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
       <p><a href="https://lockfamily.dev">lockfamily.dev</a> · <a href="https://github.com/DavidGodefroid/lockfamily">the family on GitHub</a></p>
     </div>
   </footer>

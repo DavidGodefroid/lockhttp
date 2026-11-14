@@ -49,7 +49,7 @@ credentials, as on a host: the gate is accepted because uid 10003 is in
 | Volume | Mounted at | Shared by | Holds |
 |---|---|---|---|
 | `lockhttp-run` | `/run/lockhttp` | the console and the gate | the console's socket, `user-<profile>.sock` |
-| `lockhttp-home` | `/home/lockhttp` | the console account's commands only (`console`, `policy`) | the policy `~/.config/lockhttp/config.toml`, the approved policy and the console's audit (`~/.local/state/lockhttp/`) |
+| `lockhttp-home` | `/home/lockhttp` | the console account's commands only (`console`, `policy`) | the policy `~/.config/lockhttp/config.toml`, the approved policy and the console's log of policy reviews (`~/.local/state/lockhttp/`) |
 
 A named volume takes the owner and mode of the image's directory on first
 use, so `lockhttp-run` is `2710 lockhttp:lockhttp-clients` and
@@ -58,9 +58,11 @@ use, so `lockhttp-run` is `2710 lockhttp:lockhttp-clients` and
 ## Subcommand → `docker run`
 
 Every run is `docker run --rm $LOCKHTTP_DOCKER_ARGS ... IMAGE ...`, with
-`-it` when stdin and stdout are terminals, else `-i`.
+`-it` when stdin and stdout are terminals, else `-i` (`version` runs
+without either).
 `LOCKHTTP_DOCKER_ARGS` is split on spaces and never globbed. Every container
-the launcher starts (but `version` and `help`) is confined: `--cap-drop ALL
+the launcher starts is confined, except `version` and the catch-all row
+below (`help`, `hub-key` and any unknown command): `--cap-drop ALL
 --security-opt no-new-privileges --read-only --tmpfs
 /tmp:rw,nosuid,nodev,noexec,size=64m --pids-limit 256 --memory 1g`; the
 volumes stay writable. A path holding `:` (which `docker -v` cannot mount) is
@@ -68,15 +70,15 @@ refused.
 
 | Subcommand | Account | `docker run` arguments | Why |
 |---|---|---|---|
-| `console` | `lockhttp` (10021) | `--name lockhttp-console --log-driver none --user lockhttp -v lockhttp-run:/run/lockhttp -v lockhttp-home:/home/lockhttp` | the only container with `lockhttp-home`; no log driver, so `docker logs` keeps no approval screen; a stopped container named `lockhttp-console` is removed first |
-| `policy` | `lockhttp` | `--user lockhttp -v lockhttp-home:/home/lockhttp` | it reads or edits the policy in the console account's home |
+| `console` | `lockhttp` (10021) | `--name lockhttp-console --log-driver none --user lockhttp -v lockhttp-run:/run/lockhttp -v lockhttp-home:/home/lockhttp` | the only container with `lockhttp-home`; no log driver, so `docker logs` keeps no policy review screen; a stopped container named `lockhttp-console` is removed first |
+| `policy`, `managed` | `lockhttp` | `--user lockhttp -v lockhttp-home:/home/lockhttp` | it reads or edits the policy in the console account's home; `managed` reads the company's managed configuration as the console does |
 | `profile`, `init`, `doctor` | you (`id -u`:`id -g`) | `--user UID:GID -v ROOT:ROOT -w CWD`: ROOT is the project of the current directory (the nearest directory holding `.lockhttp/config.toml`, else `.git`, else the current directory), or `profile add`'s `--project DIR`, made absolute; under rootless Podman also `--userns keep-id`; no lockhttp volume | the launcher verbs `lox add` runs: they write and check the project's `.lockhttp/config.toml`, which is yours |
 | `gate` | `gate` (10003) | `--name lockhttp-gate --user gate -v lockhttp-run:/run/lockhttp -p ${LOCKHTTP_PUBLISH:-127.0.0.1:3130}:3130`, and `--listen 0.0.0.0:3130` unless you pass `--listen` | it needs the hub flags, and refuses to start without them; lea starts its own gate ([lea.md](lea.md)) |
 | `signer` | `signer` (10004) | `--user signer -v lockhttp-signer:/run/lockhttp-signer` | the socket directory (`signer:lockhttp-clients`, 2750, from the image) the gate shares; lea runs its own signer ([lea.md](lea.md#3-mitm-phase-2-optional)) |
 | `ca` | you (`id -u`:`id -g`) | `--user UID:GID -v DIR:DIR`, with `--dir DIR` made absolute (created 0700) and `--name $(uname -n)` unless you pass `--name`; under rootless Podman also `--userns keep-id`, so that the files are yours on the host | the CA files are yours; lea reads `ca.pem` and gives `ca-key.pem` to the signer alone |
 | `version` | `gate` | | prints `lockhttp launcher X (image I)`, then runs `I version` |
 | `update [vX.Y.Z]` | (host) | | [below](#install-and-update) |
-| anything else (`help`, ...) | `gate` (image default) | | |
+| anything else (`help`, `hub-key`, ...) | `gate` (image default) | not confined | |
 
 Invariants: the Docker socket is never mounted; only the console's
 container gets `lockhttp-home`; the gate shares only `lockhttp-run` with
@@ -122,11 +124,15 @@ The digest comes from `cosign verify` of the image against the release
 workflow run **for that very tag**
 (`https://github.com/DavidGodefroid/lockhttp/.github/workflows/release.yml@refs/tags/vX.Y.Z`,
 `--certificate-identity`, never a regular expression: a tag moved onto an
-older release's signed files does not verify), the same check as for `checksums.txt` (
-[SECURITY.md](../SECURITY.md#verifying-the-image)), so the launcher runs
+older release's signed files does not verify), the same check the launcher
+makes on `checksums.txt`, so the launcher runs
 `ghcr.io/davidgodefroid/lockhttp@sha256:...`, never a tag that could move.
-With `LOCKHTTP_SKIP_COSIGN=1` nothing is verified: `image_digest` stays
-empty and the launcher runs `ghcr.io/davidgodefroid/lockhttp:X.Y.Z`. A
+The manual check in [SECURITY.md](../SECURITY.md#verifying-the-image) uses
+`--certificate-identity-regexp` on the release workflow's tags instead,
+which accepts any release tag. Without cosign installed and with
+`LOCKHTTP_SKIP_COSIGN=1`, nothing is verified: `image_digest` stays empty
+and the launcher runs `ghcr.io/davidgodefroid/lockhttp:X.Y.Z`. With cosign
+installed, `LOCKHTTP_SKIP_COSIGN` has no effect. A
 launcher run from a clone (`launcher_version=dev`) runs the local image
 `lockhttp`.
 
@@ -164,9 +170,11 @@ installed launcher with a release's:
 6. run `docker pull` of the pinned image.
 
 Any failed check stops before the launcher is replaced. cosign is required;
-`LOCKHTTP_SKIP_COSIGN=1` is the explicit way past it, and then neither the
-signature nor the image is verified. Without a version, `update` takes the
-newest entry of the releases feed. A launcher installed by brew is updated
+when it is not installed, `LOCKHTTP_SKIP_COSIGN=1` is the explicit way past
+it, and then neither the signature nor the image is verified (the new
+launcher runs the image by its tag). With cosign installed the variable has
+no effect. Without a version, `update` takes the newest entry of the
+releases feed, pre-releases included. A launcher installed by brew is updated
 by `brew upgrade` instead.
 
 ## Platforms
@@ -282,8 +290,8 @@ The gate's container reaches the console only through the socket in
 gets that volume, nor the Docker socket.
 
 Your own account is another matter. Whoever can run `docker` on the host
-can `docker attach` to `lockhttp-console` and type an approval, `docker
-exec` into it, or open `lockhttp-home` in another container and edit the
+can `docker attach` to `lockhttp-console` and confirm a policy loosening,
+`docker exec` into it, or open `lockhttp-home` in another container and edit the
 approved policy. An agent that runs shell commands in an account allowed to
 use Docker can do the same. Keep the agent in a container without the
 Docker socket, as lea does: it then reaches the network only through the

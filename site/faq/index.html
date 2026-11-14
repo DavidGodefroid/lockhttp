@@ -85,7 +85,7 @@
 <section aria-labelledby="decrypt">
   <h2 id="decrypt">Does lockhttp decrypt my traffic?</h2>
   <p>Only if you turn it on. Without it, lockhttp decides HTTPS on the host name and port (<code>CONNECT</code> and SNI).</p>
-  <p>With a CA made per installation (<code>lockhttp ca init</code>), trusted only inside lea’s containers, and the signer that holds its key, the gate decrypts and decides each request. Hosts that pin their certificates go in a splice list and stay decided at the domain.</p>
+  <p>With a CA made per installation (<code>lockhttp ca init --dir DIR</code>), trusted only inside lea’s containers, and the signer that holds its key, the gate decrypts and decides each request. Hosts that pin their certificates go in a splice list and stay decided at the domain.</p>
 </section>
 <section aria-labelledby="self">
   <h2 id="self">Can the agent approve its own request?</h2>
@@ -99,7 +99,7 @@
 </section>
 <section aria-labelledby="tokens">
   <h2 id="tokens">Can the agent call an API without holding its token?</h2>
-  <p>Yes, since v0.8.0. A policy <code>inject</code> entry has the gate add the credential header for one exact host and port, from its own secrets file. <a href="../how-it-works/#inject">How it works</a>.</p>
+  <p>Yes, since v0.8.0, with TLS decryption (or plain HTTP to an internal host). A policy <code>inject</code> entry has the gate add the credential header for one exact host and port, from its own secrets file; on a tunnel it does not decrypt, it adds nothing. <a href="../how-it-works/#inject">How it works</a>.</p>
 </section>
 <section aria-labelledby="mcp">
   <h2 id="mcp">Is there an MCP server?</h2>
@@ -147,7 +147,7 @@
       </nav>
     </div>
     <div class="wrap footer-bottom">
-      <p>Release v0.9.x. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p>Release v0.12.x. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
       <p><a href="https://lockfamily.dev">lockfamily.dev</a> · <a href="https://github.com/DavidGodefroid/lockfamily">the family on GitHub</a></p>
     </div>
   </footer>

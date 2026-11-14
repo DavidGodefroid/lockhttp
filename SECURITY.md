@@ -1,9 +1,9 @@
 # Security policy
 
 LockHTTP is the proxy every outbound HTTP(S) request of an AI agent goes
-through. It runs in Docker: its approval console runs in a container of its
-own, under a separate account, which the agent cannot reach. A flaw in
-either is a security issue.
+through. It runs in Docker: its policy console runs in a container of its
+own, under a separate account, which the agent cannot reach, and the human
+approves held requests on lockhub. A flaw in either is a security issue.
 
 ## Reporting a vulnerability
 
@@ -41,8 +41,9 @@ Issues of interest include, among others:
   or to reach the console or its socket;
 - a secret reaching argv, the environment, a file, a log, the socket or an
   error message;
-- agent- or server-controlled text that can spoof the console's approval
-  screen;
+- agent- or server-controlled text that can spoof the approval screen of a
+  hub ticket (the request the gate shows on a lockhub facade) or the
+  console's policy review;
 - a decision that is not traced, or traced to the wrong container, agent or
   session.
 
@@ -72,16 +73,20 @@ cosign verify-blob --bundle checksums.txt.sigstore.json \
 sha256sum -c --ignore-missing checksums.txt
 ```
 
-The launcher's `lockhttp update` runs the same check and refuses to update
-without cosign (`LOCKHTTP_SKIP_COSIGN=1` is its explicit way past it).
+The launcher's `lockhttp update` runs a stricter check, with
+`--certificate-identity` naming the workflow run for the very tag it
+installs, and refuses to update without cosign (`LOCKHTTP_SKIP_COSIGN=1`
+is its explicit way past it when cosign is not installed).
 
 ## Verifying the image
 
 The release image, `ghcr.io/davidgodefroid/lockhttp:X.Y.Z` (amd64 and
 arm64, one manifest), is signed with cosign, keylessly and by digest, by the
-same workflow run for the release's tag. The installers and `lockhttp update`
-verify it and write its digest into the launcher (`image_digest=`), which
-runs the image by that digest, never by its tag. By hand:
+same workflow run for the release's tag. Lock Family's installer and
+`lockhttp update` verify it and write its digest into the launcher
+(`image_digest=`); the brew formula writes the digest the tap verified with
+cosign when it was bumped. The launcher runs the image by that digest,
+never by its tag. By hand:
 
 ```sh
 cosign verify ghcr.io/davidgodefroid/lockhttp:X.Y.Z \
