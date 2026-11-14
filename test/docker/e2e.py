@@ -4,8 +4,8 @@ docs/docker.md.
 
 The console runs in a pseudo-terminal this script answers (y to every
 prompt). The console is lockkit's policy-only console: it starts without
-hub flags, as `lox run` runs it (`console`, or `console --profile P`), and
-refuses them. The gate is hub-attached only: without its hub flags the
+hub flags, as `lox run` runs it (`console`, or `console --profile P`, with
+or without `--runtime-gids G`), and refuses them. The gate is hub-attached only: without its hub flags the
 launcher's gate refuses to start ("launched by `lox run` only"). A request
 through a gate that asks a hub is tested end to end by lockhub's e2e,
 which runs the lockhttp lock under `lox run`. Needs docker. Uses the
@@ -175,9 +175,9 @@ def main():
 
         # The console starts without hub flags, as lox run runs it (lockhub
         # internal/family/compose.go gives a gate kind's console `console`,
-        # plus `--profile P` when the lock names one): it approves its first
-        # policy, listens, and asks no hub.
-        for args in ([], ["--profile", "default"]):
+        # plus `--profile P` when the lock names one, and `--runtime-gids G`,
+        # lockhub#212): it approves its first policy, listens, and asks no hub.
+        for args in ([], ["--profile", "default"], ["--runtime-gids", "999,4242"], ["--profile", "default", "--runtime-gids", "999"]):
             console = Console(*args)
             check(console.wait_for("Listening on"), f"the console listens without hub flags ({' '.join(['console', *args])})", console.text())
             check(console.wait_for("Policy only"), "the console is policy-only", console.text())
@@ -216,6 +216,9 @@ def main():
         # The hub flags lox run gives the other locks' consoles are refused.
         r = launcher("console", "--hub", "http://lockhub:8443", "--hub-plain-http", "--hub-key-file", "/run/lockfamily/hub.pub", "--instance", "web", check_=False)
         check(r.returncode != 0 and "-hub" in r.stderr, "the console takes no hub flags", r.stdout + r.stderr)
+        # An invalid --runtime-gids is refused, never ignored.
+        r = launcher("console", "--runtime-gids", "docker", check_=False)
+        check(r.returncode == 3 and "--runtime-gids" in r.stderr, "the console refuses an invalid --runtime-gids", f"exit {r.returncode}\n{r.stdout}{r.stderr}")
 
         # The gate does not start without the hub: lox run gives its flags.
         r = launcher("gate", check_=False)

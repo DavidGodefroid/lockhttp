@@ -6,6 +6,18 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `lockhttp console` takes `--runtime-gids GID,...` (lockkit's hub flags,
+  `console.HubOptions`), as the other locks' consoles do (#69,
+  lockhub#212): a client of the console's socket holding one of those gids
+  is unconfined (`runtime_group`), refused with `CodeUnconfined` unless the
+  profile sets `unconfined = true` (non-production). An invalid list is a
+  usage error (exit 3), and the other hub flags (`--hub`, `--instance`,
+  ...) are still refused: the console is policy-only. This release is the
+  first that takes the flag: lockhub adds `"lockhttp": "<this release>"`
+  to `family.RuntimeGIDsSince`.
+
 ## [0.11.0] - 2026-11-14
 
 Built on lockkit v0.20.0. Needs lea v0.16.0 or later for `LEA_LOCKHTTP=1`.

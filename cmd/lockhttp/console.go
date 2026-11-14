@@ -33,15 +33,26 @@ func (e env) configPath(flagVal string) (string, error) {
 // account's own session (`lox run` runs it). It serves the approved policy
 // to the gate and asks its human about every loosening; the gate asks
 // lockhub, never this console, about held requests. It is lockkit's
-// policy-only console: it takes no hub flags (lox run passes none) and
-// approves no request.
+// policy-only console and approves no request. It registers lockkit's hub
+// flags as the other locks' consoles do, for --runtime-gids (lockhub#212):
+// a socket peer holding one of those gids is unconfined (runtime_group).
+// The others (--hub, --instance, ...) are refused: it has no hub.
 func runConsole(e env, args []string) int {
-	const usage = "lockhttp console [--profile P] [--config FILE]"
+	const usage = "lockhttp console [--profile P] [--config FILE] [--runtime-gids GID,...]"
 	fs := flag.NewFlagSet("console", flag.ContinueOnError)
 	profile := fs.String("profile", "default", "profile to serve")
 	cfgFlag := fs.String("config", "", "policy file (default: ~/.config/lockhttp/config.toml)")
+	var hub console.HubOptions
+	hub.Register(fs)
 	if !parse(e, fs, "console", usage, args) {
 		return exitUsage
+	}
+	// Refused before the terminal or the policy is touched, never ignored.
+	if hub.Enabled() {
+		return usageFail(e, "console", usage, "a policy-only console takes no hub flags (-hub, -hub-key-file, -instance, ...): its gate asks lockhub")
+	}
+	if _, err := console.ParseGIDs(hub.RuntimeGIDs); err != nil {
+		return usageFail(e, "console", usage, "--runtime-gids is not a comma-separated list of gids")
 	}
 	if !e.tty {
 		fmt.Fprintln(e.stderr, "lockhttp console: must run in a terminal: it asks the human about policy changes")
@@ -67,7 +78,7 @@ func runConsole(e env, args []string) int {
 	}
 	err = runFn(ctx, p, be, console.Options{
 		Profile: *profile, IO: term, TTY: os.Stdin,
-		Sanitizer: httpconsole.Sanitizer(), PolicyOnly: true,
+		Sanitizer: httpconsole.Sanitizer(), PolicyOnly: true, Hub: hub,
 	})
 	if err != nil {
 		fmt.Fprintln(e.stderr, "lockhttp console:", err)

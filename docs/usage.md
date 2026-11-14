@@ -134,7 +134,7 @@ console.
 ## `lockhttp console`
 
 ```
-lockhttp console [--profile P] [--config FILE]
+lockhttp console [--profile P] [--config FILE] [--runtime-gids GID,...]
 ```
 
 The policy console: lockkit's console, serving `policy.get` to the gate.
@@ -145,14 +145,17 @@ console account. Under `lox run` it runs in its own compose service, with
 the policy copied from `<workspace>/.lockhttp/` (`lox attach <instance>`
 attaches its terminal); the launcher runs it in the container
 `lockhttp-console`, the only one that mounts `lockhttp-home`. It is
-lockkit's policy-only console: it takes no hub flags (`lox run` passes
-none to it, only to the gate) and approves no request; one that reached
-it would be refused. The gate, not the console, needs the hub flags.
+lockkit's policy-only console: of lockkit's hub flags it takes
+`--runtime-gids` only (`lox run` passes the others to the gate) and
+approves no request; one that reached it would be refused. `--hub`,
+`--hub-key-file`, `--instance` and the other hub flags are a usage error
+(exit 3). The gate, not the console, needs the hub flags.
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--profile P` | `default` | Profile to serve. Its socket is `user-P.sock` in the socket directory. |
 | `--config FILE` | `~/.config/lockhttp/config.toml` | The policy file. |
+| `--runtime-gids GID,...` | none | The gids owning the host's container runtime sockets (written by `lox run`, lockhub#212). A client of the socket holding one is unconfined (`runtime_group`): refused with `CodeUnconfined` unless the profile sets `unconfined = true` (never on a production profile). The console adds those of its own machine. A value that is not a comma-separated list of gids is a usage error (exit 3), never ignored. |
 
 At the first start of a profile you review its whole policy (`Apply these
 changes? [y/N]`); at a later start, a loosening made since the last
