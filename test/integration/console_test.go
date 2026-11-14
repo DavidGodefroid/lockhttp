@@ -21,6 +21,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -97,6 +99,13 @@ func startConsoleWith(t *testing.T, h *human, conf string) context.CancelFunc {
 // startConsoleConf starts the console on the policy text conf as it is.
 func startConsoleConf(t *testing.T, h *human, conf string) context.CancelFunc {
 	t.Helper()
+	return startConsoleGIDs(t, h, conf, "")
+}
+
+// startConsoleGIDs is startConsoleConf with --runtime-gids gids, as lox run
+// passes them (lockhub#212).
+func startConsoleGIDs(t *testing.T, h *human, conf, gids string) context.CancelFunc {
+	t.Helper()
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "config.toml")
 	if err := os.WriteFile(cfg, []byte(conf), 0o600); err != nil {
@@ -108,6 +117,7 @@ func startConsoleConf(t *testing.T, h *human, conf string) context.CancelFunc {
 	go func() {
 		done <- console.Run(ctx, product.P, httpconsole.New(httpconsole.Options{Profile: "default", Config: cfg}), console.Options{
 			Profile: "default", IO: h, StateDir: filepath.Join(dir, "state"), Quantum: -1, PolicyOnly: true,
+			Hub:    console.HubOptions{RuntimeGIDs: gids},
 			Harden: func() error { return nil },
 			Isolation: &console.IsolationEnv{
 				AllowSameUser: true,
@@ -337,6 +347,69 @@ func TestUnconfinedGateRefused(t *testing.T) {
 	var rpc *ipc.RPCError
 	if !errors.As(err, &rpc) || rpc.Code != ipc.CodeUnconfined || !strings.Contains(rpc.Message, "unconfined = true") {
 		t.Fatalf("unconfined gate: %v", err)
+	}
+}
+
+// notHeldGID is a gid this process does not hold.
+func notHeldGID(t *testing.T) int {
+	t.Helper()
+	groups, err := os.Getgroups()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for g := 4242; ; g++ {
+		if g != os.Getgid() && !slices.Contains(groups, g) {
+			return g
+		}
+	}
+}
+
+// holdsHostRuntimeGID reports whether this process holds a gid owning a
+// runtime socket of this machine (confine.RuntimeGIDs).
+func holdsHostRuntimeGID(t *testing.T) bool {
+	t.Helper()
+	groups, err := os.Getgroups()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range confine.RuntimeGIDs() {
+		if g == os.Getgid() || slices.Contains(groups, g) {
+			return true
+		}
+	}
+	return false
+}
+
+// The console started with --runtime-gids, as lox run starts it, serves the
+// gate when the gate holds none of them (lockhub#212).
+func TestGateWithRuntimeGIDsConsole(t *testing.T) {
+	setRuntime(t)
+	h := &human{answers: make(chan string, 8)}
+	stop := startConsoleGIDs(t, h, onHost(policyText), strconv.Itoa(notHeldGID(t)))
+	defer stop()
+	addr, _, _ := startGate(t, backend(t))
+	if resp, body := get(t, client(addr), "GET", "http://trusted.test/a", ""); resp.StatusCode != 200 || body != "ok GET trusted.test/a " {
+		t.Fatalf("trusted: %s %q", resp.Status, body)
+	}
+	// The console adds its machine's runtime gids: on a host where this
+	// process is in the docker group (a CI runner), runtime_group is right.
+	if !holdsHostRuntimeGID(t) && strings.Contains(h.text(), "runtime_group") {
+		t.Fatalf("a gate holding none of the gids is runtime_group:\n%s", h.text())
+	}
+}
+
+// A gate holding one of the --runtime-gids is unconfined (runtime_group),
+// confined or not by its own report: without unconfined = true the console
+// refuses it with CodeUnconfined (lockkit#133).
+func TestRuntimeGroupGateRefused(t *testing.T) {
+	setRuntime(t)
+	h := &human{answers: make(chan string, 8)}
+	stop := startConsoleGIDs(t, h, policyText, strconv.Itoa(notHeldGID(t))+","+strconv.Itoa(os.Getgid()))
+	defer stop()
+	_, err := (&gate.LockkitConsole{Profile: "default"}).Policy(context.Background())
+	var rpc *ipc.RPCError
+	if !errors.As(err, &rpc) || rpc.Code != ipc.CodeUnconfined || !strings.Contains(rpc.Message, "runtime_group") {
+		t.Fatalf("runtime group gate: %v", err)
 	}
 }
 

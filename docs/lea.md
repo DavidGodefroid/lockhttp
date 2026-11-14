@@ -41,7 +41,7 @@ against. Contract version: **1** (the `version` field of every file below).
    lockhttp signer  (uid 10004 "signer") ◀─ leaf certificates ─ gate (socket volume)
           │ volume <project>_<instance>-run: /run/lockhttp/user-<profile>.sock
  console container  (lox run's service lock-<instance>)
-   lockhttp console --profile <profile>  (uid 10021 "lockhttp")
+   lockhttp console --profile <profile> [--runtime-gids <gid,...>]  (uid 10021 "lockhttp")
           ·
    the gate ──▶ lockhub (lox run's network <project>_lockhub; only <prefix>-proxy joins it)
 ```
@@ -55,6 +55,15 @@ against. Contract version: **1** (the `version` field of every file below).
 | Start the hub and the console | `lox run` | In a terminal of its own, outside lea and any agent. Runs the hub and the lockhttp console (uid 10021, no log driver) in compose services, makes the gate's instance key in the gate's own volume (`<project>_<instance>-gate`) and registers it with the hub, writes `up.json`, and serves the decisions in its terminal. `lox attach <instance>` attaches the console's terminal (its first policy review). |
 
 lea never starts the console and never mounts the console's home.
+
+`lox run` gives the console `--runtime-gids`, the gids owning the host's
+container runtime sockets (lockhub#212), as it does the other locks'
+consoles: a client of the console's socket holding one of them is
+unconfined (`runtime_group`) and refused with `CodeUnconfined` unless the
+profile sets `unconfined = true` (non-production). The gate, uid 10003 in
+the image, holds none. lockhttp takes the flag from v0.12.0; an invalid
+list stops the console (usage error), never ignored. See
+[usage.md](usage.md#lockhttp-console).
 
 ## 2. The gate container
 
