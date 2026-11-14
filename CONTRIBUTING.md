@@ -119,6 +119,14 @@ on a machine with a lockhttp setup you want to keep. CI runs it in the
   policy; fail closed on anything ambiguous.
 - One logical change per pull request, with a commit message that explains
   why.
+- Docs are published at [lockfamily.dev/docs](https://lockfamily.dev/docs/)
+  from this repo's Markdown (`README.md`, `CHANGELOG.md`, `docs/**`), and
+  `.github/workflows/docs-dispatch.yml` asks lockfamily to rebuild them when
+  they change on `main` or a release is published. Adding a file under
+  `docs/`, or renaming or removing a README H2 section, needs a matching
+  change to
+  [lockfamily's `docs-site/nav.toml`](https://github.com/DavidGodefroid/lockfamily/blob/main/docs-site/nav.toml):
+  open a lockfamily PR, or the nightly docs build fails.
 
 Pull requests target `main`, which is protected:
 
