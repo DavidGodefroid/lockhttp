@@ -471,7 +471,7 @@ pinned image ([docker.md](docker.md#install-and-update)).
 
 | File | Where | Owner | Content |
 |---|---|---|---|
-| `/usr/local/bin/lockhttp` | host | root | the launcher |
+| `lockhttp` in brew's `bin` or `~/.local/bin` | host | you | the launcher |
 | `/usr/local/bin/lockhttp` | image | root | the binary, the image's entrypoint |
 | `/etc/lockhttp/system.toml` | image | root, `0644` | separated setup: console account, clients group, socket directory, `allowed_uids` (build arg `ALLOWED_UIDS`) |
 | `/run/lockhttp/` | volume `lockhttp-run` | `lockhttp:lockhttp-clients`, `2710` | the console's sockets, `user-<profile>.sock` |

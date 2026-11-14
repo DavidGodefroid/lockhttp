@@ -650,26 +650,26 @@ func TestLauncherWithoutDocker(t *testing.T) {
 func TestLauncherUpdate(t *testing.T) {
 	f := newLauncherFixture(t)
 	f.setVersion(t, "0.9.0")
-	rel := newShFixture(t)
+	rel := newReleaseFixture(t)
 	rel.cosign(t, true)
 	for _, tool := range []string{"curl", "cosign"} {
 		if err := os.Symlink(filepath.Join(rel.bin, tool), filepath.Join(f.bin, tool)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	out, calls, err := f.run(t, f.project, nil, "update", "v"+shVersion)
+	out, calls, err := f.run(t, f.project, nil, "update", "v"+releaseVersion)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	b, _ := os.ReadFile(f.script)
-	if !strings.Contains(string(b), "\nlauncher_version="+shVersion+"\n") || !strings.Contains(string(b), "\nimage_digest="+fakeDigest+"\n") {
+	if !strings.Contains(string(b), "\nlauncher_version="+releaseVersion+"\n") || !strings.Contains(string(b), "\nimage_digest="+fakeDigest+"\n") {
 		t.Fatalf("launcher not replaced:\n%s", out)
 	}
 	if len(calls) != 1 || !hasSeq(calls[0], "pull", "ghcr.io/davidgodefroid/lockhttp@"+fakeDigest) {
 		t.Errorf("calls %q", calls)
 	}
 	args, _ := os.ReadFile(rel.cosignArgs)
-	if !strings.Contains(string(args), "--certificate-identity\n"+releaseIdentity("v"+shVersion)+"\n") {
+	if !strings.Contains(string(args), "--certificate-identity\n"+releaseIdentity("v"+releaseVersion)+"\n") {
 		t.Errorf("cosign args %s", args)
 	}
 }
@@ -677,15 +677,50 @@ func TestLauncherUpdate(t *testing.T) {
 func TestLauncherUpdateRefusesABadSignature(t *testing.T) {
 	f := newLauncherFixture(t)
 	f.setVersion(t, "0.9.0")
-	rel := newShFixture(t)
+	rel := newReleaseFixture(t)
 	rel.cosign(t, false)
 	for _, tool := range []string{"curl", "cosign"} {
 		if err := os.Symlink(filepath.Join(rel.bin, tool), filepath.Join(f.bin, tool)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	out, calls, err := f.run(t, f.project, nil, "update", "v"+shVersion)
+	out, calls, err := f.run(t, f.project, nil, "update", "v"+releaseVersion)
 	if err == nil || !strings.Contains(out, "does not verify") || len(calls) != 0 {
+		t.Fatalf("%v, calls %q\n%s", err, calls, out)
+	}
+	b, _ := os.ReadFile(f.script)
+	if !strings.Contains(string(b), "\nlauncher_version=0.9.0\n") {
+		t.Fatal("launcher replaced")
+	}
+}
+
+// update refuses an archive that does not match checksums.txt, and keeps the
+// launcher.
+func TestLauncherUpdateRefusesABadChecksum(t *testing.T) {
+	f := newLauncherFixture(t)
+	f.setVersion(t, "0.9.0")
+	rel := newReleaseFixture(t)
+	rel.cosign(t, true)
+	for _, tool := range []string{"curl", "cosign"} {
+		if err := os.Symlink(filepath.Join(rel.bin, tool), filepath.Join(f.bin, tool)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := os.ReadDir(rel.release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sums string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tar.gz") {
+			sums += strings.Repeat("0", 64) + "  " + e.Name() + "\n"
+		}
+	}
+	if err := os.WriteFile(filepath.Join(rel.release, "checksums.txt"), []byte(sums), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, calls, err := f.run(t, f.project, nil, "update", "v"+releaseVersion)
+	if err == nil || !strings.Contains(out, "checksum mismatch") || len(calls) != 0 {
 		t.Fatalf("%v, calls %q\n%s", err, calls, out)
 	}
 	b, _ := os.ReadFile(f.script)
@@ -699,14 +734,14 @@ func TestLauncherUpdateRefusesABadSignature(t *testing.T) {
 func TestLauncherUpdateRefusesAnUnverifiedImage(t *testing.T) {
 	f := newLauncherFixture(t)
 	f.setVersion(t, "0.9.0")
-	rel := newShFixture(t)
+	rel := newReleaseFixture(t)
 	rel.cosignImages(t, true, false)
 	for _, tool := range []string{"curl", "cosign"} {
 		if err := os.Symlink(filepath.Join(rel.bin, tool), filepath.Join(f.bin, tool)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	out, calls, err := f.run(t, f.project, nil, "update", "v"+shVersion)
+	out, calls, err := f.run(t, f.project, nil, "update", "v"+releaseVersion)
 	if err == nil || !strings.Contains(out, "does not verify") || len(calls) != 0 {
 		t.Fatalf("%v, calls %q\n%s", err, calls, out)
 	}

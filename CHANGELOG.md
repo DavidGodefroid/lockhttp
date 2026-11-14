@@ -6,6 +6,18 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- `scripts/install.sh` is removed (#40). Install the launcher with
+  `brew install davidgodefroid/tap/lockhttp` (or `.../lockfamily`) or
+  lockfamily's `install.sh` (`~/.local/bin`). lea's `LEA_LOCKHTTP=1` uses
+  that launcher from lea v0.16.0 (lea#411), the new minimum lea version
+  for lockhttp; older lea accept only the root-owned
+  `/usr/local/bin/lockhttp` that only `install.sh` put there. A launcher
+  already in `/usr/local/bin` keeps working, and `lockhttp update` still
+  updates it. The release archives and `lockhttp update` stay: lockfamily's
+  `install.sh` takes the launcher from the archives.
+
 ## [0.10.0] - 2026-11-14
 
 Built on lockkit v0.20.0.

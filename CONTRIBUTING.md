@@ -78,14 +78,14 @@ Never point a test at a real remote service.
 
 ### Launcher tests
 
-`scripts/lockhttp` and `scripts/install.sh` are tested by `go test` in
-`cmd/lockhttp` (Unix only): `launcher_test.go` runs the launcher with a fake
-`docker` that records each call (the account, the volumes and the flags of
-every subcommand, `update`); `installsh_test.go` runs `install.sh` against a
-fake release and a fake `cosign`. They run with the unit tests:
+`scripts/lockhttp` is tested by `go test` in `cmd/lockhttp` (Unix only):
+`launcher_test.go` runs the launcher with a fake `docker` that records each
+call (the account, the volumes and the flags of every subcommand), and
+`update` against the fake release and fake `cosign` of `release_test.go`.
+They run with the unit tests:
 
 ```sh
-go test ./cmd/lockhttp -run 'Launcher|InstallSh'
+go test ./cmd/lockhttp -run Launcher
 ```
 
 When you change what a subcommand runs, change the table in
@@ -182,7 +182,7 @@ The release chain is pinned end to end:
 - `release.yml` pins the GoReleaser, cosign and syft versions and does not
   use `check-latest`;
 - the cosign identity is the release workflow run for a version tag, the
-  same in `scripts/install.sh`, `scripts/lockhttp`, `SECURITY.md` and
+  same in `scripts/lockhttp`, `SECURITY.md` and
   `.goreleaser.yaml`;
 - the `Dockerfile` pins its base images by digest: update the tag and the
   digest together.

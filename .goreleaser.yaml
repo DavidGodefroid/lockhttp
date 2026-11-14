@@ -35,7 +35,8 @@ archives:
     formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     # Explicit list: docs/ also holds local-only material that must never ship.
-    # scripts/lockhttp is the launcher install.sh installs on the host: it
+    # scripts/lockhttp is the launcher brew and lockfamily's install.sh
+    # install on the host: it
     # runs every command in the release image (docs/docker.md). The binary
     # is the image's; it serves no host install.
     files:

@@ -50,7 +50,7 @@ against. Contract version: **1** (the `version` field of every file below).
 
 | Step | Command | Notes |
 |---|---|---|
-| Install the launcher | `scripts/install.sh` ([docker.md](docker.md#install-and-update)) | `/usr/local/bin/lockhttp`, root-owned. It checks the cosign signatures and writes the verified image digest into itself (`image_digest=` line). |
+| Install the launcher | `brew install davidgodefroid/tap/lockfamily`, or lockfamily's `install.sh` ([install.md](install.md#install)) | In brew's `bin` or `~/.local/bin`, with the verified image digest written into it (`image_digest=` line). lea v0.16.0 or later: lea runs that image as the gate only if the digest matches its pin in `config/locks.lock` or `cosign verify` proves the release signed it (keep `cosign` installed). |
 | The lock and its policy | `lox add lockhttp <instance>`, the policy in `<workspace>/.lockhttp/config.toml` | lockhub's `lox`. lea never writes the policy. |
 | Start the hub and the console | `lox run` | In a terminal of its own, outside lea and any agent. Runs the hub and the lockhttp console (uid 10021, no log driver) in compose services, makes the gate's instance key in the gate's own volume (`<project>_<instance>-gate`) and registers it with the hub, writes `up.json`, and serves the decisions in its terminal. `lox attach <instance>` attaches the console's terminal (its first policy review). |
 
