@@ -6,6 +6,10 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-14
+
+Built on lockkit v0.20.0. Needs lea v0.16.0 or later for `LEA_LOCKHTTP=1`.
+
 ### Breaking
 
 - `scripts/install.sh` is removed (#40). Install the launcher with
@@ -489,7 +493,8 @@ separate signer, Claude API allowlist) available behind `--ca-cert` and
 - Release pipeline: goreleaser, cosign keyless signatures, SBOMs,
   SHA-pinned actions, `scripts/install.sh` with signature verification.
 
-[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/DavidGodefroid/lockhttp/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.11.0
 [0.10.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.10.0
 [0.9.1]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.9.1
 [0.9.0]: https://github.com/DavidGodefroid/lockhttp/releases/tag/v0.9.0
