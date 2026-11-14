@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>lockhttp: your agent browses, you hold the key</title>
-  <meta name="description" content="lockhttp is the proxy every outbound HTTP(S) request of an AI agent goes through: reads of trusted hosts pass, and anything that sends data or reaches an unknown host waits for your approval.">
+  <meta name="description" content="lockhttp is the proxy every outbound HTTP(S) request of an AI agent running in lea goes through: reads of trusted hosts pass, and anything that sends data or reaches an unknown host waits for your approval.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#f4efe4" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#16140f" media="(prefers-color-scheme: dark)">
@@ -12,7 +12,7 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="lockhttp">
   <meta property="og:title" content="lockhttp: your agent browses, you hold the key">
-  <meta property="og:description" content="lockhttp is the proxy every outbound HTTP(S) request of an AI agent goes through: reads of trusted hosts pass, and anything that sends data or reaches an unknown host waits for your approval.">
+  <meta property="og:description" content="lockhttp is the proxy every outbound HTTP(S) request of an AI agent running in lea goes through: reads of trusted hosts pass, and anything that sends data or reaches an unknown host waits for your approval.">
   <meta property="og:url" content="https://lockhttp.com/">
   <meta property="og:image" content="https://lockhttp.com/assets/og.png">
   <meta property="og:image:type" content="image/png">
@@ -22,7 +22,7 @@
   <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="lockhttp: your agent browses, you hold the key">
-  <meta name="twitter:description" content="lockhttp is the proxy every outbound HTTP(S) request of an AI agent goes through: reads of trusted hosts pass, and anything that sends data or reaches an unknown host waits for your approval.">
+  <meta name="twitter:description" content="lockhttp is the proxy every outbound HTTP(S) request of an AI agent running in lea goes through: reads of trusted hosts pass, and anything that sends data or reaches an unknown host waits for your approval.">
   <meta name="twitter:image" content="https://lockhttp.com/assets/og.png">
   <meta name="twitter:image:alt" content="lockhttp: your agent browses, you hold the key.">
   <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
@@ -58,7 +58,7 @@
   <div class="hero-text">
     <p class="eyebrow"><span class="badge">v0.9</span>A Lock of the Lock&nbsp;Family · open&nbsp;source · Apache&nbsp;2.0</p>
     <h1 id="hero-title">Your agent browses. <span class="key">You hold the key.</span></h1>
-    <p class="lead">Every outbound HTTP(S) request of your AI agent goes through lockhttp. Reads of trusted hosts pass; anything that sends data or reaches an unknown host waits for you.</p>
+    <p class="lead">Every outbound HTTP(S) request of your AI agent running in <a href="https://github.com/DavidGodefroid/lea">lea</a> goes through lockhttp. Reads of trusted hosts pass; anything that sends data or reaches an unknown host waits for you.</p>
     <div class="install">
       <div class="install-head"><span>Install with Homebrew</span></div>
       <pre tabindex="0" aria-label="Install commands"><code><span class="cmd">brew trust davidgodefroid/tap</span>
@@ -161,7 +161,7 @@
 
 <section aria-labelledby="quick-start">
   <h2 id="quick-start">Quick start</h2>
-  <p class="prose">lockhttp is a proxy, so it works with any agent and any HTTP client. It needs <a href="https://github.com/DavidGodefroid/lea">lea</a>, which runs agents (Claude Code) in containers whose only way out is its proxy.</p>
+  <p class="prose">lockhttp is a proxy, so it works with any agent and any HTTP client, as long as they run inside <a href="https://github.com/DavidGodefroid/lea">lea</a>, which runs agents (Claude Code) in containers whose only way out is its proxy. An agent started directly on your machine, outside lea, does not go through lockhttp, and lockhttp does not protect it.</p>
   <ol class="steps prose">
     <li><p>Install with Homebrew (the box above). Docker must be running.</p></li>
     <li><p>In lea’s projects directory, <code>lox add lockhttp</code> asks for the lock’s name, writes the policy and starts its console.</p>

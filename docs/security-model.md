@@ -1,6 +1,7 @@
 # LockHTTP security model
 
-LockHTTP puts every outbound HTTP(S) request of an AI agent through a gate
+LockHTTP puts every outbound HTTP(S) request of an AI agent running in
+[lea](https://github.com/DavidGodefroid/lea) through a gate
 that decides it with a policy only a human loosens, and holds what needs a
 human until that human answers in a console the agent cannot reach. This
 document says what it protects, how, and where it stops. It describes
@@ -34,7 +35,10 @@ image, through the launcher.
   dependency it runs), and hostile web content that steers it.
 - **Out of scope:** a compromised host or console account, root, any
   account that may run `docker` on the host (see
-  [Docker](#what-docker-does-and-does-not-separate)), Anthropic itself, an attacker on the network upstream of the proxy container.
+  [Docker](#what-docker-does-and-does-not-separate)), Anthropic itself, an attacker on the network upstream of the proxy container,
+  and any agent that does not run inside lea: an agent started directly on
+  the host never goes through the gate, so LockHTTP sees and protects none
+  of its requests.
 
 ## Boundaries
 
