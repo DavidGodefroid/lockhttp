@@ -234,5 +234,11 @@ The site, [lockhttp.com](https://lockhttp.com), is built from [`site/`](site/).
 
 - **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md). Build with
   `CGO_ENABLED=0 go build ./cmd/lockhttp` (Go 1.26+).
+- **Docs:** docs are published at
+  [lockfamily.dev/docs](https://lockfamily.dev/docs/) from this repo's
+  Markdown. Adding a file under `docs/`, or renaming or removing a README H2
+  section, needs a matching change to
+  [lockfamily's `docs-site/nav.toml`](https://github.com/DavidGodefroid/lockfamily/blob/main/docs-site/nav.toml):
+  open a lockfamily PR, or the nightly docs build fails.
 - **Security:** report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 - **License:** Apache License 2.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE).
