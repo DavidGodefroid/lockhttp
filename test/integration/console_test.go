@@ -364,6 +364,22 @@ func notHeldGID(t *testing.T) int {
 	}
 }
 
+// holdsHostRuntimeGID reports whether this process holds a gid owning a
+// runtime socket of this machine (confine.RuntimeGIDs).
+func holdsHostRuntimeGID(t *testing.T) bool {
+	t.Helper()
+	groups, err := os.Getgroups()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range confine.RuntimeGIDs() {
+		if g == os.Getgid() || slices.Contains(groups, g) {
+			return true
+		}
+	}
+	return false
+}
+
 // The console started with --runtime-gids, as lox run starts it, serves the
 // gate when the gate holds none of them (lockhub#212).
 func TestGateWithRuntimeGIDsConsole(t *testing.T) {
@@ -375,7 +391,9 @@ func TestGateWithRuntimeGIDsConsole(t *testing.T) {
 	if resp, body := get(t, client(addr), "GET", "http://trusted.test/a", ""); resp.StatusCode != 200 || body != "ok GET trusted.test/a " {
 		t.Fatalf("trusted: %s %q", resp.Status, body)
 	}
-	if strings.Contains(h.text(), "runtime_group") {
+	// The console adds its machine's runtime gids: on a host where this
+	// process is in the docker group (a CI runner), runtime_group is right.
+	if !holdsHostRuntimeGID(t) && strings.Contains(h.text(), "runtime_group") {
 		t.Fatalf("a gate holding none of the gids is runtime_group:\n%s", h.text())
 	}
 }
