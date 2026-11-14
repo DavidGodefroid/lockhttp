@@ -21,15 +21,15 @@ against. Contract version: **1** (the `version` field of every file below).
 > ([docker.md](docker.md)). There is no host install any more: no
 > `sudo lockhttp install`, no `lockhttp` account or `lockhttp-clients` group
 > on the host, no `allowed_uids`, no subuid mapping, no `--group-add`, no
-> host `/run/lockhttp` bind mount, no `LOCKHTTP_RUNTIME_DIR`. The human runs
-> the console in a container through the launcher; lea runs the gate (and
+> host `/run/lockhttp` bind mount, no `LOCKHTTP_RUNTIME_DIR`. `lox run` runs
+> the console in a container of its own; lea runs the gate (and
 > the signer) as sidecar containers from the same image, by digest. The file
 > formats (`sources.json`, `credentials.json`, the status file) are
 > unchanged: contract version 1.
 
 ```
  agent container  (<prefix>-internal-<id>, --internal)
-   HTTP(S)_PROXY=http://<agent>:<token>@lea-proxy:3130
+   HTTP(S)_PROXY=http://<agent>:<token>@$LEA_PROXY_IP:3130
    LockHTTP CA in the trust stores (when MITM is on)
           │
  <prefix>-proxy container  (network namespace shared with the gate)
@@ -50,7 +50,7 @@ against. Contract version: **1** (the `version` field of every file below).
 
 | Step | Command | Notes |
 |---|---|---|
-| Install the launcher | `brew install davidgodefroid/tap/lockfamily`, or lockfamily's `install.sh` ([install.md](install.md#install)) | In brew's `bin` or `~/.local/bin`, with the verified image digest written into it (`image_digest=` line). lea v0.16.0 or later: lea runs that image as the gate only if the digest matches its pin in `config/locks.lock` or `cosign verify` proves the release signed it (keep `cosign` installed). |
+| Install the launcher | `brew install davidgodefroid/tap/lockfamily`, or lockfamily's `install.sh` ([install.md](install.md#install)) | In brew's `bin` or `~/.local/bin`, with the verified image digest written into it (`image_digest=` line). lea v0.16.0 or later: lea runs that image as the gate only if the digest matches its pin in `config/locks.lock` or `cosign verify` proves the release signed it (keep `cosign` installed). A root-owned `/usr/local/bin/lockhttp` (owned and writable by root only) is trusted without either check. |
 | The lock and its policy | `lox add lockhttp <instance>`, the policy in `<workspace>/.lockhttp/config.toml` | lockhub's `lox`. lea never writes the policy. |
 | Start the hub and the console | `lox run` | In a terminal of its own, outside lea and any agent. Runs the hub and the lockhttp console (uid 10021, no log driver) in compose services, makes the gate's instance key in the gate's own volume (`<project>_<instance>-gate`) and registers it with the hub, writes `up.json`, and serves the decisions in its terminal. `lox attach <instance>` attaches the console's terminal (its first policy review). |
 
@@ -79,13 +79,13 @@ docker run -d --name <prefix>-lockhttp-gate \
   -v <project>_<instance>-gate:/lockhttp-home \
   -v <state>/lockhttp/gate/hub:/run/lockfamily:ro \
   -v <state>/lockhttp/gate:/etc/lockhttp-gate:ro \
-  -v <state>/lockhttp/audit:/var/log/lockhttp \
+  -v <prefix>-lockhttp-audit:/var/log/lockhttp \
   -v <state>/lockhttp/status:/run/lockhttp-gate \
   ghcr.io/davidgodefroid/lockhttp@sha256:<digest> \
   gate \
     --listen 0.0.0.0:3130 \
     --upstream http://127.0.0.1:3128 \
-    --profile default \
+    --profile <profile from up.json> \
     --sources /etc/lockhttp-gate/sources.json \
     [--credentials /etc/lockhttp-gate/credentials.json] \
     --audit-dir /var/log/lockhttp \
@@ -108,8 +108,8 @@ start without them.
 | uid | `--user gate` (10003, **never 0**) | In the image, uid 10003 is in `lockhttp-clients`, the group the console accepts. Nothing to configure on the host: no `allowed_uids`, no subuid, no `--group-add`. The gate refuses to run as root. |
 | Socket | volume `<project>_<instance>-run` (`up.json`'s `socket_volume`) → `/run/lockhttp` (**the gate's container only**, never an agent container) | The console's socket. The image's `/etc/lockhttp/system.toml` names `/run/lockhttp`; the console checks the gate's uid with `SO_PEERCRED`. The volume belongs to the Docker engine `lox run` uses: lea must start the gate on that same engine. |
 | Hub | volume `<project>_<instance>-gate` → `--home`; lea's copies of the hub key, facade keys and devices, read-only | The gate's instance key, plans and hub state. Only the proxy container joins the hub's network; the gate refuses its addresses as targets. |
-| Files (read-only, written by lea on the host) | `<state>/lockhttp/gate/` → `/etc/lockhttp-gate`: `sources.json`, `credentials.json`, `ca.pem` | Readable by uid 10003. Reloaded when they change (2 s poll). An unreadable or invalid file is fail-closed (see §2.3). |
-| Writable | `--audit-dir` (`/var/log/lockhttp`, persisted on the host), the `--status-file` directory | Writable by uid 10003. JSONL audit of every decision (FREE, DENY, ask outcomes), daily files, 30 days kept. |
+| Files (read-only, written by lea on the host) | `<state>/lockhttp/gate/` → `/etc/lockhttp-gate`: `sources.json`, `credentials.json`, `ca.pem` | Readable by uid 10003. `sources.json`, `credentials.json` and the secrets file are reloaded when they change (2 s poll); `ca.pem` is read once at start, and lea restarts the gate on a new CA. An unreadable or invalid file is fail-closed (see §2.3). |
+| Writable | `--audit-dir` (`/var/log/lockhttp`, the named volume `<prefix>-lockhttp-audit`), the `--status-file` directory | Writable by uid 10003. JSONL audit of every decision (FREE, DENY, ask outcomes), daily files, 30 days kept. |
 | Liveness | `docker exec <prefix>-lockhttp-gate lockhttp gate --check --listen 127.0.0.1:3130` | Exits 0 when the gate answers. For lea's doctor. |
 
 The `<state>/...` paths are lea's choice; only the in-container paths
@@ -120,8 +120,8 @@ above are the ones the flags name.
 1. **squid listens on `127.0.0.1:3128` only** (`render-squid-conf.sh`), so the gate is the only HTTP way out. Its floor (DoH, IP literals, private ranges, ports) stays; its hard allowlist is switched off when `LEA_LOCKHTTP=1` (the gate decides).
 2. **keyproxy goes through the gate**: `-via http://keyproxy:<keyproxy token>@127.0.0.1:3130`, with `X-Lea-Source: <container>` and the same `Proxy-Authorization` set on the CONNECT (`http.Transport.ProxyConnectHeader`). keyproxy strips any `X-Lea-Source` and `Proxy-Authorization` an agent sends. The gate honours `X-Lea-Source` only from 127.0.0.1 with the keyproxy token; elsewhere it is ignored and logged.
 3. **SSH git forwarders are off**: lea refuses to start the proxy with a non-empty `LEA_GIT_SSH` when `LEA_LOCKHTTP=1`.
-4. **Nested Podman** (`image/containers.conf.tmpl`): `HTTPS_PROXY=http://nested:<container token>@lea-proxy:3130`.
-5. Agent env: `HTTP_PROXY`/`HTTPS_PROXY=http://<agent>:<agent token>@lea-proxy:3130`. `NO_PROXY` may keep `lea-proxy` (keyproxy on 4400 is reached directly; squid is no longer reachable).
+4. **Nested Podman** (`image/containers.conf.tmpl`): `HTTPS_PROXY=http://nested:<container token>@$LEA_PROXY_IP:3130` (the proxy container's IP).
+5. Agent env: `HTTP_PROXY`/`HTTPS_PROXY=http://<agent>:<agent token>@$LEA_PROXY_IP:3130`. `NO_PROXY` may keep `lea-proxy` (keyproxy on 4400 is reached directly; squid is no longer reachable).
 6. The gate serves only the local addresses listed in `sources.json` (one per internal network) and loopback with the keyproxy token: a connection arriving on any other address, the egress side included, is refused (`E_SOURCE_UNKNOWN`), fail-closed. Bind the gate where agents can reach it, never expose it on the egress bridge.
 
 ### 2.3 `sources.json`: who is calling
@@ -176,12 +176,12 @@ no file (no `--credentials`), the check is off.
 
 | Step | Who | What |
 |---|---|---|
-| CA | lea, on the host, through the launcher | `lockhttp ca init --dir ~/.local/state/lea/lockhttp/ca --name <installation>` → `ca.pem` (public) and `ca-key.pem` (0600). The launcher runs it as the invoking user, with the directory mounted at its own path: both files belong to that user. P-256, `pathlen:0`, 90 days; `--force` rotates. Without `--name`, the launcher passes the machine's name (`uname -n`). The key stays readable by the user who ran it, so keep `--dir` out of any directory an agent container mounts (lea's state dir, not a project), and once the key is copied to the signer's volume (below), the host copy can be removed or kept 0600 for rotation. |
-| CA key to the signer | lea | `ca-key.pem` must be owned by uid 10004 (`signer`), mode 0600, mounted read-only in the signer's container only. For example, copy it into a volume with a one-off root container of the same image: `docker run --rm --user 0 --entrypoint sh -v ~/.local/state/lea/lockhttp/ca:/src:ro -v <prefix>-lockhttp-ca:/ca IMAGE@sha256:<digest> -c 'install -m 0600 -o signer /src/ca-key.pem /ca/ca-key.pem && install -m 0644 /src/ca.pem /ca/ca.pem'`. |
+| CA | lea, on the host, in the verified image | lea runs `ca init` itself (not through the launcher), in the image it verified, with `--network none`, as the invoking user (the directory mounted at its own path, so both files belong to that user) and always with `--name <the host's name>`: `lockhttp ca init --dir ~/.local/share/lea/lockhttp/ca --name <hostname>` (lea's data dir) → `ca.pem` (public) and `ca-key.pem` (0600). P-256, `pathlen:0`, 90 days; `--force` rotates. The key stays readable by the user who ran it, so keep `--dir` out of any directory an agent container mounts (lea's data dir, not a project); lea keeps the host copy (0600) and copies it to the signer's volume (below). |
+| CA key to the signer | lea | `ca-key.pem` must be owned by uid 10004 (`signer`), mode 0600, mounted read-only in the signer's container only. lea copies it into a volume with a one-off root container of the same image: `docker run --rm --user 0 --entrypoint sh --network none -v ~/.local/share/lea/lockhttp/ca:/src:ro -v <prefix>-lockhttp-ca:/ca IMAGE@sha256:<digest> -c 'install -m 0600 -o signer /src/ca-key.pem /ca/ca-key.pem && install -m 0644 /src/ca.pem /ca/ca.pem'`. |
 | Signer socket directory | image | A named volume on `/run/lockhttp-signer`, shared by the signer and the gate. The image's directory is `signer:lockhttp-clients`, mode `2750`, and a new named volume takes it on first use: the socket (mode 0660) gets group `lockhttp-clients`, so the gate can connect and nothing else in the proxy namespace can. |
 | Signer | its own container, uid 10004 | `docker run -d --name <prefix>-lockhttp-signer --network none --user signer -v <prefix>-lockhttp-ca:/etc/lockhttp-ca:ro -v <prefix>-lockhttp-signer:/run/lockhttp-signer IMAGE@sha256:<digest> signer --ca-cert /etc/lockhttp-ca/ca.pem --ca-key /etc/lockhttp-ca/ca-key.pem --listen /run/lockhttp-signer/signer.sock --allow-uid 10003`. The signer refuses a key readable by group or others. |
 | Gate | the gate's container | Add `-v <prefix>-lockhttp-signer:/run/lockhttp-signer` and `--ca-cert /etc/lockhttp-gate/ca.pem --signer /run/lockhttp-signer/signer.sock` (lea copies `ca.pem` into `<state>/lockhttp/gate/`). The gate never holds the CA key. |
-| Trust stores | `image/entrypoint` (root phase, before `setpriv`) | `ca.pem` into `/usr/local/share/ca-certificates/lockhttp.crt` + `update-ca-certificates`; `NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`, `PIP_CERT`, `SSL_CERT_FILE`; nested Podman: mount the PEM in `/etc/containers/certs.d/`. Never the key. |
+| Trust stores | `image/entrypoint` (root phase, before `setpriv`) | lea mounts `ca.pem` read-only at `/etc/lea/lockhttp-ca.pem`; the entrypoint installs it as `/etc/pki/ca-trust/source/anchors/lea-lockhttp.pem` and runs `update-ca-trust extract` (the system store, which curl, git, Go, OpenSSL and the nested Podman read); `NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`, `PIP_CERT`, `SSL_CERT_FILE`. Never the key. |
 | keyproxy | | trusts `ca.pem` (`RootCAs`). |
 
 Hosts in the policy's `splice` list (and internal hosts) are not decrypted:
@@ -203,14 +203,18 @@ proxy error).
 
 - **Status file** (`--status-file`, JSON, rewritten on change):
   `{"version":1, "console": "up|down", "pending": 2, "pending_by_container": {"lea-ab12cd34ef": 2}, "policy_fp": "sha256:…", "updated": "…"}`.
-  The deck shows the counter and plays a sound on the first ASK (D6). It is
+  The deck shows the counter (D6), without a sound. It is
   a notification only: approvals happen on the hub's facades.
 - **Audit**: gate JSONL in `--audit-dir` (`gate-YYYY-MM-DD.jsonl`), console
   audit in the console account's `~/.local/state/lockhttp/audit.log`, in
   the console's home volume, which lea does not mount; the hub's audit; both carry
   `request_id`, `container`, `agent`, `attribution`, `via`.
 
-## 6. Doctor checks for lea
+## 6. Checks for lea
+
+`lea doctor` checks that the gate answers, the CA's validity (more than 7
+days) and the console's state from the gate's status file; the others
+below are checks to make by hand.
 
 - gate answers (`docker exec <prefix>-lockhttp-gate lockhttp gate --check --listen 127.0.0.1:3130`),
   squid listens on loopback only;

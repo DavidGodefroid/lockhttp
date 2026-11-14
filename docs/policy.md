@@ -9,7 +9,7 @@ the approved policy to the gate (`policy.get`) with its sha256 fingerprint.
 checks the fingerprint, and keeps the previous policy when they do not
 match.
 
-This page documents v0.1.0 as the code implements it
+This page documents the current release as the code implements it
 (`internal/policy`, `internal/decide`, `internal/gate`).
 
 ## File format
@@ -193,14 +193,15 @@ For each connection, then each request, the first step that decides wins.
    goes through steps 6 onwards. The gate offers HTTP/1.1 only.
 5. Any other `CONNECT` is decided at the domain: a live connect grant for
    container × host × port is FREE; otherwise steps 7 onwards decide, with
-   no method, path or body known. Once open, the client's first bytes must
-   be a complete TLS ClientHello naming the host on port 443 (a ClientHello
-   on other ports must name it too), or the tunnel is closed.
+   no method, path or body known. Once open, for a host that is not an
+   internal host, the client's first bytes must be a complete TLS
+   ClientHello naming the host on port 443 (a ClientHello on other ports
+   must name it too), or the tunnel is closed.
 
 ### Grants (decrypted or plain HTTP requests)
 
-6. First the deny list and the secret check (steps 7 and 8) apply: no
-   grant lifts them. Then a single-use authorisation for this exact request fingerprint (created
+6. First the deny list, a managed deny rule and the secret check (steps 7,
+   7a and 8) apply: no grant lifts them. Then a single-use authorisation for this exact request fingerprint (created
    when you approved a request whose client had left) is FREE and consumed.
    A `GET` without body of an exact URL a listed CDN redirect opened for
    this container within 60 s is FREE and consumed.
@@ -208,9 +209,13 @@ For each connection, then each request, the first step that decides wins.
 ### The policy (`internal/decide`)
 
 7. **Deny list.** A host on `deny`: DENY `E_RULE`.
+7a. **Managed deny.** A `deny` rule of the company's managed configuration
+   (`[[lockhttp.bounds.rules]]`) matching the request: DENY `E_RULE` (rule
+   `managed:<id>`). At the domain, a managed rule with methods or a path
+   counts as an ask (step 15a).
 8. **Secrets** (requests only, not a `CONNECT`). A known credential format
-   in the path, query (raw and unescaped), header values (except `Cookie`)
-   or held body, sent to a host it does not belong to: DENY
+   in the path, query (raw and unescaped), any header value (`Cookie`
+   included) or held body, sent to a host it does not belong to: DENY
    `E_SECRET_EGRESS`. Formats: GitHub tokens (GitHub hosts), Anthropic API
    keys (`api.anthropic.com`, `console.anthropic.com`), AWS access keys
    (`*.amazonaws.com`), Slack tokens (Slack), OpenAI keys
@@ -268,7 +273,7 @@ For each connection, then each request, the first step that decides wins.
     | `read` | `GET`, `HEAD`, `OPTIONS` with an empty body | FREE on a trusted host; else ASK (unknown host) |
     | `messaging` | a messaging host | ASK, red |
     | `publish` | a registry host and `PUT`, `PATCH`, `DELETE` (any write on an upload host) | ASK, red |
-    | `upload` | body over 64 KiB or of unknown length, or a multipart, octet-stream, image, video, audio, zip or tar type | ASK |
+    | `upload` | body over 64 KiB, or a multipart, octet-stream, image, video, audio, zip or tar type | ASK |
     | `write` | anything else | ASK |
 
     Every default ASK is `NeverAuto`. A non-read body larger than
@@ -276,6 +281,9 @@ For each connection, then each request, the first step that decides wins.
 15. **Heuristics.** With `heuristics = "enforce"`, a score of 3 or more
     turns any verdict but DENY into ASK, `NeverAuto`, red, with the reasons
     as warnings. With `"shadow"`, the reasons are only logged.
+15a. **Managed ask.** An `ask` rule of the company's managed configuration
+    matching the request turns a FREE (or `auto`) verdict into ASK,
+    `NeverAuto`, under the rule `managed:<id>`.
 16. **Shadow mode.** With `mode = "shadow"`, see below.
 
 ### After the decision
@@ -289,13 +297,15 @@ For each connection, then each request, the first step that decides wins.
     sent upstream is the host decided, never the client's. A FREE or
     approved request first gets the headers of its
     [credential injections](#credential-injection).
-19. An ASK request waits in the gate's queue. No console: `E_NO_CONSOLE` at
-    once. Past `hold`: `E_PENDING` (the item stays on the console). The
-    human's `n` or the console's timeout: `E_DENIED` or `E_TIMEOUT`.
+19. An ASK request becomes a hub ticket. No console: `E_NO_CONSOLE` at
+    once. Past `hold`: `E_PENDING` (the ticket is kept on the hub; its id is
+    in `X-LockHTTP-Ticket`). The human's denial on the hub: `E_DENIED`;
+    the ticket expiring unanswered: `E_TIMEOUT`.
 
 With no policy received yet (the console never answered since the gate
-started), step 7 to 9 and 11 do nothing, nothing is trusted, and only the
-four Claude hosts and their allowlist are free.
+started), steps 7, 7a, 9, 11 and 15a do nothing, nothing is trusted, and
+only the four Claude hosts and their allowlist are free. Step 8 still
+applies, and so does the check for the gate's injected secrets.
 
 ## Confined agents
 
@@ -361,7 +371,7 @@ note       = "Home Assistant long-lived token"
 | `credential` | yes | The name of the secret in the gate's secrets file: lower-case letters, digits, `_`, `-`, `.`, at most 32 characters, no run of more than 16 letters and digits (a name, not a pasted token). Never the value. |
 | `container` | no | The container it applies to. A container's injection wins over an all-containers one of the same header. |
 | `methods` | no | The methods that get the header (upper-cased); empty: every one. `TRACE`, `TRACK` and `CONNECT` are refused: they never get it, in any case of the method (`trace` too). |
-| `paths` | no | The paths that get the header, each exact or a prefix when it ends with `*` (as a rule's `path`); empty: every one. A request outside them goes out without it (audited `inject <id> skipped`). So does any path that is not canonical, whatever the list (an allowlist): only RFC 3986 unreserved characters (`A-Z a-z 0-9 - . _ ~`) and `/` as is, escapes only of reserved characters other than `/` (`%3A`, `%3B`, `%40`, ...), and escaped bytes >= 0x80 only as valid shortest-form UTF-8 letters, marks or digits (`caf%C3%A9`); no segment made only of dots, even with a reserved suffix (`..`, `...`, `..;x`, `..%3f`). Everything else goes out without the header: `/api/../admin`, `%2e`, `%2F`, `%5c`, `%25`, `%20`, `%00` (`..%20`, `..%00`), an escaped unreserved character (`%41`), overlong or invalid UTF-8 (`%c0%ae`), a fullwidth dot or slash, a literal `;`, `,` or `@`, an invalid escape. |
+| `paths` | no | The paths that get the header, each exact or a prefix when it ends with `*` (as a rule's `path`); empty: every one. A request outside them goes out without it (audited `inject <id> skipped`). When `paths` is set, so does any path that is not canonical, whatever the list (an allowlist): only RFC 3986 unreserved characters (`A-Z a-z 0-9 - . _ ~`) and `/` as is, escapes only of reserved characters other than `/` (`%3A`, `%3B`, `%40`, ...), and escaped bytes >= 0x80 only as valid shortest-form UTF-8 letters, marks or digits (`caf%C3%A9`); no segment made only of dots, even with a reserved suffix (`..`, `...`, `..;x`, `..%3f`). Everything else goes out without the header: `/api/../admin`, `%2e`, `%2F`, `%5c`, `%25`, `%20`, `%00` (`..%20`, `..%00`), an escaped unreserved character (`%41`), overlong or invalid UTF-8 (`%c0%ae`), a fullwidth dot or slash, a literal `;`, `,` or `@`, an invalid escape. |
 | `note` | no | Free text for you. |
 
 Two injections of the same header, host, port and container are refused.
@@ -535,7 +545,8 @@ enforced:
 
 - the floor (step 3) and the gate's own checks (steps 1, 2, 5, 17);
 - secret matches and Claude credential mismatches (`E_SECRET_EGRESS`);
-- the deny list (`E_RULE`), at the domain and inside a decrypted tunnel.
+- the deny list (`E_RULE`), at the domain and inside a decrypted tunnel;
+- the company's managed rules (steps 7a and 15a), deny and ask.
 
 Everything else passes, including the Claude API allowlist, messaging,
 publishing and git pushes. Use it to measure what a policy would ask before

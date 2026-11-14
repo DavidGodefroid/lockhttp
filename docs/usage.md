@@ -27,11 +27,16 @@ image, as the account it needs ([docker.md](docker.md#subcommand--docker-run)).
 lea does not use the launcher for the gate and the signer: it runs them
 from the same image beside its proxy container ([lea.md](lea.md)). A path
 given to a command is a path inside its container: only `ca init` and the
-launcher verbs (the project) mount a host directory; `LOCKHTTP_DOCKER_ARGS`
-adds mounts for the others.
+launcher verbs (the project) mount a host directory of yours;
+`LOCKHTTP_DOCKER_ARGS` adds mounts for the others. Every container also gets
+the company's managed directory (`/etc/lockfamily`, or
+`/Library/Application Support/lockfamily` on macOS), read-only at
+`/etc/lockfamily`, when it exists.
 
 Flags use Go's syntax: `-flag value`, `--flag value` or `--flag=value`.
-Positional arguments are refused.
+Positional arguments are refused, except `init <agent>` and
+`update [vX.Y.Z]`, which take one. `hub-key` takes `--home` only with two
+dashes (`--home DIR` or `--home=DIR`).
 
 ## Exit codes
 
@@ -279,7 +284,7 @@ files are yours.
 | Flag | Default | Meaning |
 |---|---|---|
 | `--dir DIR` | required | Directory (created `0700`) for `ca.pem` (`0644`) and `ca-key.pem` (`0600`). |
-| `--name NAME` | the host name | Installation name in the CA's subject. Through the launcher the host name is the container's: pass `--name`. |
+| `--name NAME` | the host name | Installation name in the CA's subject. Through the launcher it defaults to the host's name (the launcher passes `--name "$(uname -n)"`). |
 | `--force` | off | Replace an existing CA (rotation). Without it, an existing `ca-key.pem` is refused. |
 
 The CA is ECDSA P-256, `pathlen:0`, valid 90 days. Trust `ca.pem` in the
@@ -302,8 +307,8 @@ The HTTP(S) proxy. It runs hub-attached only: without `--hub`,
 `--hub-key-file` and `--instance` it exits with a usage error (exit 3,
 "launched by `lox run` only"); lea passes them from `lox run`'s `up.json`.
 It refuses to run as root; in the image it runs as `gate` (uid 10003).
-Each flag but `--check` has an environment variable, read when the flag is
-not given.
+Each flag but `--check` and `--hub-net` has an environment variable, read
+when the flag is not given.
 
 Through the launcher, `lockhttp gate` runs in the container `lockhttp-gate`
 with the socket volume, publishes its port on `LOCKHTTP_PUBLISH`
@@ -315,7 +320,7 @@ with the socket volume, publishes its port on `LOCKHTTP_PUBLISH`
 | `--listen ADDR` | `LOCKHTTP_LISTEN` | `127.0.0.1:3130` | Address to listen on. |
 | `--upstream URL` | `LOCKHTTP_UPSTREAM` | none | Proxy to send through, `http://host:port` (lea: squid, `http://127.0.0.1:3128`). Empty: the gate dials targets itself and refuses non-public addresses (except internal hosts). |
 | `--profile P` | `LOCKHTTP_PROFILE` | `default` | Console profile to dial. |
-| `--sources FILE` | `LOCKHTTP_SOURCES` | none | `sources.json` written by lea. Empty: every connection is container `local`. An unreadable or invalid file at start is a configuration error; later, it refuses every connection until fixed. |
+| `--sources FILE` | `LOCKHTTP_SOURCES` | none | `sources.json` written by lea. Empty: every connection is container `local`, not known to run confined (`no_lea_sources`): its requests are refused with `E_UNCONFINED` unless the profile sets `unconfined = true` ([Confined agents](policy.md#confined-agents)). An unreadable or invalid file at start is a configuration error; later, it refuses every connection until fixed. |
 | `--credentials FILE` | `LOCKHTTP_CREDENTIALS` | none | `credentials.json` written by lea: hashes of each container's Claude credentials. Empty: the check is off. Unreadable or invalid: every credential is unknown (denied). |
 | `--secrets FILE` | `LOCKHTTP_SECRETS` | none | The gate's secrets file: the values the policy's `inject` entries name ([policy.md](policy.md#credential-injection)). JSON `{"version": 1, "secrets": {"name": "value"}}`, mode `0600` (refused if group- or world-readable), in the gate's container only, never an agent's. Reloaded when it changes. Invalid at start: a configuration error; later, every injection is refused (`E_INJECT`). |
 | `--audit-dir DIR` | `LOCKHTTP_AUDIT_DIR` | none (stderr) | Directory (created `0700`) of the JSONL audit: `gate-YYYY-MM-DD.jsonl` (UTC), files `0600`, kept 30 days. |
@@ -376,7 +381,7 @@ by the hub are audited (`reveal`/`renew`, `approval` `hub-claimed`).
 releases each lockhttp release works with. Under `lox run`, lea runs the gate in hub mode
 (lockhub's `docs/lox-run.md`), and only from an `up.json` that says what the gate pins
 (`"lockhttp_gate": 1`): that needs lockhub v0.2.2 or later and lea v0.3.0 or later, for every
-lockhttp release below. A gate run by hand works with the hub image of the last column.
+lockhttp release from v0.3.0 to v0.10.0; v0.11.0 and later need lea v0.16.0 or later. A gate run by hand works with the hub image of the last column.
 From v0.6.0 the gate is hub-attached only (there is no standalone gate): run it under `lox run`,
 with a trusted `up.json` naming one lockhttp lock. lea after v0.3.5 (lea#232) then refuses to
 start a gate without one and says to run `lox run`; lea v0.3.0 to v0.3.5 instead falls back to a
@@ -384,6 +389,11 @@ standalone gate, which v0.6.0 and later refuse: that gate container exits and re
 
 | lockhttp | lockkit | Under `lox run` (lea's gate) | Hub image, gate run by hand |
 |---|---|---|---|
+| v0.12.0 | v0.20.0 | as v0.11.0; `lox run` passes the console `--runtime-gids` only from a lockhub that pins `"lockhttp": "v0.12.0"` (v0.12.1 or later) | v0.2.0 or later |
+| v0.11.0 | v0.20.0 | as v0.10.0, with lea v0.16.0 or later (the brew or lockfamily launcher) | v0.2.0 or later |
+| v0.10.0 | v0.20.0 | as v0.6.0; the gate and the console must be the same lockhttp release | v0.2.0 or later |
+| v0.9.1 | v0.18.0 | as v0.6.0 | v0.2.0 or later |
+| v0.9.0 | v0.18.0 | as v0.6.0 | v0.2.0 or later |
 | v0.8.1 | v0.14.1 | as v0.6.0 | v0.2.0 or later |
 | v0.8.0 | v0.13.0 | as v0.6.0 | v0.2.0 or later |
 | v0.7.1 | v0.10.0 | as v0.6.0 | v0.2.0 or later |
@@ -427,8 +437,9 @@ lockhttp signer --ca-cert FILE --ca-key FILE --listen SOCKET [--allow-uid N ...]
 
 The only process that reads the CA key. It issues 24-hour leaf certificates
 (capped at the CA's expiry) to the gate over a Unix socket. In the image it
-runs as `signer` (uid 10004). The launcher mounts nothing for it: lea runs
-it with the key and a socket directory shared with the gate
+runs as `signer` (uid 10004). The launcher mounts only its socket volume
+(`lockhttp-signer`), not the CA key: lea runs it with the key and a socket
+directory shared with the gate
 ([lea.md](lea.md#3-mitm-phase-2-optional)).
 
 | Flag | Default | Meaning |
@@ -456,7 +467,7 @@ home directory.
 
 `lockhttp version` (or `--version`) prints the launcher's version and the
 image it runs (`lockhttp launcher X (image I)`), then the image's
-`lockhttp vX`; `lockhttp help` (`-h`, `--help`) prints the usage. `lockhttp`
+`lockhttp X.Y.Z` (no `v`); `lockhttp help` (`-h`, `--help`) prints the usage. `lockhttp`
 without a command prints the usage on stderr and exits 3.
 
 ## `lockhttp update`
@@ -466,9 +477,13 @@ lockhttp update [vX.Y.Z]
 ```
 
 A launcher command, run on the host: replaces the launcher with a release's
-(latest by default) after checking the cosign signature of `checksums.txt`,
-the archive's checksum and the image's signature, then `docker pull`s the
-pinned image ([docker.md](docker.md#install-and-update)).
+(by default the newest of the release feed, pre-releases included) after
+checking the cosign signature of `checksums.txt`, the archive's checksum
+and the image's signature, then `docker pull`s the pinned image
+([docker.md](docker.md#install-and-update)). Without cosign it stops,
+unless `LOCKHTTP_SKIP_COSIGN=1`: then neither signature is checked (only
+the checksum) and the new launcher runs the image by its tag. With cosign
+installed, `LOCKHTTP_SKIP_COSIGN` has no effect.
 
 ## Files
 
@@ -479,7 +494,7 @@ pinned image ([docker.md](docker.md#install-and-update)).
 | `/etc/lockhttp/system.toml` | image | root, `0644` | separated setup: console account, clients group, socket directory, `allowed_uids` (build arg `ALLOWED_UIDS`) |
 | `/run/lockhttp/` | volume `lockhttp-run` | `lockhttp:lockhttp-clients`, `2710` | the console's sockets, `user-<profile>.sock` |
 | `~/.config/lockhttp/config.toml` | volume `lockhttp-home` | `lockhttp`, `0600` | the policy |
-| `~/.local/state/lockhttp/audit.log` | volume `lockhttp-home` | `lockhttp` | the console's audit (approvals, policy reviews) |
+| `~/.local/state/lockhttp/audit.log` | volume `lockhttp-home` | `lockhttp` | the console's audit (policy reviews; it approves no request) |
 | `--audit-dir/gate-YYYY-MM-DD.jsonl` | the gate's container (lea: a host directory) | the gate's uid | the gate's audit |
 | `ca.pem`, `ca-key.pem` | the `ca init --dir` directory | you; lea gives the key to the signer's uid | the local CA |
 
@@ -495,5 +510,7 @@ Both audits write one JSON object per line with lockkit's base fields
 `resp_bytes`, `duration_ms`, `policy_fp`. Never a body, a query string or a
 header value.
 
-`decision` is `free`, `approved`, `refused`, or `shadow-ask` /
-`shadow-deny` for what shadow mode let through.
+`decision` is `free`, `approved`, `refused`, `refused-unconfined` (a
+sender not known to run confined), `denied` (the human denied the hub
+ticket), `timeout` (the ticket expired), `renew` (a renewal the hub asked
+for), or `shadow-ask` / `shadow-deny` for what shadow mode let through.

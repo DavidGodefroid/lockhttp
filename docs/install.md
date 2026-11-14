@@ -21,9 +21,11 @@ the Lock Family's installer puts the same launcher in `~/.local/bin`
 curl -fsSL https://lockfamily.dev/install.sh | sh
 ```
 
-Both verify the keyless cosign signature of the release against this
-repository's release workflow and write the verified image digest into the
-launcher, which runs the image by that digest. lea's `LEA_LOCKHTTP=1` uses
+The installer verifies the keyless cosign signature of the release and of
+its image against this repository's release workflow, and writes the
+verified image digest into the launcher. The brew formula checks the
+archive's SHA-256 and writes the image digest the tap verified with cosign
+when it was bumped. Either way the launcher runs the image by that digest. lea's `LEA_LOCKHTTP=1` uses
 this launcher from lea v0.16.0 on (it checks the digest against its pin or
 with cosign); older lea accept only a root-owned `/usr/local/bin/lockhttp`,
 which lockhttp no longer installs (`scripts/install.sh` is gone since

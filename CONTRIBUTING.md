@@ -51,6 +51,7 @@ that makes it pass.
 ```sh
 go vet ./...
 go test ./...
+go test -tags lockfamily_managed_test ./...   # the managed-configuration tests, as CI runs them
 ```
 
 The module also builds for Windows, where lockhttp refuses to run, and CI
@@ -68,10 +69,11 @@ GOOS=windows go test -exec /bin/true ./...
 
 Integration tests start the gate, the console, lockkit's test hub and test
 upstream servers in-process, on `127.0.0.1`; they need no Docker and no
-network access.
+network access. They run on Linux only, and `managed_test.go` also needs
+the `lockfamily_managed_test` tag. CI runs:
 
 ```sh
-go test -tags integration ./test/integration/...
+go test -tags integration,lockfamily_managed_test -count=1 -timeout 15m ./test/integration/...
 ```
 
 Never point a test at a real remote service.
@@ -130,8 +132,9 @@ on a machine with a lockhttp setup you want to keep. CI runs it in the
 
 Pull requests target `main`, which is protected:
 
-- the CI checks (`test` on Linux, macOS and Windows, `lint`, `integration`,
-  `docker`)
+- the CI checks (`test` on Linux and Windows, `lint`, `integration`,
+  `docker`; `test` on macOS runs on `main`, nightly and by hand, not on
+  pull requests)
   must pass and the branch must be up to date with `main`;
 - a review from a code owner is required, and every review thread must be
   resolved;
@@ -181,9 +184,11 @@ The release chain is pinned end to end:
   repos/OWNER/REPO/commits/vX.Y.Z --jq .sha`) and keep the comment exact;
 - `release.yml` pins the GoReleaser, cosign and syft versions and does not
   use `check-latest`;
-- the cosign identity is the release workflow run for a version tag, the
-  same in `scripts/lockhttp`, `SECURITY.md` and
-  `.goreleaser.yaml`;
+- the cosign identity is the release workflow run for a version tag:
+  `scripts/lockhttp` names the exact run for the tag it installs
+  (`--certificate-identity`), while `SECURITY.md` and `.goreleaser.yaml`
+  use a regular expression that accepts any version tag
+  (`--certificate-identity-regexp`, checked by `cmd/lockhttp/release_test.go`);
 - the `Dockerfile` pins its base images by digest: update the tag and the
   digest together.
 

@@ -64,27 +64,28 @@
 
 <section aria-labelledby="layout">
   <h2 id="layout">Where each piece runs</h2>
-  <pre tabindex="0" class="diagram" role="img" aria-label="Agent containers reach only the lockhttp gate, a container sharing the network namespace of lea's proxy container; the gate forwards to squid on loopback and the Internet; it reads the policy from the lockhttp console, which lox run runs in its own container, over a Unix socket in a volume only the gate and the console mount; for requests that need a human it asks lockhub, where you answer on a facade."><code> agent container  (internal network, no other route)
+  <pre tabindex="0" class="diagram" role="img" aria-label="Agent containers reach only the lockhttp gate, a container sharing the network namespace of lea's proxy container; the optional signer runs in its own container without a network and holds the CA key; the gate forwards to squid on loopback and the Internet; it reads the policy from the lockhttp console, which lox run runs in its own container, over a Unix socket in a volume only the gate and the console mount; for requests that need a human it asks lockhub, where you answer on a facade."><code> agent container  (internal network, no other route)
  ┌──────────────────────────────────────────────────────┐
  │ your agent · curl · git · npm · chromium             │
  │ HTTP(S)_PROXY=http://&lt;agent&gt;:&lt;token&gt;@lea-proxy:3130 │
  └──────────────────────────┬───────────────────────────┘
                             │ the only way out
- lea proxy network namespace  ▼  (gate + signer sidecars)
+ lea proxy network namespace  ▼  (the gate sidecar)
  ┌──────────────────────────────────────────────────────┐
  │ lockhttp gate :3130   (own uid, never 0)             │
  │   source → container · policy → FREE / ASK / DENY    │
- │   lockhttp signer     (optional: holds the CA key)   │
  │   squid 127.0.0.1:3128 (network floor) ──▶ Internet  │
  └──────────────────────────┬───────────────────────────┘
-                            │ Unix socket, volume lockhttp-run:
+                            │ Unix socket, volume &lt;project&gt;_&lt;lock&gt;-run:
                             │ the gate and the console only
  console container (lox run)▼
  ┌──────────────────────────────────────────────────────┐
- │ lockhttp console --profile default                   │
- │   account lockhttp, volume lockhttp-home (policy)    │
- │   serves the policy · policy review · audit          │
+ │ lockhttp console --profile &lt;profile&gt;                 │
+ │   account lockhttp, home volume (approved policy)    │
+ │   serves the policy · policy review · its own log    │
  └──────────────────────────────────────────────────────┘
+ signer container  (optional, --network none, own uid)
+   lockhttp signer: holds the CA key, signs the gate's leaves
  gate ──▶ lockhub (hub network: lea's proxy only)
    held request → signed ticket → you, on a facade</code></pre>
   <div class="prose">
@@ -146,7 +147,8 @@
       <li><code>POST /v1/messages</code> and <code>/v1/messages/count_tokens</code> pass only without <code>mcp_servers</code> or <code>container</code>, and with no server tool other than <code>web_search</code>;</li>
       <li><code>/v1/files*</code> asks;</li>
       <li>a credential that is not one of the container’s own is denied (<code>E_SECRET_EGRESS</code>);</li>
-      <li>any other path or host under the Anthropic domains asks, never answered without a human.</li>
+      <li>OAuth paths and other body-less reads on the four Claude hosts pass; any other write there, and any other host under the Anthropic domains, asks, never answered without a human, unless you list that host as trusted (the default set has <code>docs.anthropic.com</code>);</li>
+      <li>a policy rule naming a Claude host applies before these checks, and shadow mode lets their asks through.</li>
     </ul>
     <p>Every rule: <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/docs/policy.md#claude-api">the policy reference</a>.</p>
   </div>
@@ -155,10 +157,15 @@
 <section aria-labelledby="inject">
   <h2 id="inject">Credentials the agent never holds</h2>
   <div class="prose">
-    <p>A policy <code>inject</code> entry has the gate add a header, such as <code>Authorization: Bearer …</code>, for one exact host and port. The secret comes from the gate’s own secrets file.</p>
+    <p>A policy <code>inject</code> entry has the gate add a header, such as <code>Authorization: Bearer …</code>, for one exact host and port, on a decrypted request or plain HTTP to an internal host. The secret comes from the gate’s own secrets file.</p>
     <p>The agent sends its request without the credential. A request that carries the injected secret itself is refused with <code>E_SECRET_EGRESS</code>; a missing secret, with <code>E_INJECT</code>.</p>
   </div>
-  <pre tabindex="0"><code>[[profiles.default.inject]]
+  <pre tabindex="0"><code>[[profiles.default.internal_hosts]]
+host  = "homeassistant"   # a single-label host needs this entry
+ports = [8123]
+read  = true
+
+[[profiles.default.inject]]
 id         = "home-assistant"
 host       = "homeassistant"
 port       = 8123
@@ -190,7 +197,7 @@ verdict   = "ask"
 max_body  = "256KiB"</code></pre>
   <div class="prose">
     <p>Any loosening (a new host, a wider method or path, <code>ask</code> to <code>free</code>, a wider scope) waits for your confirmation in the console’s <code>:review</code>.</p>
-    <p>An <code>auto</code> rule stays valid but asks like <code>ask</code>: every held request is a <code>NeverAuto</code> ticket. Uploads, messaging, registry publishing, <code>git-receive-pack</code>, spliced hosts, heuristic hits, secrets and production profiles can never be <code>auto</code>.</p>
+    <p>An <code>auto</code> rule stays valid but asks like <code>ask</code>: every held request is a <code>NeverAuto</code> ticket. A rule for every host, a spliced host, messaging, registry publishing, <code>git-receive-pack</code>, a write to any path of a git forge and any rule of a production profile can never be <code>auto</code>; uploads, heuristic hits and secrets are checked per request.</p>
   </div>
 </section>
 
@@ -211,10 +218,12 @@ max_body  = "256KiB"</code></pre>
   <tr><th scope="row"><code>E_BODY_TOO_LARGE</code></th><td>the body is over the buffer limit</td><td>send less, or ask for a rule</td></tr>
   <tr><th scope="row"><code>E_SOURCE_UNKNOWN</code></th><td>the gate cannot tell which container sent the request</td><td>use the proxy address lea gave</td></tr>
   <tr><th scope="row"><code>E_INJECT</code></th><td>the policy injects a credential for this host, and the gate lacks it</td><td>ask the user; never send the credential itself</td></tr>
+  <tr><th scope="row"><code>E_UNCONFINED</code></th><td>the sender is not known to run confined (a gate without lea’s source map), and the profile does not set <code>unconfined = true</code></td><td>run inside lea, or ask the user</td></tr>
+  <tr><th scope="row"><code>E_METHOD</code></th><td><code>TRACE</code> or <code>TRACK</code> to a host where the gate injects a credential</td><td>use another method</td></tr>
   </tbody>
   </table>
   </div>
-  <p class="prose">Also registered: <code>E_HOST_UNKNOWN</code>, <code>E_METHOD</code>, <code>E_EXFIL_SUSPECT</code>, <code>E_CLAUDE_API_PARAM</code> and <code>E_PINNED</code> (in the gate’s audit only).</p>
+  <p class="prose">Also registered: <code>E_HOST_UNKNOWN</code>, <code>E_EXFIL_SUSPECT</code>, <code>E_CLAUDE_API_PARAM</code> and <code>E_PINNED</code> (in the gate’s audit only).</p>
 </section>
 
     </div>
@@ -253,7 +262,7 @@ max_body  = "256KiB"</code></pre>
       </nav>
     </div>
     <div class="wrap footer-bottom">
-      <p>Release v0.9.x. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p>Release v0.12.x. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
       <p><a href="https://lockfamily.dev">lockfamily.dev</a> · <a href="https://github.com/DavidGodefroid/lockfamily">the family on GitHub</a></p>
     </div>
   </footer>

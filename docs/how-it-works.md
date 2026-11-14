@@ -97,7 +97,7 @@ the same URL with another body is a separate screen.
 
 A refusal is a `403 Forbidden` with a plain-text body that says why and
 what to ask of the human, and two headers: `X-LockHTTP-Code` and
-`X-LockHTTP-Request` (the id to find in the console and the audit). For a
+`X-LockHTTP-Request` (the id to find in the gate's audit). For a
 `CONNECT` it is the `CONNECT`'s own response, which clients show as a proxy
 error. In hub mode an `E_PENDING` also names the hub ticket the request
 waits on (`X-LockHTTP-Ticket`). A forwarded response carries `X-LockHTTP-Request` too (decrypted or
@@ -116,19 +116,24 @@ plain HTTP); a target the gate cannot reach is a `502`.
 | `E_SOURCE_UNKNOWN` | The gate cannot tell which container sent the request. | Use the proxy address lea gave. |
 | `E_UNCONFINED` | The sender is not known to run confined (a gate without lea's `sources.json`), and the profile does not set `unconfined = true` ([Confined agents](policy.md#confined-agents)). | Run the agent inside lea, or ask the user to set `unconfined = true` on a non-production profile. |
 | `E_INJECT` | The policy injects a credential for this host, and the gate's secrets file lacks it or does not load. | Ask the user to check the gate's secrets file; never send the credential yourself. |
+| `E_METHOD` | `TRACE` or `TRACK` to a host and port where the gate injects a credential. | Use another method. |
 
-`E_HOST_UNKNOWN`, `E_CLAUDE_API_PARAM`, `E_EXFIL_SUSPECT`, `E_METHOD` and
-`E_PINNED` are registered codes too; in v0.1.0 a refused ASK reaches the
-agent as `E_DENIED`, `E_TIMEOUT`, `E_PENDING` or `E_NO_CONSOLE`, and
-`E_PINNED` appears in the gate's audit only (a client that rejects the
-gate's certificate closes the connection before any response).
+`E_HOST_UNKNOWN`,
+`E_CLAUDE_API_PARAM`, `E_EXFIL_SUSPECT` and `E_PINNED` are registered codes
+too; a refused ASK reaches the agent as `E_DENIED`, `E_TIMEOUT`,
+`E_PENDING` or `E_NO_CONSOLE`, and `E_PINNED` appears in the gate's audit
+only (a client that rejects the gate's certificate closes the connection
+before any response).
 
 ## Claude API allowlist
 
 The four hosts Claude Code reaches (`api.anthropic.com`, `claude.ai`,
 `console.anthropic.com`, `statsig.anthropic.com`) are free at the domain.
 Any other host under `anthropic.com`, `claude.ai` or `claude.com` asks
-(`NeverAuto`), unless a rule says otherwise.
+(`NeverAuto`), unless a rule says otherwise or the host is in `trusted`
+(the default set has `docs.anthropic.com`): then it is an ordinary trusted
+host. A policy rule naming one of the four Claude hosts applies before the
+allowlist below, and shadow mode lets the allowlist's asks through.
 
 Once TLS is decrypted, the Claude API is a generic relay and is checked per
 request:
@@ -140,7 +145,7 @@ request:
 | `/v1/files*` | ASK, `NeverAuto` |
 | Other reads on the four hosts | FREE |
 | Other writes | ASK, `NeverAuto` |
-| A credential (`Authorization`, `x-api-key`) not in the caller's list, or two credentials | DENY `E_SECRET_EGRESS` (with lea's `credentials.json`) |
+| A credential (`Authorization`, `x-api-key`) not in the caller's list (with lea's `credentials.json`), or two credentials (always) | DENY `E_SECRET_EGRESS` |
 
 Duplicate keys, and keys that differ from `mcp_servers`, `tools` or
 `container` only by case, make the body ambiguous: it asks.
@@ -155,7 +160,8 @@ Duplicate keys, and keys that differ from `mcp_servers`, `tools` or
 - **HTTP/1.1 only to clients when decrypting.** The gate offers ALPN
   `http/1.1`; it does not speak HTTP/2 to clients, and refuses `Upgrade: h2c`.
 - **A WebSocket session is one approval.** The upgrade request is decided;
-  the frames that follow are not.
+  the frames that follow are not. With injected secrets, the client's
+  frames are scanned for their values.
 - **Heuristics run in shadow by default.** The exfiltration score is logged,
   not enforced, until you set `heuristics = "enforce"`.
 - **Asks wait side by side.** Each held request is its own hub ticket;
@@ -164,5 +170,5 @@ Duplicate keys, and keys that differ from `mcp_servers`, `tools` or
   the connection arrived on; the agent name comes from `Proxy-Authorization`
   and is for the audit only. Agents of one container share a uid, so rules
   scope to containers, never to agents.
-- No MCP server in v0.1.0: agents meet LockHTTP as a proxy, and its `403`
+- No MCP server: agents meet LockHTTP as a proxy, and its `403`
   pages tell them what to ask of the human.

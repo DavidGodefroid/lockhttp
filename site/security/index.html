@@ -65,10 +65,10 @@
   <ul class="cards">
     <li><h3>Console in its own container</h3><p>Under its own account (<code>lockhttp</code>), the only container with the policy volume. The agent gets neither its socket nor the Docker socket.</p></li>
     <li><h3>NeverAuto, always</h3><p>Every hub ticket the gate makes is <code>NeverAuto</code>. Neither <code>lox run</code>’s auto mode nor an <code>auto</code> rule answers a held request: a human does.</p></li>
-    <li><h3>Identical fingerprint</h3><p>One human decision covers only requests with the same container, method, URL, significant headers and normalised body.</p></li>
+    <li><h3>Identical fingerprint</h3><p>One human decision covers only requests with the same container, method, URL, every end-to-end header and normalised body.</p></li>
     <li><h3>LLM API relay checks</h3><p>Once TLS is decrypted, the Claude API’s <code>mcp_servers</code>, server tools other than <code>web_search</code>, files and foreign credentials never pass without a human.</p></li>
     <li><h3>Hub-attached only</h3><p>The gate does not start without its hub flags. When the hub is unreachable, nothing else approves: the ticket stays pending.</p></li>
-    <li><h3>Fail closed</h3><p>No console, an unknown source, an unreadable source map, a policy that does not decode: asks are refused, errors deny.</p></li>
+    <li><h3>Fail closed</h3><p>No console or a policy that does not decode: asks are refused. An unknown source, an unreadable source map, an error while deciding: deny.</p></li>
   </ul>
 </section>
 
@@ -108,8 +108,8 @@
 <section aria-labelledby="audit">
   <h2 id="audit">Audit</h2>
   <div class="prose">
-    <p>The gate writes free and denied requests to a daily JSONL file, kept 30 days. The console writes every ask to its audit log.</p>
-    <p>Both carry the same <code>request_id</code>, the container, the declared agent and how it was attributed. The audit never holds a body or a secret.</p>
+    <p>The gate writes every decision, and the outcome of every hub ticket, to a daily JSONL file, kept 30 days; lockhub keeps its tickets. The console approves no request: it logs policy reviews only.</p>
+    <p>Each line carries the <code>request_id</code>, the container, the declared agent and how it was attributed. The audit never holds a body or a secret; a decision’s warnings may name the <code>mcp_servers</code> of a Claude API request.</p>
     <p>The container is known for sure: one internal network per container. The agent is an attribution, not an authentication, because agents of one container share a uid.</p>
   </div>
 </section>
@@ -119,7 +119,7 @@
   <ul class="prose">
     <li><strong>Without decryption, a <code>CONNECT</code> opens reads and writes.</strong> An approved host stays open for <code>connect_grant</code> (10 minutes by default), content unseen.</li>
     <li><strong>HTTP/1.1 only to clients when decrypting.</strong> The gate refuses <code>Upgrade: h2c</code>.</li>
-    <li><strong>A WebSocket session is one approval.</strong> The upgrade is decided; the frames that follow are not.</li>
+    <li><strong>A WebSocket session is one approval.</strong> The upgrade is decided; the frames that follow are not (with injected secrets, the client’s frames are scanned for them).</li>
     <li><strong>Heuristics run in shadow by default</strong>, until you set <code>heuristics = "enforce"</code>.</li>
     <li><strong>No MCP server.</strong> Agents meet lockhttp as a proxy; its <code>403</code> pages tell them what to ask of you.</li>
   </ul>
@@ -166,7 +166,7 @@
       </nav>
     </div>
     <div class="wrap footer-bottom">
-      <p>Release v0.9.x. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
+      <p>Release v0.12.x. lockhttp is licensed under the <a href="https://github.com/DavidGodefroid/lockhttp/blob/main/LICENSE">Apache License 2.0</a>.</p>
       <p><a href="https://lockfamily.dev">lockfamily.dev</a> · <a href="https://github.com/DavidGodefroid/lockfamily">the family on GitHub</a></p>
     </div>
   </footer>
