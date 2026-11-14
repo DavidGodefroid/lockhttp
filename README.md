@@ -196,6 +196,10 @@ limits: [docs/how-it-works.md](docs/how-it-works.md).
   policy loosens; the hub's facades the only place a request is approved.
 - **OS separation.** The console runs as its own account in its own
   container; the kernel checks the gate's uid on its socket.
+- **Confined agents only.** An agent that does not run confined (outside
+  lea, or with the host's container runtime in reach) is refused, at the
+  console and at the gate, unless a non-production profile sets
+  `unconfined = true` ([docs/policy.md](docs/policy.md#confined-agents)).
 - **The AI tightens, the human loosens.** Any change that widens what passes
   without a human waits for your `:review` in the console.
 - **Audit.** The gate's JSONL log and the console's audit share a

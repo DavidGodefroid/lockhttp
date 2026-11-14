@@ -114,6 +114,7 @@ plain HTTP); a target the gate cannot reach is a `502`.
 | `E_SECRET_EGRESS` | A known credential sent outside its own hosts, a Claude credential that is not the container's, or the value of a secret the gate injects. | Never send a credential to another host. |
 | `E_BODY_TOO_LARGE` | The body is over `buffer_limit` and cannot be held for a human. | Send less, or ask for a rule. |
 | `E_SOURCE_UNKNOWN` | The gate cannot tell which container sent the request. | Use the proxy address lea gave. |
+| `E_UNCONFINED` | The sender is not known to run confined (a gate without lea's `sources.json`), and the profile does not set `unconfined = true` ([Confined agents](policy.md#confined-agents)). | Run the agent inside lea, or ask the user to set `unconfined = true` on a non-production profile. |
 | `E_INJECT` | The policy injects a credential for this host, and the gate's secrets file lacks it or does not load. | Ask the user to check the gate's secrets file; never send the credential yourself. |
 
 `E_HOST_UNKNOWN`, `E_CLAUDE_API_PARAM`, `E_EXFIL_SUSPECT`, `E_METHOD` and

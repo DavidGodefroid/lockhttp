@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -25,9 +26,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DavidGodefroid/lockkit/confine"
 	"github.com/DavidGodefroid/lockkit/console"
 	"github.com/DavidGodefroid/lockkit/hubclient"
 	"github.com/DavidGodefroid/lockkit/hubclient/hubtest"
+	"github.com/DavidGodefroid/lockkit/ipc"
 	"github.com/DavidGodefroid/lockkit/plans"
 	"github.com/DavidGodefroid/lockkit/sysconf"
 	"github.com/DavidGodefroid/lockkit/ticket"
@@ -78,8 +81,21 @@ func startConsole(t *testing.T, h *human) context.CancelFunc {
 	return startConsoleWith(t, h, policyText)
 }
 
-// startConsoleWith starts the console on the policy text conf.
+// onHost sets unconfined = true on the default profile of conf: the test's
+// gate dials the console from the host, not confined, and has no
+// sources.json, so its senders are not either (lockkit#133).
+func onHost(conf string) string {
+	return strings.ReplaceAll(conf, "[profiles.default]\n", "[profiles.default]\nunconfined = true\n")
+}
+
+// startConsoleWith starts the console on the policy text conf, onHost.
 func startConsoleWith(t *testing.T, h *human, conf string) context.CancelFunc {
+	t.Helper()
+	return startConsoleConf(t, h, onHost(conf))
+}
+
+// startConsoleConf starts the console on the policy text conf as it is.
+func startConsoleConf(t *testing.T, h *human, conf string) context.CancelFunc {
 	t.Helper()
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "config.toml")
@@ -303,6 +319,24 @@ func TestGateWithRealConsole(t *testing.T) {
 	// The console's terminal never asked about a request.
 	if n := strings.Count(h.text(), "PROMPT"); n != prompts {
 		t.Fatalf("the console asked its human about a request:\n%s", h.text())
+	}
+}
+
+// The gate dialing from the host is unconfined: without unconfined = true
+// the console refuses it with CodeUnconfined (lockkit#133). Run confined
+// (inside lea), the console serves it: nothing to check.
+func TestUnconfinedGateRefused(t *testing.T) {
+	if confine.Check(confine.RealEnv()).Confined {
+		t.Skip("this test runs confined: the console serves it")
+	}
+	setRuntime(t)
+	h := &human{answers: make(chan string, 8)}
+	stop := startConsoleConf(t, h, policyText)
+	defer stop()
+	_, err := (&gate.LockkitConsole{Profile: "default"}).Policy(context.Background())
+	var rpc *ipc.RPCError
+	if !errors.As(err, &rpc) || rpc.Code != ipc.CodeUnconfined || !strings.Contains(rpc.Message, "unconfined = true") {
+		t.Fatalf("unconfined gate: %v", err)
 	}
 }
 

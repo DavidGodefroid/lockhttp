@@ -99,6 +99,9 @@ func newEnvHub(t *testing.T, conf string, mitm bool, config func(*hubclient.Conf
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The test gate has no sources.json: its connections are "local",
+	// unconfined (ReasonNoSources), and need unconfined = true.
+	p.Unconfined = !p.Production
 	fc := &fakeConsole{pol: &p}
 	fh, h := newTestHub(t, config, hubMut)
 	e := &env{t: t, console: fc, hub: fh, backends: map[string]string{}, audit: &bytes.Buffer{}, auditMu: &sync.Mutex{}}

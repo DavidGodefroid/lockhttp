@@ -284,7 +284,7 @@ func (g *Gate) hubSubmit(ctx context.Context, fp string, p wire.ApproveParams, p
 	t.Requester = ticket.Requester{Agent: p.Agent, Session: p.Container}
 	// The hub cannot check a verdict="auto" rule against the console's
 	// policy, as the console does: no hub auto mode for the gate's asks.
-	t.Flags = ticket.Flags{Production: pol.Production, NeverAuto: true}
+	t.Flags = ticket.Flags{Production: pol.Production, NeverAuto: true, Unconfined: len(p.Unconfined) > 0}
 	header, rows := wire.ScreenHeader(p), append([]string{"from " + wire.ScreenRequester(p)}, wire.ScreenBody(p)...)
 	lines := make([]render.Line, 0, len(rows))
 	for _, l := range rows {

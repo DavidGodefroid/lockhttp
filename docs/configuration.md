@@ -31,6 +31,7 @@ deny    = []                # always refused
 | Key | Default | Notes |
 |---|---|---|
 | `production` | `false` | No rule may be `auto` (an `auto` rule only asks), and the console treats the profile as production. |
+| `unconfined` | `false` | `true` lets in an agent that does not run confined (a loosening; never with `production = true`, which then does not start). See [Confined agents](policy.md#confined-agents). |
 | `mode` | `enforce` | `shadow`: what would ask or be denied passes and is logged as such. |
 | `heuristics` | `shadow` | Exfiltration score: `off` (not computed), `shadow` (logged), `enforce` (a score ≥ 3 asks, `NeverAuto`, red). |
 | `buffer_limit` | `10MiB` | `B`, `KiB`, `MiB`, `GiB` or bytes; more than 0. |

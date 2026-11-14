@@ -260,7 +260,8 @@ func TestHubPendingThenSingleUse(t *testing.T) {
 		t.Fatalf("hold: %s %v", r.Status, r.Header)
 	}
 	tk := fh.waitTickets(1)[0]
-	if tk.Source.Lock != "lockhttp" || tk.Source.Instance != "egress" || tk.Risk != ticket.RiskWrite || !tk.Flags.NeverAuto {
+	// The test gate has no sources.json: its senders are unconfined.
+	if tk.Source.Lock != "lockhttp" || tk.Source.Instance != "egress" || tk.Risk != ticket.RiskWrite || !tk.Flags.NeverAuto || !tk.Flags.Unconfined {
 		t.Errorf("ticket: %+v", tk)
 	}
 	screen := strings.Join(append([]string{tk.Screen.Header}, tk.Screen.Body...), "\n")

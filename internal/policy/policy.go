@@ -88,6 +88,14 @@ type Policy struct {
 	// when empty, so that a policy without a managed file keeps its
 	// fingerprint.
 	ManagedRules []Rule `json:"managed_rules,omitempty"`
+	// Unconfined lets an agent that does not run confined through, on a
+	// non-production profile (lockkit#133): the console's clients and the
+	// gate's. Omitted when false, so that existing fingerprints hold.
+	Unconfined bool `json:"unconfined,omitempty"`
+	// RequireConfined is the company's managed require_confined_agent: an
+	// unconfined agent is refused whatever Unconfined says. Omitted when
+	// false.
+	RequireConfined bool `json:"require_confined_agent,omitempty"`
 }
 
 // InternalHost is a host of the user's internal-hosts list: it may resolve
@@ -120,6 +128,7 @@ type Rule struct {
 // raw is the TOML shape of a profile.
 type raw struct {
 	Production   bool        `toml:"production"`
+	Unconfined   bool        `toml:"unconfined"`
 	Mode         string      `toml:"mode"`
 	Heuristics   string      `toml:"heuristics"`
 	BufferLimit  string      `toml:"buffer_limit"`
@@ -186,7 +195,9 @@ func ParseManaged(data []byte, name, profile string, mg *Managed) (Policy, error
 			return Policy{}, fmt.Errorf("%s: %w", name, err)
 		}
 		if p, ok := mg.profiles[profile]; ok {
-			return p.Clone(), nil
+			p = p.Clone()
+			p.RequireConfined = mg.File.RequireConfinedAgent()
+			return p, nil
 		}
 	}
 	r, ok := f.Profiles[profile]
@@ -202,6 +213,7 @@ func ParseManaged(data []byte, name, profile string, mg *Managed) (Policy, error
 	}
 	if mg != nil {
 		p.ManagedRules = slices.Clone(mg.Rules)
+		p.RequireConfined = mg.File.RequireConfinedAgent()
 		p = Canonical(p)
 	}
 	return p, nil
@@ -225,7 +237,7 @@ func fromRaw(name string, r raw) (Policy, error) {
 	if err := kconfig.CheckProfileName(name, r.Production); err != nil {
 		return Policy{}, err
 	}
-	p := Policy{Name: name, Production: r.Production, Mode: r.Mode, Heuristics: r.Heuristics}
+	p := Policy{Name: name, Production: r.Production, Unconfined: r.Unconfined, Mode: r.Mode, Heuristics: r.Heuristics}
 	if p.Mode == "" {
 		p.Mode = ModeEnforce
 	}
@@ -496,11 +508,27 @@ func cloneRules(in []Rule) []Rule {
 // Profile implements console.Policy: the gate needs no secret.
 func (p Policy) Profile() console.Profile {
 	return console.Profile{
-		Name: p.Name, Production: p.Production, Where: "lockhttp gate",
+		Name: p.Name, Production: p.Production, Unconfined: p.Unconfined, Where: "lockhttp gate",
 		Credentials: console.CredentialsNone,
 		IdleTimeout: time.Duration(p.IdleTimeout) * time.Second,
 		MaxSession:  time.Duration(p.MaxSession) * time.Second,
 	}
+}
+
+// UnconfinedRefusal is why p refuses an agent that does not run confined,
+// as the console decides for its own clients (lockkit#133): "" serves it.
+func (p *Policy) UnconfinedRefusal() string {
+	switch {
+	case p == nil:
+		return "no policy is in force yet"
+	case p.RequireConfined:
+		return "the company's managed configuration requires a confined agent"
+	case p.Production:
+		return "unconfined is never allowed on a production profile"
+	case !p.Unconfined:
+		return "ask the human to set unconfined = true on this non-production profile"
+	}
+	return ""
 }
 
 // Fingerprint is the canonical hash of p, as the console stores it.

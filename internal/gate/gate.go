@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +27,8 @@ import (
 	"time"
 
 	"github.com/DavidGodefroid/lockkit/audit"
+	"github.com/DavidGodefroid/lockkit/confine"
+	"github.com/DavidGodefroid/lockkit/console"
 
 	"github.com/DavidGodefroid/lockhttp/internal/decide"
 	"github.com/DavidGodefroid/lockhttp/internal/policy"
@@ -299,6 +302,9 @@ func (g *Gate) handle(ctx context.Context, c net.Conn) {
 		for _, h := range []string{"Proxy-Authorization", "X-Lea-Source", "Proxy-Connection"} {
 			req.Header.Del(h)
 		}
+		if g.refuseUnconfined(c, req, src, hostOnly(req.Host), req.Method == http.MethodConnect) {
+			return
+		}
 		if req.Method == http.MethodConnect {
 			g.connect(ctx, c, br, req, src)
 			return
@@ -337,9 +343,49 @@ func splitHostPort(hp string, def int) (string, int) {
 	return strings.ToLower(strings.TrimSuffix(host, ".")), p
 }
 
+// refuseUnconfined refuses req when its sender is not known to run
+// confined and the policy in force does not let it in, as the console
+// decides for its own clients (lockkit#133); it reports whether it did.
+// host is the request's host, audited unless it carries a secret's value.
+func (g *Gate) refuseUnconfined(w io.Writer, req *http.Request, src wire.Source, host string, connect bool) bool {
+	if len(src.Unconfined) == 0 {
+		return false
+	}
+	pol, _ := g.Policy()
+	why := pol.UnconfinedRefusal()
+	if why == "" {
+		return false
+	}
+	if name, leak := g.cfg.Secrets.LeakNames([]string{req.Host, host}, nil); name != "" || leak != "" {
+		host = redactedTarget
+	}
+	id := newRequestID()
+	reason := "this agent does not run confined (" + strings.Join(unconfinedTexts(src.Unconfined), "; ") + "); run it inside lea (" + why + ")"
+	g.audit(wire.Record{Base: audit.Base{Event: "refused", Decision: console.DecisionRefusedUnconfined, Code: string(product.CodeUnconfined), Reason: reason},
+		RequestID: id, Source: src, Target: wire.Target{Method: req.Method, Host: host}, Rule: "confinement"})
+	writeRefusal(w, id, string(product.CodeUnconfined), reason, connect)
+	return true
+}
+
+// unconfinedTexts are the reasons, each with its text.
+func unconfinedTexts(reasons []string) []string {
+	out := make([]string, len(reasons))
+	for i, r := range reasons {
+		text := confine.Text(r)
+		if r == ReasonNoSources {
+			text = "the gate runs without lea's sources.json: nothing says the sender is a container lea runs"
+		}
+		out[i] = r + ": " + text
+	}
+	return out
+}
+
 func (g *Gate) audit(rec wire.Record) {
 	if rec.PolicyFP == "" {
 		_, rec.PolicyFP = g.Policy()
+	}
+	if len(rec.Source.Unconfined) > 0 {
+		rec.Base.Unconfined, rec.Base.UnconfinedReasons = true, slices.Clone(rec.Source.Unconfined)
 	}
 	rec.Profile = g.cfg.Profile
 	g.cfg.Audit.Append(rec)
@@ -872,6 +918,11 @@ func (g *Gate) mitm(ctx context.Context, c net.Conn, br *bufio.Reader, host stri
 		rh, rp := splitHostPort(req.Host, port)
 		if req.Host != "" && (rh != host || rp != port) {
 			writeRefusal(tc, newRequestID(), string(product.CodeFloor), "the Host header differs from the CONNECT host", true)
+			return
+		}
+		// Decided again at every request: the policy in force may have
+		// dropped unconfined since the CONNECT.
+		if g.refuseUnconfined(tc, req, src, host, true) {
 			return
 		}
 		if !g.serveHTTP(ctx, tc, tbr, req, src, "https", host, port, "mitm") {

@@ -150,6 +150,8 @@ func TestDiff(t *testing.T) {
 		{"longer grant", func(p *Policy) { p.ConnectGrant *= 2 }, true},
 		{"shorter grant", func(p *Policy) { p.ConnectGrant /= 2 }, false},
 		{"not production", func(p *Policy) { p.Production = true }, false},
+		{"unconfined on", func(p *Policy) { p.Unconfined = true }, true},
+		{"managed requires confined", func(p *Policy) { p.RequireConfined = true }, false},
 		{"internal read", func(p *Policy) { p.Internal[0].Ports = append(p.Internal[0].Ports, 9090) }, true},
 		{"new rule", func(p *Policy) { p.Rules = append(p.Rules, Rule{ID: "zz", Host: "a.com", Verdict: VerdictFree}) }, true},
 		{"new deny rule", func(p *Policy) { p.Rules = append(p.Rules, Rule{ID: "zz", Host: "a.com", Verdict: VerdictDeny}) }, false},
