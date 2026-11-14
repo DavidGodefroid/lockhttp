@@ -59,7 +59,7 @@ func runManagedConsole(t *testing.T, h *human, conf string) *managedConsole {
 	dir := t.TempDir()
 	c := &managedConsole{cfg: filepath.Join(dir, "config.toml"), state: filepath.Join(dir, "state"),
 		done: make(chan error, 1), ready: make(chan string, 1)}
-	if err := os.WriteFile(c.cfg, []byte(conf), 0o600); err != nil {
+	if err := os.WriteFile(c.cfg, []byte(onHost(conf)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -176,7 +176,7 @@ func TestManagedPollRefusesLooseningAcceptsTightening(t *testing.T) {
 	prompts := strings.Count(h.text(), "PROMPT")
 
 	// Loosened beyond the bounds: refused at the next poll, never pending.
-	if err := os.WriteFile(c.cfg, []byte("[profiles.default]\nmode = \"shadow\"\nconnect_grant = \"5m\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(c.cfg, []byte(onHost("[profiles.default]\nmode = \"shadow\"\nconnect_grant = \"5m\"\n")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the refusal", func() bool {
@@ -190,7 +190,7 @@ func TestManagedPollRefusesLooseningAcceptsTightening(t *testing.T) {
 	}
 
 	// Tightened: applied at once, no prompt.
-	if err := os.WriteFile(c.cfg, []byte("[profiles.default]\nconnect_grant = \"1m\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(c.cfg, []byte(onHost("[profiles.default]\nconnect_grant = \"1m\"\n")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the tightened policy", func() bool {

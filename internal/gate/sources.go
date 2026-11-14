@@ -86,7 +86,8 @@ func parseSources(b []byte) (*sourceMap, error) {
 }
 
 // Sources resolves who sent a connection, from the sources.json lea
-// writes. With no file, every connection is container "local".
+// writes. With no file, every connection is container "local", unconfined
+// (ReasonNoSources).
 type Sources struct {
 	path string
 
@@ -137,6 +138,12 @@ func (s *Sources) Err() error {
 	return s.err
 }
 
+// ReasonNoSources is the unconfined reason of a connection to a gate
+// without sources.json: nothing says it comes from a container lea runs
+// (lockkit#133). With the file, every source is one of lea's containers,
+// on an internal network of its own.
+const ReasonNoSources = "no_lea_sources"
+
 // errUnknownSource refuses a connection the map does not name.
 var errUnknownSource = errors.New("unknown source")
 
@@ -146,7 +153,7 @@ var errUnknownSource = errors.New("unknown source")
 func (s *Sources) Resolve(local netip.Addr, user, token, leaSource string) (wire.Source, error) {
 	local = local.Unmap()
 	if s.path == "" {
-		src := wire.Source{Container: "local", Via: "direct", Agent: user, Attribution: "none"}
+		src := wire.Source{Container: "local", Via: "direct", Agent: user, Attribution: "none", Unconfined: []string{ReasonNoSources}}
 		if user != "" {
 			src.Attribution = "proxy-auth"
 		}

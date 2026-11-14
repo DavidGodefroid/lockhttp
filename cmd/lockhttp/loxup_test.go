@@ -115,6 +115,49 @@ func TestConsoleStartsAsLoxUpRunsIt(t *testing.T) {
 	}
 }
 
+// unconfined = true (lockkit#133): a non-production profile starts with
+// the red banner; a production profile with it does not start.
+func TestConsoleUnconfinedProfile(t *testing.T) {
+	rt, err := os.MkdirTemp("/tmp", "lhrt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(rt) })
+	t.Setenv("LOCKHTTP_RUNTIME_DIR", rt)
+	cfg := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(cfg, []byte("[profiles.dev]\nunconfined = true\n\n[profiles.prod]\nproduction = true\nunconfined = true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		profile string
+		ok      bool
+		want    string
+	}{
+		{"dev", true, console.UnconfinedBanner},
+		{"prod", false, "unconfined is never allowed on a production profile"},
+	} {
+		term := &answerer{}
+		e := env{tty: true, userConfig: cfg, consoleRun: func(ctx context.Context, p kit.Product, b console.Backend, o console.Options) error {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			o.IO, o.TTY, o.StateDir, o.Quantum = term, nil, t.TempDir(), -1
+			o.Harden = func() error { return nil }
+			o.Isolation = &console.IsolationEnv{
+				AllowSameUser: true,
+				LoadSys:       func() (*sysconf.Config, error) { return nil, nil },
+				Display:       func() sysconf.Display { return sysconf.Display{} },
+				UID:           os.Getuid,
+			}
+			o.Ready = func(string) { cancel() }
+			return console.Run(ctx, p, b, o)
+		}}
+		code, _, errs := runEnv(t, e, loxUpConsoleArgv(c.profile)...)
+		if (code == exitOK) != c.ok || !strings.Contains(term.text()+errs, c.want) {
+			t.Fatalf("%s: exit %d %s\n%s", c.profile, code, errs, term.text())
+		}
+	}
+}
+
 // The hub flags lox run gives the other locks' consoles are not lockhttp
 // console's: it refuses them (usage) before running a console.
 func TestConsoleRefusesHubFlags(t *testing.T) {

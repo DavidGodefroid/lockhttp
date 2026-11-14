@@ -35,6 +35,9 @@ type Source struct {
 	TaskID      string `json:"task_id,omitempty"`
 	Branch      string `json:"branch,omitempty"`
 	SessionID   string `json:"session_id,omitempty"`
+	// Unconfined are the reasons the sender is not known to run confined
+	// (lockkit#133); none: it is. Audited as audit.Base.UnconfinedReasons.
+	Unconfined []string `json:"-"`
 }
 
 // Target is what a request does, never with its body or secret values.

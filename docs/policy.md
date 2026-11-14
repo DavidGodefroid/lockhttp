@@ -65,6 +65,7 @@ be named.
 | Key | Type | Default | Validation and meaning |
 |---|---|---|---|
 | `production` | bool | `false` | No rule may have `verdict = "auto"`; the console treats the profile as production. |
+| `unconfined` | bool | `false` | Lets in an agent that does not run confined (see [Confined agents](#confined-agents)). A loosening; never on production: a production profile with it does not start. |
 | `mode` | string | `"enforce"` | `"enforce"` or `"shadow"`. See [Shadow mode](#shadow-mode). |
 | `heuristics` | string | `"shadow"` | `"enforce"`, `"shadow"` or `"off"`. See [Exfiltration heuristics](#exfiltration-heuristics). |
 | `buffer_limit` | size | `"10MiB"` | Largest body the gate holds for a human. `"512B"`, `"256KiB"`, `"10MiB"`, `"1GiB"` or a number of bytes; more than 0, at most 1 TiB. |
@@ -165,7 +166,9 @@ For each connection, then each request, the first step that decides wins.
    owns the local address the connection arrived on; a connection on
    127.0.0.1 must carry the keyproxy token and name a known container in
    `X-Lea-Source`. Anything else: `E_SOURCE_UNKNOWN`. Without `--sources`,
-   every connection is container `local`.
+   every connection is container `local`, not known to run confined: each
+   of its requests is refused with `E_UNCONFINED` unless the profile sets
+   `unconfined = true` (see [Confined agents](#confined-agents)).
 2. **Request shape.** A non-`CONNECT` request must use an absolute
    `http://` URL whose `Host` header matches; inside a decrypted tunnel the
    `Host` header must match the `CONNECT` host. Otherwise `E_FLOOR`.
@@ -293,6 +296,34 @@ For each connection, then each request, the first step that decides wins.
 With no policy received yet (the console never answered since the gate
 started), step 7 to 9 and 11 do nothing, nothing is trusted, and only the
 four Claude hosts and their allowlist are free.
+
+## Confined agents
+
+lockhttp, like every Lock Family lock since lockkit v0.20.0, refuses by
+default an agent that does not run confined: an agent that can reach the
+host's container runtime or the Lock Family state can go around any lock.
+Two paths are checked:
+
+- **The console's clients** (the gate, polling the policy): each reports in its `hello` whether it runs confined, and the
+  console refuses an unconfined one (lockkit's `CodeUnconfined`), as it
+  does one holding the group of a runtime socket or one too old to report.
+  The client and the console must be the same lockhttp version.
+- **The gate's senders**: with `--sources` (lea), every sender is one of
+  lea's containers, on an internal network of its own: confined. Without
+  `--sources`, a sender is container `local`, and nothing says it runs
+  confined: its requests are refused with `E_UNCONFINED`.
+
+`unconfined = true` on a profile lets them in:
+
+| Profile | Unconfined agent |
+|---|---|
+| default | refused (`E_UNCONFINED` at the gate, `CodeUnconfined` at the console) |
+| `unconfined = true`, not production | served; the console shows a red banner, every audit record of the connection or request has `"unconfined": true` and its `unconfined_reasons`, and its hub tickets carry `flags.unconfined` |
+| `unconfined = true` and `production = true` | the console does not start: `unconfined is never allowed on a production profile` |
+| `[family] require_confined_agent = true` in the company's managed configuration | refused, whatever `unconfined` says |
+
+Switching `unconfined` on is a loosening, confirmed at the console. The
+gate's reason code for a sender without `--sources` is `no_lea_sources`.
 
 ## Credential injection
 
@@ -525,6 +556,8 @@ force.
 | Change | Loosens when |
 |---|---|
 | `production` | `true` → `false` |
+| `unconfined` | `false` → `true` |
+| `require_confined_agent` (the company's managed configuration) | `true` → `false` |
 | `mode` | → `shadow` |
 | `heuristics` | lowered (`enforce` → `shadow` → `off`) |
 | `buffer_limit` | raised |

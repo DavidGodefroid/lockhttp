@@ -6,6 +6,24 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Built on lockkit v0.20.0.
+
+### Breaking
+
+- Unconfined agents are refused by default (lockkit#133, #64). The gate
+  reports in its `hello` whether it runs confined, and the console refuses
+  an unconfined one; the gate and the console must be the same lockhttp
+  version (an older console refuses the new hello, an older gate is
+  refused by the new console). On the gate's own path, a sender not known
+  to run confined (container `local`, a gate without `--sources`) is
+  refused at every request with the new code `E_UNCONFINED`, audited
+  `refused-unconfined`. The new profile key `unconfined = true` lets them
+  in on a non-production profile (a loosening): their audit records carry
+  `"unconfined": true` and `unconfined_reasons`, their hub tickets
+  `flags.unconfined`. A production profile with it does not start; the
+  company's managed `require_confined_agent = true` refuses them whatever
+  the profile says. See `docs/policy.md` (Confined agents).
+
 ### Fixed
 
 - The quick start with lea (README, `docs/install.md`, the site) no longer

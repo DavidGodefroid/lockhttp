@@ -36,6 +36,7 @@ const (
 	CodeSourceUnknown refusal.Code = "E_SOURCE_UNKNOWN"
 	CodeRule          refusal.Code = "E_RULE"
 	CodeInject        refusal.Code = "E_INJECT"
+	CodeUnconfined    refusal.Code = "E_UNCONFINED"
 )
 
 func init() {
@@ -69,4 +70,6 @@ func init() {
 		"a policy rule denies the request", "ask the user to change the rule")
 	refusal.Register(CodeInject, refusal.RetryAskUser,
 		"the gate cannot add the credential the policy injects (its secret is missing or unreadable)", "ask the user to check the gate's secrets file; never send the credential yourself")
+	refusal.Register(CodeUnconfined, refusal.RetryAskUser,
+		"the agent is not known to run confined", "run it inside lea, or ask the user to set unconfined = true on this non-production profile")
 }

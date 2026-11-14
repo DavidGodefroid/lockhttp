@@ -31,6 +31,12 @@ func (p Policy) Diff(approved kconfig.Policy) []kconfig.Change {
 	if a.Production != p.Production {
 		add("production", strconv.FormatBool(a.Production), strconv.FormatBool(p.Production), !p.Production)
 	}
+	if a.Unconfined != p.Unconfined {
+		add("unconfined", strconv.FormatBool(a.Unconfined), strconv.FormatBool(p.Unconfined), p.Unconfined)
+	}
+	if a.RequireConfined != p.RequireConfined {
+		add("require_confined_agent", strconv.FormatBool(a.RequireConfined), strconv.FormatBool(p.RequireConfined), !p.RequireConfined)
+	}
 	if a.Mode != p.Mode {
 		add("mode", a.Mode, p.Mode, p.Mode == ModeShadow)
 	}
@@ -213,6 +219,12 @@ func (p Policy) Describe() []string {
 		"trusted reads: " + list(p.Trusted),
 		"splice (never decrypted): " + list(p.Splice),
 		"deny: " + list(p.Deny),
+	}
+	if p.Unconfined {
+		out = append(out, "unconfined = true: agents that do not run confined are let in (red banner, never on production)")
+	}
+	if p.RequireConfined {
+		out = append(out, "a confined agent is required (the company's managed configuration)")
 	}
 	if len(p.RedirectCDN) > 0 {
 		out = append(out, "redirect CDNs: "+list(p.RedirectCDN))
