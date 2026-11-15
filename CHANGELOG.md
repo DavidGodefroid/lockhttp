@@ -18,6 +18,12 @@ uses [Semantic Versioning](https://semver.org/).
   lea's CA, trust store, audit volume and proxy address; the supported
   versions table up to v0.12.0. `pages.yml` pins its actions by commit
   SHA, as `SECURITY.md` says.
+- The install steps (README, `docs/install.md`, the site) name cosign
+  v2.5.0 or later and lockhub's `lox` v0.12.1 or later beside lea v0.16.0
+  or later: the `lockhttp` formula pulls in neither `lox` nor cosign, and
+  `lox add` and `lox run` verify every image with cosign (lockssh#44,
+  lockfamily#70). The brew line is
+  `brew install davidgodefroid/tap/lockhttp davidgodefroid/tap/lox cosign`.
 
 ## [0.12.0] - 2026-11-14
 

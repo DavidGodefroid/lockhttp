@@ -65,9 +65,9 @@
   <div class="install">
     <div class="install-head"><span>Install with Homebrew</span></div>
     <pre tabindex="0" aria-label="Install commands"><code><span class="cmd">brew trust davidgodefroid/tap</span>
-<span class="cmd">brew install davidgodefroid/tap/lox davidgodefroid/tap/lockhttp</span>
+<span class="cmd">brew install davidgodefroid/tap/lockhttp davidgodefroid/tap/lox cosign</span>
 <span class="cmd">brew install davidgodefroid/tap/lea</span></code></pre>
-    <p class="install-note">Homebrew asks you to trust a third-party tap once. <code>brew install davidgodefroid/tap/lockfamily</code> installs the whole family instead.</p>
+    <p class="install-note">Homebrew asks you to trust a third-party tap once. The <code>lockhttp</code> formula pulls in neither <code>lox</code> nor cosign: name them with it. <code>brew install davidgodefroid/tap/lockfamily</code> installs the whole family instead, <code>lox</code> and cosign included.</p>
   </div>
   <ol class="steps prose">
     <li><p>In lea’s projects directory (<code>LEA_PROJECTS_DIR</code>), <code>lox add lockhttp</code> asks only for the lock’s name. It writes the policy, runs <code>lockhttp doctor --fix</code>, shows a short review and starts the console.</p>
@@ -94,16 +94,17 @@ lea</code></pre>
 lockhttp version</code></pre>
   <div class="prose">
     <p>It verifies the cosign signature of each release and of its image. The launcher runs the image by its digest. lea uses this launcher from v0.16.0.</p>
-    <p>cosign is required. Linux (Docker Engine) and macOS (Docker Desktop); on Windows, WSL 2 with Docker Desktop.</p>
+    <p>cosign v2.5.0 or later is required. Linux (Docker Engine) and macOS (Docker Desktop); on Windows, WSL 2 with Docker Desktop.</p>
   </div>
 </section>
 
 <section aria-labelledby="requirements">
   <h2 id="requirements">Requirements</h2>
   <ul class="prose">
-    <li>Docker, and <code>cosign</code> for the Lock Family installer.</li>
-    <li><a href="https://github.com/DavidGodefroid/lea">lea</a>: it runs the agents in containers on internal networks, and runs the gate beside its proxy (Docker, or rootless Podman).</li>
-    <li><a href="https://github.com/DavidGodefroid/lockhub">lockhub</a>’s <code>lox</code>: the gate runs hub-attached only, and you answer held requests on the hub.</li>
+    <li>Docker.</li>
+    <li><a href="https://docs.sigstore.dev/cosign/system_config/installation/">cosign</a> v2.5.0 or later on <code>PATH</code>: <code>lox add</code> and <code>lox run</code> verify every image with it, and the Lock Family installer checks the release’s and the image’s signatures.</li>
+    <li><a href="https://github.com/DavidGodefroid/lea">lea</a> v0.16.0 or later: it runs the agents in containers on internal networks, and runs the gate beside its proxy (Docker, or rootless Podman).</li>
+    <li><a href="https://github.com/DavidGodefroid/lockhub">lockhub</a>’s <code>lox</code> v0.12.1 or later: it passes <code>--runtime-gids</code> to the lockhttp v0.12 console; the gate runs hub-attached only, and you answer held requests on the hub.</li>
   </ul>
 </section>
 

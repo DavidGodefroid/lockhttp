@@ -13,7 +13,12 @@ a shell script that runs every command in the release's image
 (`ghcr.io/davidgodefroid/lockhttp:X.Y.Z`, amd64 and arm64). With Homebrew:
 `brew trust davidgodefroid/tap` (Homebrew asks to trust a third-party tap
 once), then `brew install davidgodefroid/tap/lockhttp` (or
-`davidgodefroid/tap/lockfamily` for the whole family). Without Homebrew,
+`davidgodefroid/tap/lockfamily` for the whole family, `lox` and cosign
+included). The `lockhttp` formula pulls in neither `lox` nor cosign: name
+them with it, `brew install davidgodefroid/tap/lockhttp davidgodefroid/tap/lox cosign`.
+lockhttp v0.12 needs lockhub's `lox` v0.12.1 or later (it passes
+`--runtime-gids` to the console) and cosign v2.5.0 or later (`lox add`
+and `lox run` verify every image with it). Without Homebrew,
 the Lock Family's installer puts the same launcher in `~/.local/bin`
 ([lockfamily install](https://github.com/DavidGodefroid/lockfamily/blob/main/docs/install.md)):
 
@@ -73,7 +78,7 @@ the lock's name): see lockhub's
 # 1. Install the Lock Family (lox, lea and the launchers), or only this tool;
 #    Homebrew asks to trust a third-party tap once
 brew trust davidgodefroid/tap
-brew install davidgodefroid/tap/lockfamily   # or: brew install davidgodefroid/tap/lockhttp
+brew install davidgodefroid/tap/lockfamily   # or, with lox and cosign: brew install davidgodefroid/tap/lockhttp davidgodefroid/tap/lox cosign
                                               # or the launcher alone: see Install
 
 # 2. In lea's projects directory (LEA_PROJECTS_DIR: lea reads
