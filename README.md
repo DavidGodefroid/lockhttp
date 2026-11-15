@@ -66,19 +66,27 @@ In-agent approval is a convenience; a separate approval process is a boundary.
 
 ## Install
 
+lockhttp needs lockhub's `lox` v0.12.1 or later (it passes
+`--runtime-gids` to the lockhttp v0.12 console), cosign v2.5.0 or later
+(`lox add` and `lox run` verify every image with it) and
+[lea](https://github.com/DavidGodefroid/lea) v0.16.0 or later. The
+`lockhttp` formula pulls in none of them: name them with it.
+
 ```sh
 brew trust davidgodefroid/tap
-brew install davidgodefroid/tap/lox davidgodefroid/tap/lockhttp
+brew install davidgodefroid/tap/lockhttp davidgodefroid/tap/lox cosign
 brew install davidgodefroid/tap/lea
 ```
 
 lockhttp runs in Docker: Homebrew installs the `lockhttp` launcher, which runs
 every command in the release's signed image. `lox` is lockhub's CLI, and the
 gate runs inside [lea](https://github.com/DavidGodefroid/lea). The whole
-family instead: `brew install davidgodefroid/tap/lockfamily`.
+family instead, `lox` and cosign included:
+`brew install davidgodefroid/tap/lockfamily`.
 
 Without Homebrew, the Lock Family's installer puts the same tools in
-`~/.local/bin` ([lockfamily install](https://github.com/DavidGodefroid/lockfamily/blob/main/docs/install.md)):
+`~/.local/bin` ([lockfamily install](https://github.com/DavidGodefroid/lockfamily/blob/main/docs/install.md));
+cosign v2.5.0 or later must be on `PATH`:
 
 ```sh
 curl -fsSL https://lockfamily.dev/install.sh | sh

@@ -62,9 +62,9 @@
     <div class="install">
       <div class="install-head"><span>Install with Homebrew</span></div>
       <pre tabindex="0" aria-label="Install commands"><code><span class="cmd">brew trust davidgodefroid/tap</span>
-<span class="cmd">brew install davidgodefroid/tap/lox davidgodefroid/tap/lockhttp</span>
+<span class="cmd">brew install davidgodefroid/tap/lockhttp davidgodefroid/tap/lox cosign</span>
 <span class="cmd">brew install davidgodefroid/tap/lea</span></code></pre>
-      <p class="install-note">Needs Docker. The gate runs inside <a href="https://github.com/DavidGodefroid/lea">lea</a>, hence its formula. Then <code>lox add lockhttp</code>, <code>lox run</code>, and <code>LEA_LOCKHTTP=1</code> in lea’s <code>lea.conf</code>. The whole family: <code>brew install davidgodefroid/tap/lockfamily</code>.</p>
+      <p class="install-note">Needs Docker, lockhub’s <code>lox</code> v0.12.1 or later and cosign v2.5.0 or later, which <code>lox</code> verifies every image with. The gate runs inside <a href="https://github.com/DavidGodefroid/lea">lea</a>, hence its formula. Then <code>lox add lockhttp</code>, <code>lox run</code>, and <code>LEA_LOCKHTTP=1</code> in lea’s <code>lea.conf</code>. The whole family, <code>lox</code> and cosign included: <code>brew install davidgodefroid/tap/lockfamily</code>.</p>
     </div>
     <div class="actions">
       <a class="button primary" href="install/">Install guide</a>
