@@ -8,17 +8,18 @@ lea). The human presses d to read the whole masked screen, then n; the agent get
 and the gate's audit keeps both decisions. Pure SVG + CSS keyframes, so it plays on GitHub, on
 the site and in any browser. Every animation shares one clock of LOOP seconds.
 
-No output on screen is written here: it is read from scripts/brand/demo-capture/, a capture of
-the scenario run through the code itself.
+No output on screen is written here: it is read from scripts/brand/demo-capture/. That capture
+is output of the code, but of two separate runs joined by hand, not of one lea + lox run stack
+(demo-capture/README.md says how each file was made):
 
-  gate.txt         the two curl commands run through the gate (internal/gate) with lea's
-                   sources.json, their output as curl printed it, and the gate's audit records
-  lox-run-*.ans    the frames lockhub's `lox run` (internal/loxrun) drew for the gate's ticket,
-                   with their colours: idle, the question, the question after d, after n
+  gate.txt         two curl commands through the gate (internal/gate), against the tests' fake
+                   hub and a stand-in upstream: their output, then the gate's audit records
+  lox-run-*.ans    the frames lockhub's `lox run` (internal/loxrun) drew, in lockhub's own test
+                   harness, for a ticket built again from the one the gate signed
 
 What is typed here is the scenario's input (the prompt, the two commands), Claude Code's frame
-around a command and its output, the pane titles, the badges and the captions. The audit lines
-are the captured records with fields left out where they show "…".
+around a command and its output, the pane titles, the badges, the key hints and the captions.
+The audit lines are captured records with fields left out where they show "…".
 
     python3 scripts/brand/demo.py > site/assets/demo.svg
 """
@@ -308,7 +309,7 @@ BX, BY, BW, BH = 24, 506, W - 48, 84
 body.append(f'<rect x="{BX}" y="{BY}" width="{BW}" height="{BH}" rx="10" fill="{C["pane"]}" '
             f'stroke="{C["border"]}" stroke-width="1.5"/>')
 body.append(text(BX + 16, BY + 24, "gate audit", size=12, col=C["accent"], weight=700, family=SANS))
-body.append(text(BX + 92, BY + 24, f"gate-{free_rec['ts'][:10]}.jsonl · one line per decision, traced to container and agent",
+body.append(text(BX + 92, BY + 24, f"gate-{free_rec['ts'][:10]}.jsonl · what the gate recorded, traced to container and agent",
                  size=12, col=D, family=SANS))
 
 

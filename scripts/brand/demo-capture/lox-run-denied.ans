@@ -21,6 +21,6 @@
 
 
 
- [2m12:05:16[0m [36mdev-3[0m    [2m⇄ [0mweb      [2m-[0m        [1;33mwrite[0m  [1;36mfrom[0m container lea… [31m✘ denied[0m      
+ [2m12:21:49[0m [36mdev-3[0m    [2m⇄ [0mweb      [2m-[0m        [1;33mwrite[0m  [1;36mfrom[0m container lea… [31m✘ denied[0m      
 [2m────────────────────────────────────────────────────────────────────────────────[0m
  [1mShift+Tab[0m[2m mode[0m  [1ma[0m[2m audit[0m  [1m?[0m[2m help[0m  [1mq[0m[2m quit[0m
