@@ -1,0 +1,105 @@
+package loxrun_test
+
+// The lox run half of lockhttp's README demo capture (lockhttp
+// scripts/brand/demo-capture/README.md). Not part of lockhttp's build: copy
+// it to lockhub as internal/loxrun/zz_demo_test.go, in a throwaway worktree,
+// after the three edits of e2e_test.go that README lists.
+//
+// It submits the ticket lockhttp's gate signed (ticket.json, written by
+// lockhttp's TestDemoCapture) through lockhub's e2e world (the real hub, a
+// real lockkit hub client, lox run driven by key presses), presses d then n,
+// and writes the frames lox run drew, with their colours, and the hub's
+// signed decision.
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/DavidGodefroid/lockkit/pii"
+	"github.com/DavidGodefroid/lockkit/plans"
+	"github.com/DavidGodefroid/lockkit/render"
+	"github.com/DavidGodefroid/lockkit/ticket"
+
+	"github.com/DavidGodefroid/lockhub/internal/loxrun"
+)
+
+func lastFrame(s string) string {
+	i := strings.LastIndex(s, "\x1b[H")
+	if i < 0 {
+		return s
+	}
+	f := s[i+3:]
+	f = strings.ReplaceAll(f, "\x1b[K", "")
+	f = strings.ReplaceAll(f, "\x1b[J", "")
+	f = strings.ReplaceAll(f, "\a", "")
+	return strings.ReplaceAll(f, "\r\n", "\n")
+}
+
+func TestLockhttpDemo(t *testing.T) {
+	out := os.Getenv("LOCKHTTP_DEMO_OUT")
+	if out == "" {
+		t.Skip()
+	}
+	raw, err := os.ReadFile(filepath.Join(out, "ticket.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var src ticket.Ticket
+	if err := json.Unmarshal(raw, &src); err != nil {
+		t.Fatal(err)
+	}
+	w := newWorldArm(t, -1)
+	save := func(name string) {
+		time.Sleep(400 * time.Millisecond)
+		os.WriteFile(filepath.Join(out, name), []byte(lastFrame(w.out.String())), 0o644)
+	}
+	save("lox-run-idle.ans")
+
+	// The ticket as lockhttp's gate builds it (internal/gate/hub.go hubSubmit).
+	in := map[string]string{"request": "sha256:" + strings.Repeat("a", 64), "policy": src.PolicyFP}
+	hash, _ := ticket.HashOf(in)
+	p, err := w.plans.Create(plans.Binding{UID: caller.UID, Agent: src.Requester.Agent, TokenHash: plans.HashToken(caller.Token),
+		PolicyFP: src.PolicyFP, PlanHash: hash, Inputs: in}, json.RawMessage(`{}`), ticket.ClampTTL(src.Risk, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tk := ticket.NewTicket(ticket.Source{Lock: "lockhttp"}, src.Risk, hash, src.PolicyFP, time.Now(), ticket.ClampTTL(src.Risk, 0))
+	tk.Requester = src.Requester
+	tk.Flags = src.Flags
+	lines := make([]render.Line, 0, len(src.Screen.Body))
+	for _, l := range src.Screen.Body {
+		lines = append(lines, render.Structure(l))
+	}
+	ds, err := pii.Detectors([]string{"email", "phone", "iban", "card"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	masked := render.MaskScreen(render.ScreenSource{Header: src.Screen.Header, Body: lines, Warnings: src.Screen.Warnings, Red: src.Screen.Red},
+		render.Masking{Detectors: ds})
+	id, err := w.lock.Submit(context.Background(), w.plans, p.ID, caller, tk, masked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := w.wait(loxrun.EvQuestion, "")
+	if q.ID != id {
+		t.Fatalf("question %s, ticket %s", q.ID, id)
+	}
+	save("lox-run-question.ans")
+	w.press(loxrun.R('d'))
+	save("lox-run-details.ans")
+	w.press(loxrun.R('d'))
+	time.Sleep(200 * time.Millisecond)
+	w.press(loxrun.R('n'))
+	d := w.wait(loxrun.EvDecided, id)
+	save("lox-run-denied.ans")
+	dec := w.decision(id)
+	j, _ := json.MarshalIndent(dec, "", "  ")
+	_, _, berr := w.lock.Begin(w.plans, id, caller, func(*plans.Plan) (string, string, error) { return src.PolicyFP, hash, nil })
+	os.WriteFile(filepath.Join(out, "decision.txt"), []byte(fmt.Sprintf("event: %+v\n%s\nlock sees: %v\n", d, j, berr)), 0o644)
+}

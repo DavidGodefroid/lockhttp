@@ -16,9 +16,8 @@
 anything that sends data or reaches an unknown host waits for you.</b></p>
 
 <p align="center">
-  <img src="site/assets/demo.svg" alt="An agent (here Claude Code, in a lea container) fetches a page of pkg.go.dev, a trusted host: the lockhttp gate lets the GET through at once. It then POSTs a build report to hooks.example.net, an unknown host: the gate holds the request, and an approval screen shows it with the body preview masked (the email as j***(20), the token as &lt;secret&gt;). The human answers n token in body; the agent gets a 403 E_DENIED, and the gate's audit records both decisions." width="900">
+  <img src="site/assets/demo.svg" alt="An agent (here Claude Code, in a lea container) fetches a page of pkg.go.dev, a trusted host: the lockhttp gate lets the GET through at once. It then POSTs a build report to hooks.example.net, an unknown host: the gate holds the request, and a question shows in lox run, in your own terminal. You press d to read the whole masked screen (the author's email shows as j***(23)), then n to deny; the agent gets a 403 E_DENIED, denied on the hub, and the gate's audit records both decisions." width="900">
 </p>
-<p align="center"><sub>An agent (here Claude Code, left, in a lea container) and the approval screen (right). Drawn in the console's frame from before the hub: today you answer in <code>lox run</code>.</sub></p>
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·

@@ -1,0 +1,26 @@
+[1m lox run [0m[1;30;42m AUTO [0m[2m  ~/Documents/shop[0m                 [32m● hub up[0m[2m · 1 lock[0m[2m · [0m[1;33m1 waiting[0m
+[2m connected [0m[2mnone yet: a lock connects on its agent's first request[0m
+[2m────────────────────────────────────────────────────────────────────────────────[0m
+[1;33m ┌[0m[1;33m ◆ QUESTION [0m[1;33;1mwrite[0m[1m on web [0m[1;33m───────────────────────────────────────────────────[0m[1;33m┐[0m
+[1;33m │ [0m[36;1mdev-3[0m[2m asks (unverified name)[0m[2m · ⇄ lockhttp[0m[2m · expires in 23h59m[0m              [1;33m│[0m
+[1;33m │ [0m[1;33mPOST[0m[1m hooks.example.net · lea-ab12cd34ef[0m                                    [1;33m│[0m
+[1;33m │ [0m  [1;36mfrom[0m container lea-ab12cd34ef (project shop) · agent dev-3 (declared, pr…[1;33m│[0m
+[1;33m │ [0m  [1;33mPOST[0m mitm://hooks.example.net/build                                      [1;33m│[0m
+[1;33m │ [0m  body 49 bytes application/json json:a20a0c27eefde4…                      [1;33m│[0m
+[1;33m │ [0m  headers: accept content-length content-type user-agent                   [1;33m│[0m
+[1;33m │ [0m  task t-42 · role dev · parent lead-1 · branch feat/ci-report             [1;33m│[0m
+[1;33m │ [0m  decided by: default:write                                                [1;33m│[0m
+[1;33m │ [0m                                                                           [1;33m│[0m
+[1;33m │ [0m  preview (masked):                                                        [1;33m│[0m
+[1;33m │ [0m    {"build":"ok","author":"[2;3m‹j***(23)›[0m"}                                   [1;33m│[0m
+[1;33m │ [0m                                                                           [1;33m│[0m
+[1;33m │ [0m  client gone: y lets the same request through once in the next 10 minutes [1;33m│[0m
+[1;33m │ [0m  request h-mwm16i9i-c991bc1966bb624f                                      [1;33m│[0m
+[1;33m │ [0m[31m! unknown host hooks.example.net[0m                                           [1;33m│[0m
+[1;33m │ [0m[2mwhy asked: this lock's ticket does not name its kind (version 1): asked[0m    [1;33m│[0m
+[1;33m │ [0m[32;1my[0m[2m approve   [0m[31;1mn[0m[2m deny   [0m[1md[0m[2m less[0m[1m   x[0m[2m forget profile[0m                             [1;33m│[0m
+[1;33m └────────────────────────────────────────────────────────────────────────────┘[0m
+
+ [2m12:21:49[0m [36mdev-3[0m    [2m⇄ [0mweb      [2m-[0m        [1;33mwrite[0m  [1;36mfrom[0m container lea… [1;33m◆ ask:v1[0m      
+[2m────────────────────────────────────────────────────────────────────────────────[0m
+ [1mShift+Tab[0m[2m mode[0m  [1my/n[0m[2m answer[0m  [1md[0m[2m details[0m  [1ma[0m[2m audit[0m  [1m?[0m[2m help[0m  [1mq[0m[2m quit[0m
