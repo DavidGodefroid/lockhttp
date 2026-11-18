@@ -95,10 +95,10 @@
   <h2 id="demo" class="visually-hidden">See it run</h2>
   <figure class="demo">
     <div class="demo-frame" role="region" aria-label="Animated demo" tabindex="0">
-      <img src="assets/demo.svg" alt="An agent (here Claude Code, in a lea container) fetches a page of pkg.go.dev, a trusted host: the lockhttp gate lets the GET through at once. It then POSTs a build report to hooks.example.net, an unknown host: the gate holds the request, and an approval screen shows it with the body preview masked (the email as j***(20), the token as &lt;secret&gt;). The human answers n token in body; the agent gets a 403 E_DENIED, and the gate's audit records both decisions." width="1200" height="600" aria-describedby="demo-caption">
+      <img src="assets/demo.svg" alt="An agent (here Claude Code, in a lea container) fetches a page of pkg.go.dev, a trusted host: the lockhttp gate lets the GET through at once. It then POSTs a build report to hooks.example.net, an unknown host: the gate holds the request, and a question shows in lox run, in your own terminal. You press d to read the whole masked screen (the author's email shows as j***(23)), then n to deny; the agent gets a 403 E_DENIED, denied on the hub, and the gate's audit records both decisions." width="1200" height="680" aria-describedby="demo-caption">
     </div>
     <p class="demo-hint">Swipe sideways to see both terminals.</p>
-    <figcaption id="demo-caption">An agent (here Claude Code, left, in a lea container) reads <code>pkg.go.dev</code> at once. Its <code>POST</code> to an unknown host waits until you deny it with a reason. The approval screen (right) is drawn in the console’s frame from before the hub: today you answer it in <code>lox run</code>.</figcaption>
+    <figcaption id="demo-caption">An agent (here Claude Code, left, in a lea container) reads <code>pkg.go.dev</code> at once. Its <code>POST</code> to an unknown host waits until you answer it in <code>lox run</code> (right), where you read the masked request and deny it.</figcaption>
   </figure>
 </section>
 
